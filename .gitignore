@@ -1,0 +1,21 @@
+# Model files — too large for GitHub (325 MB + 28 MB)
+# Download separately and place in the repo root
+kokoro-v1.0.onnx
+voices-v1.0.bin
+
+# Runtime data — do not commit
+memory.db
+audio_cache/
+static/temp_audio/
+__pycache__/
+*.pyc
+*.pyo
+
+# Local config
+.env
+settings.local.json
+.claude/
+
+# Test artifacts
+test_tts.wav
+write_video.py

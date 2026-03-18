@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maestro — Your Team</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#C9A84C;--gold-light:#E8C96B;--bg:#06060A;--bg1:#0C0C12;--bg2:#14141C;--border:rgba(201,168,76,0.15);--border-dim:rgba(255,255,255,0.06);--text:#E8E6E0;--text-dim:#7A7870;--text-muted:#2E2E38;--green:#4EC994;--red:#E05555}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:"DM Mono",monospace}
+.topbar{height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(6,6,10,0.97);border-bottom:1px solid var(--border-dim);position:relative;z-index:100}
+.logo{font-family:"Cormorant Garamond",serif;font-size:19px;color:var(--gold);letter-spacing:0.14em}
+.logo em{color:var(--text-muted);font-style:normal;font-weight:300}
+.topbar-mid{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;font-size:10px;letter-spacing:0.14em;color:var(--text-dim)}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+.topbar-right{display:flex;gap:20px;align-items:center;font-size:11px;color:var(--text-dim)}
+#timer{font-variant-numeric:tabular-nums;letter-spacing:0.1em}
+.layout{display:grid;grid-template-columns:188px 1fr 272px;height:calc(100vh - 50px)}
+.sidebar{background:var(--bg1);border-right:1px solid var(--border-dim);overflow-y:auto;padding:14px 0}
+.sidebar::-webkit-scrollbar{width:0}
+.sidebar-label{font-size:9px;letter-spacing:0.22em;text-transform:uppercase;color:var(--text-muted);padding:0 14px 10px}
+.agent-item{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:pointer;border-left:2px solid transparent;transition:all 0.15s}
+.agent-item:hover{background:rgba(255,255,255,0.03)}
+.agent-item.active{background:rgba(201,168,76,0.05);border-left-color:var(--gold)}
+.thumb-wrap{width:38px;height:38px;border-radius:50%;overflow:hidden;flex-shrink:0;border:1.5px solid var(--border-dim);transition:all 0.2s}
+.agent-item.active .thumb-wrap{border-color:var(--gold);box-shadow:0 0 10px rgba(201,168,76,0.2)}
+.thumb-wrap img{width:100%;height:100%;object-fit:cover;object-position:center top}
+.thumb-name{font-family:"Syne",sans-serif;font-size:11px;font-weight:700;letter-spacing:0.04em;color:var(--text)}
+.agent-item.active .thumb-name{color:var(--gold)}
+.thumb-role{font-size:9px;color:var(--text-muted);margin-top:2px}
+.online-dot{width:5px;height:5px;border-radius:50%;background:var(--green);margin-left:auto;flex-shrink:0}
+.stage{position:relative;overflow:hidden;background:#000}
+.env{position:absolute;inset:0;opacity:0;transition:opacity 1s ease}
+.env.active{opacity:1}
+.env-marcus{background:radial-gradient(ellipse at 40% 30%,rgba(201,168,76,0.08) 0%,transparent 55%),linear-gradient(170deg,#080610 0%,#060408 100%)}
+.env-lex{background:radial-gradient(ellipse at 65% 25%,rgba(60,100,200,0.08) 0%,transparent 50%),linear-gradient(170deg,#060A12 0%,#040608 100%)}
+.env-solo{background:radial-gradient(ellipse at 25% 50%,rgba(220,80,40,0.06) 0%,transparent 40%),radial-gradient(ellipse at 75% 50%,rgba(60,80,220,0.06) 0%,transparent 40%),linear-gradient(170deg,#06060E 0%,#040408 100%)}
+.env-jade{background:radial-gradient(ellipse at 60% 20%,rgba(60,160,80,0.07) 0%,transparent 50%),linear-gradient(170deg,#060A08 0%,#040608 100%)}
+.env-zara{background:radial-gradient(ellipse at 35% 30%,rgba(200,60,100,0.07) 0%,transparent 50%),linear-gradient(170deg,#0A0608 0%,#060408 100%)}
+.dial{position:absolute;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:28px;background:var(--bg);transition:opacity 0.5s ease}
+.dial.gone{opacity:0;pointer-events:none}
+.rings{position:relative;width:130px;height:130px;display:flex;align-items:center;justify-content:center}
+.ring{position:absolute;border-radius:50%;border:1px solid rgba(201,168,76,0.18);animation:ring-out 2.2s ease-out infinite}
+.ring:nth-child(1){width:64px;height:64px;animation-delay:0s}
+.ring:nth-child(2){width:96px;height:96px;animation-delay:0.45s}
+.ring:nth-child(3){width:126px;height:126px;animation-delay:0.9s}
+@keyframes ring-out{0%{opacity:.8;transform:scale(.85)}100%{opacity:0;transform:scale(1.15)}}
+.dial-avatar{width:62px;height:62px;border-radius:50%;overflow:hidden;border:1.5px solid var(--border);position:relative;z-index:1}
+.dial-avatar img{width:100%;height:100%;object-fit:cover;object-position:center top}
+.dial-name{font-family:"Cormorant Garamond",serif;font-size:30px;font-weight:300;letter-spacing:0.06em}
+.dial-title{font-size:10px;color:var(--text-dim);letter-spacing:0.16em;text-transform:uppercase;margin-top:-20px}
+.dial-status{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--gold);letter-spacing:0.14em}
+.dial-dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:blink 0.7s ease-in-out infinite}
+.loader{width:190px;height:1px;background:var(--bg2);position:relative;overflow:hidden}
+.loader-bar{position:absolute;left:-100%;width:100%;height:100%;background:linear-gradient(90deg,transparent,var(--gold),transparent);animation:sweep 1.6s ease-in-out infinite}
+@keyframes sweep{0%{left:-100%}100%{left:100%}}
+.loader-label{font-size:9px;color:var(--text-muted);letter-spacing:0.14em;text-align:center;margin-top:4px}
+.photo-wrap{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:480px;height:100%;display:flex;align-items:flex-end;justify-content:center;opacity:0;transition:opacity 0.7s ease;pointer-events:none;z-index:5}
+.photo-wrap.show{opacity:1}
+.photo-wrap img{height:92%;width:auto;object-fit:contain;object-position:center bottom;filter:drop-shadow(0 20px 60px rgba(0,0,0,0.85))}
+.photo-wrap::after{content:"";position:absolute;bottom:0;left:0;right:0;height:200px;background:linear-gradient(to top,rgba(0,0,0,0.9),transparent);pointer-events:none}
+.agent-glow{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:400px;height:300px;border-radius:50%;pointer-events:none;z-index:4;transition:opacity 0.6s ease;opacity:0;background:radial-gradient(ellipse,rgba(201,168,76,0.08) 0%,transparent 70%)}
+.agent-glow.on{opacity:1}
+.nameplate{position:absolute;bottom:68px;left:24px;z-index:20;opacity:0;transform:translateY(6px);transition:all 0.4s ease 0.3s}
+.nameplate.show{opacity:1;transform:translateY(0)}
+.nameplate-inner{background:rgba(6,6,10,0.88);border:1px solid var(--border);padding:9px 16px;backdrop-filter:blur(16px)}
+.np-name{font-family:"Syne",sans-serif;font-size:14px;font-weight:700;color:var(--gold);letter-spacing:0.07em}
+.np-title{font-size:9px;color:var(--text-dim);letter-spacing:0.12em;text-transform:uppercase;margin-top:3px}
+.speak-bars{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);display:flex;gap:4px;align-items:center;opacity:0;transition:opacity 0.3s;z-index:20}
+.speak-bars.active{opacity:1}
+.bar{width:3px;background:var(--gold);border-radius:2px;animation:wave 0.65s ease-in-out infinite}
+.bar:nth-child(1){height:6px;animation-delay:0s}.bar:nth-child(2){height:14px;animation-delay:0.1s}.bar:nth-child(3){height:22px;animation-delay:0.2s}.bar:nth-child(4){height:14px;animation-delay:0.3s}.bar:nth-child(5){height:6px;animation-delay:0.4s}
+@keyframes wave{0%,100%{transform:scaleY(.35);opacity:.5}50%{transform:scaleY(1);opacity:1}}
+.status-bar{position:absolute;top:16px;left:50%;transform:translateX(-50%);z-index:20;opacity:0;transition:opacity 0.3s;background:rgba(6,6,10,0.85);border:1px solid var(--border-dim);padding:5px 14px;backdrop-filter:blur(12px);font-size:10px;letter-spacing:0.14em;color:var(--text-dim);display:flex;align-items:center;gap:8px}
+.status-bar.show{opacity:1}
+.status-dot{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:blink 0.6s ease-in-out infinite}
+.mic-btn{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);width:52px;height:52px;border-radius:50%;background:var(--gold);border:none;color:var(--bg);font-size:20px;cursor:pointer;z-index:30;display:flex;align-items:center;justify-content:center;transition:all 0.2s;opacity:0;box-shadow:0 4px 20px rgba(201,168,76,0.25)}
+.mic-btn.show{opacity:1}
+.mic-btn:hover{background:var(--gold-light);transform:translateX(-50%) scale(1.06)}
+.mic-btn.listening{background:var(--red);animation:mic-pulse 1s ease-in-out infinite}
+@keyframes mic-pulse{0%,100%{box-shadow:0 4px 20px rgba(224,85,85,.3)}50%{box-shadow:0 4px 40px rgba(224,85,85,.65)}}
+.controls{position:absolute;bottom:24px;right:22px;display:flex;gap:9px;opacity:0;transition:opacity 0.4s;z-index:20}
+.controls.show{opacity:1}
+.ctrl{width:42px;height:42px;border-radius:50%;border:1px solid var(--border-dim);background:rgba(6,6,10,0.82);color:var(--text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:15px;transition:all 0.18s;backdrop-filter:blur(8px)}
+.ctrl:hover{border-color:var(--gold);color:var(--gold)}
+.ctrl.muted{border-color:var(--red);color:var(--red)}
+.ctrl.end{background:rgba(224,85,85,0.12);border-color:rgba(224,85,85,0.25);color:var(--red)}
+.ctrl.end:hover{background:rgba(224,85,85,0.22);border-color:var(--red)}
+.toast{position:absolute;top:70px;left:50%;transform:translateX(-50%);background:rgba(224,85,85,0.15);border:1px solid rgba(224,85,85,0.3);padding:8px 18px;font-size:11px;color:var(--red);letter-spacing:0.08em;z-index:50;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap}
+.toast.show{opacity:1}
+.panel{background:var(--bg1);border-left:1px solid var(--border-dim);display:flex;flex-direction:column;overflow:hidden}
+.panel-head{padding:14px 18px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:center}
+.panel-title{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-muted)}
+.panel-tabs{display:flex;border-bottom:1px solid var(--border-dim)}
+.ptab{flex:1;padding:9px;text-align:center;font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);cursor:pointer;border-bottom:2px solid transparent;transition:all 0.2s}
+.ptab.on{color:var(--gold);border-bottom-color:var(--gold)}
+.messages{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.messages::-webkit-scrollbar{width:2px}
+.messages::-webkit-scrollbar-thumb{background:var(--border)}
+.msg{display:flex;flex-direction:column;gap:3px}
+.msg.u{align-items:flex-end}.msg.a{align-items:flex-start}
+.msg-who{font-size:8px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted);padding:0 3px}
+.bubble{padding:8px 12px;font-size:11.5px;line-height:1.65;max-width:210px;word-wrap:break-word}
+.msg.u .bubble{background:rgba(201,168,76,0.09);border:1px solid rgba(201,168,76,0.16)}
+.msg.a .bubble{background:var(--bg2);border:1px solid var(--border-dim)}
+.typing{display:flex;gap:4px;align-items:center;padding:10px 12px}
+.typing-dot{width:5px;height:5px;border-radius:50%;background:var(--text-muted);animation:tdot 1.2s ease-in-out infinite}
+.typing-dot:nth-child(2){animation-delay:0.2s}.typing-dot:nth-child(3){animation-delay:0.4s}
+@keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:0.4}30%{transform:translateY(-5px);opacity:1}}
+.input-row{padding:12px 14px;border-top:1px solid var(--border-dim);display:flex;gap:8px}
+.chat-in{flex:1;background:var(--bg2);border:1px solid var(--border-dim);color:var(--text);padding:8px 11px;font-family:"DM Mono",monospace;font-size:11.5px;outline:none;resize:none;height:36px;transition:border-color 0.2s}
+.chat-in:focus{border-color:rgba(201,168,76,0.4)}
+.chat-in::placeholder{color:var(--text-muted)}
+.chat-in:disabled,.send:disabled{opacity:0.4;cursor:not-allowed}
+.send{background:var(--gold);color:var(--bg);border:none;width:36px;height:36px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:background 0.2s;flex-shrink:0}
+.send:hover{background:var(--gold-light)}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">MAESTRO<em>.ai</em></div>
+  <div class="topbar-mid"><div class="live-dot"></div><span>YOUR TEAM IS ONLINE</span></div>
+  <div class="topbar-right"><span id="timer">00:00</span><span style="color:var(--text-muted)">|</span><span>GOLD TIER</span></div>
+</div>
+<div class="layout">
+  <div class="sidebar"><div class="sidebar-label">Your Team</div><div id="agentList"></div></div>
+  <div class="stage" id="stage">
+    <div class="env env-marcus active" id="env-marcus"></div>
+    <div class="env env-lex" id="env-lex"></div>
+    <div class="env env-solo" id="env-solo"></div>
+    <div class="env env-jade" id="env-jade"></div>
+    <div class="env env-zara" id="env-zara"></div>
+    <div class="dial" id="dial">
+      <div class="rings"><div class="ring"></div><div class="ring"></div><div class="ring"></div>
+        <div class="dial-avatar"><img id="dial-img" src="" alt=""></div>
+      </div>
+      <div class="dial-name" id="dial-name">Marcus</div>
+      <div class="dial-title" id="dial-title">Artist Manager</div>
+      <div class="dial-status"><div class="dial-dot"></div><span id="dial-status">Connecting...</span></div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:center">
+        <div class="loader"><div class="loader-bar"></div></div>
+        <div class="loader-label" id="loader-label">Initialising...</div>
+      </div>
+    </div>
+    <div class="agent-glow" id="agentGlow"></div>
+    <div class="photo-wrap" id="photoWrap"><img id="agentPhoto" src="" alt=""></div>
+    <div class="status-bar" id="statusBar"><div class="status-dot"></div><span id="statusText">Thinking...</span></div>
+    <div class="nameplate" id="nameplate">
+      <div class="nameplate-inner"><div class="np-name" id="np-name">Marcus</div><div class="np-title" id="np-title">Artist Manager</div></div>
+    </div>
+    <div class="speak-bars" id="speakBars"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div></div>
+    <div class="toast" id="toast"></div>
+    <button class="mic-btn" id="micBtn" onclick="toggleMic()">&#127908;</button>
+    <div class="controls" id="controls">
+      <button class="ctrl" id="muteBtn" onclick="toggleMute()">&#128266;</button>
+      <button class="ctrl" id="micCtrl" onclick="toggleMic()">&#127908;</button>
+      <button class="ctrl end" onclick="endCall()">&#128245;</button>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><span class="panel-title">Transcript</span><span style="font-size:9px;color:var(--text-muted)">LIVE</span></div>
+    <div class="panel-tabs"><div class="ptab on">Chat</div><div class="ptab">Notes</div><div class="ptab">Files</div></div>
+    <div class="messages" id="messages"></div>
+    <div class="input-row">
+      <textarea class="chat-in" id="chatIn" placeholder="Type a message..." onkeydown="onKey(event)"></textarea>
+      <button class="send" id="sendBtn" onclick="sendMsg()">&#8593;</button>
+    </div>
+  </div>
+</div>
+<script>
+const API = 'http://localhost:8765';
+
+const AGENTS = [
+  {id:'marcus', name:'Marcus', title:'Artist Manager',       slug:'puppet-master',  voice:'am_michael', load:['Loading career data...','Pulling deal intelligence...','Reading your profile...']},
+  {id:'lex',    name:'Lex',    title:'Entertainment Lawyer', slug:'lex-cipher',      voice:'af_sky',     load:['Loading contract law...','Pulling IP databases...','Reading your profile...']},
+  {id:'solo',   name:'Solo',   title:'Radio & Playlist',     slug:'airwave',         voice:'am_adam',    load:['Loading radio markets...','Pulling playlist networks...','Reading your profile...']},
+  {id:'jade',   name:'Jade',   title:'Grants & Funding',     slug:'fund-phantom',    voice:'af_heart',   load:['Loading funding databases...','Pulling grant deadlines...','Reading your profile...']},
+  {id:'zara',   name:'Zara',   title:'Publicist',            slug:'signal-blaster',  voice:'af_heart',   load:['Loading media landscape...','Pulling press contacts...','Reading your profile...']}
+];
+
+let current = AGENTS[0];
+let connected = false;
+let busy = false;
+let muted = false;
+let micOn = false;
+let history = {};
+let secs = 0;
+
+let audioCtx = null;
+let activeSource = null;
+let audioQueue = [];
+let audioPlaying = false;
+
+AGENTS.forEach(a => { history[a.id] = []; });
+
+setInterval(() => {
+  secs++;
+  document.getElementById('timer').textContent =
+    String(Math.floor(secs/60)).padStart(2,'0') + ':' + String(secs%60).padStart(2,'0');
+}, 1000);
+
+document.getElementById('agentList').innerHTML = AGENTS.map((a,i) => `
+  <div class="agent-item ${i===0?'active':''}" id="item-${a.id}" onclick="pick('${a.id}')">
+    <div class="thumb-wrap"><img src="/agents/${a.id}.jpg" alt="${a.name}"></div>
+    <div class="thumb-info"><div class="thumb-name">${a.name}</div><div class="thumb-role">${a.title.split(' ')[0]}</div></div>
+    <div class="online-dot"></div>
+  </div>`).join('');
+
+connect(AGENTS[0]);
+
+function pick(id) {
+  if (!connected || busy) return;
+  const a = AGENTS.find(x => x.id === id);
+  if (!a || a.id === current.id) return;
+  stopAllAudio();
+  document.querySelectorAll('.agent-item').forEach(e => e.classList.remove('active'));
+  document.getElementById('item-' + id).classList.add('active');
+  connect(a);
+}
+
+function connect(agent) {
+  current = agent;
+  connected = false;
+  busy = false;
+  stopAllAudio();
+  hideCall();
+  document.querySelectorAll('.env').forEach(e => e.classList.remove('active'));
+  document.getElementById('env-' + agent.id).classList.add('active');
+  const dial = document.getElementById('dial');
+  dial.classList.remove('gone');
+  document.getElementById('dial-img').src = '/agents/' + agent.id + '.jpg';
+  document.getElementById('dial-name').textContent = agent.name;
+  document.getElementById('dial-title').textContent = agent.title;
+  document.getElementById('dial-status').textContent = 'Connecting...';
+  document.getElementById('loader-label').textContent = 'Initialising...';
+  let step = 0;
+  const iv = setInterval(() => {
+    if (step < agent.load.length) {
+      document.getElementById('loader-label').textContent = agent.load[step++];
+    } else {
+      clearInterval(iv);
+      document.getElementById('dial-status').textContent = 'Connected';
+      setTimeout(() => {
+        dial.classList.add('gone');
+        showCall(agent);
+        connected = true;
+        fetchGreeting(agent);
+      }, 400);
+    }
+  }, 700);
+}
+
+async function fetchGreeting(agent) {
+  setStatus('Connecting...', true);
+  const greetAgent = agent;
+  try {
+    const form = new FormData();
+    form.append('agent_id', greetAgent.slug);
+    form.append('tts', 'true');
+    const res = await fetch(API + '/api/greet', {method:'POST', body:form});
+    if (!res.ok) throw new Error('greet failed');
+    const data = await res.json();
+    const text = (data.reply || greetAgent.name + ' here. How can I help you today?').replace(/[#*_`~>]/g, '').trim();
+    if (current.id !== greetAgent.id) return;
+    setStatus('', false);
+    addMsg('a', text, greetAgent.name);
+    if (data.audio && !muted) playB64Audio(data.audio);
+  } catch(e) {
+    if (current.id !== greetAgent.id) return;
+    setStatus('', false);
+    addMsg('a', greetAgent.name + ' here. How can I help you today?', greetAgent.name);
+  }
+}
+
+async function sendMsg() {
+  const el = document.getElementById('chatIn');
+  const text = el.value.trim();
+  if (!text || !connected || busy) return;
+  el.value = '';
+  await sendToAgent(text);
+}
+
+function updateLiveMsg(text, who) {
+  let el = document.getElementById('live-msg');
+  if (!el) {
+    removeTyping();
+    const msgs = document.getElementById('messages');
+    const d = document.createElement('div');
+    d.className = 'msg a';
+    d.id = 'live-msg';
+    d.innerHTML = '<div class="msg-who">' + who + '</div><div class="bubble" id="live-bubble"></div>';
+    msgs.appendChild(d);
+  }
+  document.getElementById('live-bubble').textContent = text;
+  document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+}
+
+function removeLiveMsg() {
+  const el = document.getElementById('live-msg');
+  if (el) el.remove();
+}
+
+async function sendToAgent(userText) {
+  if (!connected || busy) return;
+  busy = true;
+  setInputEnabled(false);
+  stopAllAudio();
+  addMsg('u', userText, 'You');
+  showTyping();
+  setStatus('Thinking...', true);
+  const reqAgent = current;
+  try {
+    const form = new FormData();
+    form.append('agent_id', reqAgent.slug);
+    form.append('message', userText);
+    form.append('history', JSON.stringify(history[reqAgent.id]));
+    form.append('tts', 'true');
+    const res = await fetch(API + '/api/chat_stream', {method:'POST', body:form});
+    if (!res.ok) throw new Error('chat failed');
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      if (current.id !== reqAgent.id) { reader.cancel(); break; }
+      buffer += decoder.decode(value, {stream:true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const p = JSON.parse(line.slice(6));
+            if (p.type === 'text' && p.text) {
+              fullText += p.text;
+              updateLiveMsg(fullText.replace(/[#*_`~>]/g,'').trim(), reqAgent.name);
+            }
+            else if (p.type === 'done' && p.full_text && p.full_text.length > fullText.length) fullText = p.full_text;
+            else if (p.type === 'audio' && p.audio && !muted && current.id === reqAgent.id) playB64Audio(p.audio);
+          } catch(e) {}
+        }
+      }
+    }
+    if (current.id !== reqAgent.id) return;
+    const clean = fullText.replace(/[#*_`~>]/g, '').trim();
+    history[reqAgent.id].push({role:'user', content:userText});
+    history[reqAgent.id].push({role:'assistant', content:clean});
+    if (history[reqAgent.id].length > 40) history[reqAgent.id] = history[reqAgent.id].slice(-40);
+    removeLiveMsg();
+    removeTyping();
+    setStatus('', false);
+    addMsg('a', clean || 'Let me look into that for you.', reqAgent.name);
+    busy = false;
+    setInputEnabled(true);
+  } catch(e) {
+    if (current.id !== reqAgent.id) return;
+    removeTyping();
+    setStatus('', false);
+    showToast('Connection issue — is the server running?');
+    busy = false;
+    setInputEnabled(true);
+  }
+}
+
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+let audioUnlocked = false;
+document.addEventListener('click', function unlockAudio() {
+  audioUnlocked = true;
+  getAudioCtx();
+  if (audioQueue.length > 0 && !audioPlaying) drainAudioQueue();
+}, {once: true});
+
+function playB64Audio(b64) {
+  audioQueue.push(b64);
+  if (!audioPlaying) drainAudioQueue();
+}
+
+async function drainAudioQueue() {
+  if (!audioUnlocked) return;
+  if (audioQueue.length === 0) {
+    audioPlaying = false;
+    setSpeaking(false);
+    setStatus('', false);
+    return;
+  }
+  audioPlaying = true;
+  setSpeaking(true);
+  setStatus('Speaking...', true);
+  const b64 = audioQueue.shift();
+  try {
+    const ctx = getAudioCtx();
+    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+    const audioBuffer = await ctx.decodeAudioData(bytes.buffer);
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(ctx.destination);
+    activeSource = source;
+    source.onended = () => { activeSource = null; drainAudioQueue(); };
+    source.start(0);
+  } catch(e) {
+    activeSource = null;
+    drainAudioQueue();
+  }
+}
+
+function stopAllAudio() {
+  audioQueue = [];
+  audioPlaying = false;
+  if (activeSource) { try { activeSource.stop(); } catch(e) {} activeSource = null; }
+  setSpeaking(false);
+  setStatus('', false);
+}
+
+let mediaRec = null;
+let audioChunks = [];
+
+async function toggleMic() {
+  if (!connected || busy) return;
+  getAudioCtx();
+  micOn ? stopRecording() : startRecording();
+}
+
+async function startRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    audioChunks = [];
+    mediaRec = new MediaRecorder(stream);
+    mediaRec.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRec.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunks, {type:'audio/webm'});
+      await transcribeAndSend(blob);
+    };
+    mediaRec.start(100);
+    micOn = true;
+    document.getElementById('micBtn').classList.add('listening');
+    document.getElementById('micBtn').textContent = '⏹';
+    document.getElementById('micCtrl').classList.add('listening');
+    setStatus('Listening...', true);
+    stopAllAudio();
+  } catch(e) {
+    showToast('Microphone access denied');
+  }
+}
+
+function stopRecording() {
+  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+  micOn = false;
+  document.getElementById('micBtn').classList.remove('listening');
+  document.getElementById('micBtn').textContent = '🎤';
+  document.getElementById('micCtrl').classList.remove('listening');
+}
+
+async function transcribeAndSend(blob) {
+  setStatus('Transcribing...', true);
+  busy = true;
+  setInputEnabled(false);
+  try {
+    const form = new FormData();
+    form.append('audio', blob, 'voice.webm');
+    const res = await fetch(API + '/api/transcribe', {method:'POST', body:form});
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    const transcript = data.text || '';
+    busy = false;
+    setInputEnabled(true);
+    if (transcript.trim()) await sendToAgent(transcript.trim());
+    else { setStatus('', false); showToast('Could not hear you — try again'); }
+  } catch(e) {
+    setStatus('', false);
+    busy = false;
+    setInputEnabled(true);
+    showToast('Transcription failed');
+  }
+}
+
+function toggleMute() {
+  muted = !muted;
+  const btn = document.getElementById('muteBtn');
+  btn.textContent = muted ? '🔇' : '🔊';
+  btn.classList.toggle('muted', muted);
+  if (muted) stopAllAudio();
+}
+
+function endCall() {
+  stopAllAudio();
+  stopRecording();
+  hideCall();
+  connected = false;
+  busy = false;
+  document.querySelectorAll('.agent-item').forEach(e => e.classList.remove('active'));
+  const dial = document.getElementById('dial');
+  dial.classList.remove('gone');
+  document.getElementById('dial-img').src = '';
+  document.getElementById('dial-name').textContent = 'Maestro';
+  document.getElementById('dial-title').textContent = 'Your AI Team';
+  document.getElementById('dial-status').textContent = 'Call ended';
+  document.getElementById('loader-label').textContent = 'Select a team member to reconnect';
+}
+
+function showCall(a) {
+  document.getElementById('agentPhoto').src = '/agents/' + a.id + '.jpg';
+  document.getElementById('photoWrap').classList.add('show');
+  document.getElementById('np-name').textContent = a.name;
+  document.getElementById('np-title').textContent = a.title;
+  document.getElementById('nameplate').classList.add('show');
+  document.getElementById('controls').classList.add('show');
+  document.getElementById('micBtn').classList.add('show');
+}
+
+function hideCall() {
+  document.getElementById('photoWrap').classList.remove('show');
+  document.getElementById('nameplate').classList.remove('show');
+  document.getElementById('controls').classList.remove('show');
+  document.getElementById('micBtn').classList.remove('show');
+  document.getElementById('speakBars').classList.remove('active');
+  document.getElementById('agentGlow').classList.remove('on');
+  document.getElementById('statusBar').classList.remove('show');
+  document.getElementById('messages').innerHTML = '';
+}
+
+function setSpeaking(on) {
+  document.getElementById('speakBars').classList.toggle('active', on);
+  document.getElementById('agentGlow').classList.toggle('on', on);
+}
+
+function setStatus(text, show) {
+  const bar = document.getElementById('statusBar');
+  if (show && text) { document.getElementById('statusText').textContent = text; bar.classList.add('show'); }
+  else { bar.classList.remove('show'); }
+}
+
+function setInputEnabled(on) {
+  document.getElementById('chatIn').disabled = !on;
+  document.getElementById('sendBtn').disabled = !on;
+}
+
+function showTyping() {
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg a';
+  d.id = 'typing-indicator';
+  d.innerHTML = '<div class="msg-who">' + current.name + '</div><div class="bubble"><div class="typing"><div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div></div></div>';
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping() {
+  const t = document.getElementById('typing-indicator');
+  if (t) t.remove();
+}
+
+function addMsg(role, text, who) {
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  d.innerHTML = '<div class="msg-who">' + who + '</div><div class="bubble">' + text + '</div>';
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+function onKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+}
+</script>
+</body>
+</html>

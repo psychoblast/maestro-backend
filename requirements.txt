@@ -1,0 +1,15 @@
+anthropic==0.84.0
+fastapi==0.135.1
+httpx==0.28.1
+kokoro-onnx==0.5.0
+numpy==2.4.2
+onnxruntime==1.24.3
+openai-whisper==20250625
+pydantic==2.12.5
+pydantic_core==2.41.5
+python-multipart==0.0.20
+soundfile==0.13.1
+stripe==14.4.1
+torch==2.10.0
+twilio==9.10.3
+uvicorn==0.41.0

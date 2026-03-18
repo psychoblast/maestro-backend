@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="rgb(160, 93, 55)"/>
+      <stop offset="100%" stop-color="rgb(120, 53, 15)"/>
+    </linearGradient>
+    <linearGradient id="bust" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="rgb(224, 123, 181)" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="rgb(224, 123, 181)" stop-opacity="0.08"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="42%" r="38%">
+      <stop offset="0%"   stop-color="#E07BB5" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#E07BB5" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="circle"><circle cx="256" cy="256" r="254"/></clipPath>
+  </defs>
+
+  <!-- Background -->
+  <circle cx="256" cy="256" r="256" fill="url(#bg)"/>
+
+  <!-- Subtle radial glow -->
+  <circle cx="256" cy="256" r="256" fill="url(#glow)"/>
+
+  <!-- Bust / body silhouette -->
+  <ellipse cx="256" cy="440" rx="148" ry="90" fill="url(#bust)"/>
+  <rect x="108" y="380" width="296" height="132" fill="url(#bust)" clip-path="url(#circle)"/>
+
+  <!-- Shoulders arc -->
+  <path d="M 108 400 Q 180 340 256 330 Q 332 340 404 400" 
+        fill="none" stroke="#E07BB5" stroke-width="2" opacity="0.4"/>
+
+  <!-- Head circle -->
+  <circle cx="256" cy="210" r="112" fill="rgb(145, 78, 40)"/>
+  <circle cx="256" cy="210" r="112" fill="url(#bust)"/>
+
+  <!-- Gold ring around head -->
+  <circle cx="256" cy="210" r="118" fill="none" stroke="#E07BB5" stroke-width="3" opacity="0.6"/>
+
+  <!-- Subtle face features (minimalist) -->
+  <!-- Eyes -->
+  <circle cx="224" cy="200" r="7" fill="#E07BB5" opacity="0.7"/>
+  <circle cx="288" cy="200" r="7" fill="#E07BB5" opacity="0.7"/>
+  <!-- Nose hint -->
+  <path d="M 250 215 Q 256 228 262 215" fill="none" stroke="#E07BB5" stroke-width="2" opacity="0.4"/>
+  <!-- Mouth hint -->
+  <path d="M 238 238 Q 256 250 274 238" fill="none" stroke="#E07BB5" stroke-width="2.5" opacity="0.5"/>
+
+  <!-- Department accent line at bottom -->
+  <rect x="0" y="490" width="512" height="22" fill="#E07BB5" opacity="0.7" clip-path="url(#circle)"/>
+
+  <!-- Outer border ring -->
+  <circle cx="256" cy="256" r="250" fill="none" stroke="#E07BB5" stroke-width="4" opacity="0.3"/>
+
+  <!-- Initials watermark (subtle) -->
+  <text x="256" y="145" text-anchor="middle" dominant-baseline="middle"
+        font-family="Arial Black, sans-serif" font-size="52" font-weight="900"
+        fill="#E07BB5" opacity="0.15" letter-spacing="4">M</text>
+
+  <!-- Name at bottom -->
+  <text x="256" y="472" text-anchor="middle" dominant-baseline="middle"
+        font-family="Arial, sans-serif" font-size="28" font-weight="700"
+        fill="white" opacity="0.9" letter-spacing="3">MAX</text>
+</svg>
