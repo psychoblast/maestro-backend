@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maestro — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--gold:#C9A84C;--gold-light:#E8C96B;--bg:#06060A;--bg1:#0C0C12;--bg2:#14141C;--bg3:#1A1A24;--border:rgba(201,168,76,0.15);--border-dim:rgba(255,255,255,0.06);--text:#E8E6E0;--text-dim:#7A7870;--text-muted:#2E2E38;--green:#4EC994;--red:#E05555;--blue:#4E8EC9}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:"DM Mono",monospace;font-size:12px}
+a{color:inherit;text-decoration:none}
+
+/* Layout */
+.shell{display:grid;grid-template-columns:200px 1fr;grid-template-rows:50px 1fr;height:100vh}
+.topbar{grid-column:1/-1;height:50px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;background:rgba(6,6,10,0.97);border-bottom:1px solid var(--border-dim);z-index:100}
+.logo{font-family:"Cormorant Garamond",serif;font-size:19px;color:var(--gold);letter-spacing:0.14em}
+.logo em{color:var(--text-muted);font-style:normal;font-weight:300}
+.topbar-right{display:flex;align-items:center;gap:16px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em}
+.status-pill{display:flex;align-items:center;gap:6px}
+.dot{width:6px;height:6px;border-radius:50%}
+.dot.green{background:var(--green)}
+.dot.red{background:var(--red)}
+.dot.gold{background:var(--gold);animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* Sidebar */
+.sidebar{background:var(--bg1);border-right:1px solid var(--border-dim);padding:20px 0;overflow-y:auto}
+.sidebar::-webkit-scrollbar{width:0}
+.nav-section{font-size:8px;letter-spacing:0.22em;text-transform:uppercase;color:var(--text-muted);padding:0 16px 8px;margin-top:16px}
+.nav-section:first-child{margin-top:0}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;border-left:2px solid transparent;transition:all 0.15s;color:var(--text-dim);letter-spacing:0.06em}
+.nav-item:hover{background:rgba(255,255,255,0.03);color:var(--text)}
+.nav-item.active{background:rgba(201,168,76,0.05);border-left-color:var(--gold);color:var(--gold)}
+.nav-icon{width:14px;text-align:center;font-size:13px}
+
+/* Main content */
+.main{overflow-y:auto;padding:28px;background:var(--bg)}
+.main::-webkit-scrollbar{width:4px}
+.main::-webkit-scrollbar-thumb{background:var(--border)}
+
+/* Page sections */
+.page{display:none}
+.page.active{display:block}
+.page-title{font-family:"Cormorant Garamond",serif;font-size:26px;font-weight:300;color:var(--text);margin-bottom:4px}
+.page-sub{font-size:9px;color:var(--text-dim);letter-spacing:0.14em;text-transform:uppercase;margin-bottom:24px}
+
+/* Cards */
+.cards{display:grid;gap:16px;margin-bottom:24px}
+.cards-2{grid-template-columns:repeat(2,1fr)}
+.cards-3{grid-template-columns:repeat(3,1fr)}
+.cards-4{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--bg1);border:1px solid var(--border-dim);padding:18px 20px}
+.card-label{font-size:8px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px}
+.card-value{font-size:28px;font-family:"Cormorant Garamond",serif;font-weight:300;color:var(--text);line-height:1}
+.card-value.gold{color:var(--gold)}
+.card-value.green{color:var(--green)}
+.card-value.red{color:var(--red)}
+.card-sub{font-size:9px;color:var(--text-dim);margin-top:6px}
+
+/* Tables */
+.table-wrap{background:var(--bg1);border:1px solid var(--border-dim);overflow:hidden;margin-bottom:24px}
+.table-head{padding:12px 18px;border-bottom:1px solid var(--border-dim);display:flex;justify-content:space-between;align-items:center}
+.table-title{font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-muted)}
+table{width:100%;border-collapse:collapse}
+th{padding:8px 18px;text-align:left;font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-muted);border-bottom:1px solid var(--border-dim);font-weight:400}
+td{padding:10px 18px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:11px;color:var(--text-dim)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.02);color:var(--text)}
+.badge{display:inline-block;padding:2px 8px;font-size:8px;letter-spacing:0.1em;text-transform:uppercase}
+.badge.green{background:rgba(78,201,148,0.1);color:var(--green);border:1px solid rgba(78,201,148,0.2)}
+.badge.gold{background:rgba(201,168,76,0.1);color:var(--gold);border:1px solid rgba(201,168,76,0.2)}
+.badge.red{background:rgba(224,85,85,0.1);color:var(--red);border:1px solid rgba(224,85,85,0.2)}
+.badge.blue{background:rgba(78,142,201,0.1);color:var(--blue);border:1px solid rgba(78,142,201,0.2)}
+.badge.dim{background:rgba(255,255,255,0.04);color:var(--text-muted);border:1px solid var(--border-dim)}
+
+/* Forms */
+.form-section{background:var(--bg1);border:1px solid var(--border-dim);padding:24px;margin-bottom:24px}
+.form-section-title{font-size:9px;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-muted);margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border-dim)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.form-grid.full{grid-template-columns:1fr}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-group.span2{grid-column:span 2}
+label{font-size:8px;letter-spacing:0.16em;text-transform:uppercase;color:var(--text-muted)}
+input,select,textarea{background:var(--bg2);border:1px solid var(--border-dim);color:var(--text);padding:8px 12px;font-family:"DM Mono",monospace;font-size:11px;outline:none;width:100%;transition:border-color 0.2s}
+input:focus,select:focus,textarea:focus{border-color:rgba(201,168,76,0.4)}
+input::placeholder,textarea::placeholder{color:var(--text-muted)}
+select option{background:var(--bg2)}
+textarea{resize:vertical;min-height:80px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 20px;font-family:"DM Mono",monospace;font-size:10px;letter-spacing:0.1em;cursor:pointer;border:none;transition:all 0.2s}
+.btn-gold{background:var(--gold);color:var(--bg)}
+.btn-gold:hover{background:var(--gold-light)}
+.btn-outline{background:transparent;color:var(--text-dim);border:1px solid var(--border-dim)}
+.btn-outline:hover{border-color:var(--gold);color:var(--gold)}
+.btn-red{background:rgba(224,85,85,0.12);color:var(--red);border:1px solid rgba(224,85,85,0.25)}
+.btn-red:hover{background:rgba(224,85,85,0.22)}
+.form-actions{display:flex;gap:10px;margin-top:8px}
+
+/* Alert/toast */
+.alert{padding:10px 16px;font-size:10px;letter-spacing:0.08em;margin-bottom:16px;display:none}
+.alert.show{display:block}
+.alert.success{background:rgba(78,201,148,0.1);border:1px solid rgba(78,201,148,0.25);color:var(--green)}
+.alert.error{background:rgba(224,85,85,0.1);border:1px solid rgba(224,85,85,0.25);color:var(--red)}
+
+/* Agent grid */
+.agent-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:24px}
+.agent-card{background:var(--bg1);border:1px solid var(--border-dim);padding:16px;transition:border-color 0.2s}
+.agent-card:hover{border-color:rgba(201,168,76,0.2)}
+.agent-card-name{font-family:"Syne",sans-serif;font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px}
+.agent-card-title{font-size:9px;color:var(--text-dim);margin-bottom:10px}
+.agent-card-id{font-size:8px;color:var(--text-muted);letter-spacing:0.1em;margin-bottom:8px;font-family:"DM Mono",monospace}
+.agent-card-voice{font-size:8px;color:var(--text-muted)}
+
+/* System info */
+.sys-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+.sys-block{background:var(--bg1);border:1px solid var(--border-dim);padding:16px}
+.sys-block-title{font-size:8px;letter-spacing:0.18em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px}
+.sys-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.03);font-size:10px}
+.sys-row:last-child{border-bottom:none}
+.sys-key{color:var(--text-muted)}
+.sys-val{color:var(--text)}
+.sys-val.green{color:var(--green)}
+.sys-val.red{color:var(--red)}
+.sys-val.gold{color:var(--gold)}
+
+/* Log viewer */
+.log-box{background:var(--bg2);border:1px solid var(--border-dim);padding:14px;font-size:10px;line-height:1.7;color:var(--text-dim);height:240px;overflow-y:auto;font-family:"DM Mono",monospace;white-space:pre-wrap}
+.log-box::-webkit-scrollbar{width:3px}
+.log-box::-webkit-scrollbar-thumb{background:var(--border)}
+
+/* Spinner */
+.spinner{display:inline-block;width:12px;height:12px;border:1.5px solid var(--border-dim);border-top-color:var(--gold);border-radius:50%;animation:spin 0.7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Divider */
+.divider{height:1px;background:var(--border-dim);margin:20px 0}
+</style>
+</head>
+<body>
+<div class="shell">
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="logo">MAESTRO<em>.ai</em> <span style="font-size:10px;color:var(--text-muted);font-family:'DM Mono',monospace;letter-spacing:0.1em;margin-left:12px">ADMIN</span></div>
+    <div class="topbar-right">
+      <div class="status-pill"><div class="dot gold" id="healthDot"></div><span id="healthLabel">Checking...</span></div>
+      <span style="color:var(--text-muted)">|</span>
+      <span id="agentCount">— agents</span>
+      <span style="color:var(--text-muted)">|</span>
+      <span id="clockEl">00:00:00</span>
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="nav-section">Overview</div>
+    <div class="nav-item active" onclick="nav('dashboard')"><span class="nav-icon">◈</span>Dashboard</div>
+
+    <div class="nav-section">Artists</div>
+    <div class="nav-item" onclick="nav('artists')"><span class="nav-icon">♪</span>All Artists</div>
+    <div class="nav-item" onclick="nav('add-artist')"><span class="nav-icon">+</span>Add Artist</div>
+
+    <div class="nav-section">System</div>
+    <div class="nav-item" onclick="nav('agents')"><span class="nav-icon">◎</span>Agents</div>
+    <div class="nav-item" onclick="nav('usage')"><span class="nav-icon">◷</span>Usage & Costs</div>
+    <div class="nav-item" onclick="nav('system')"><span class="nav-icon">⊞</span>System</div>
+
+    <div class="nav-section">Help</div>
+    <div class="nav-item" onclick="nav('support')"><span class="nav-icon">?</span>Support</div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="main">
+
+    <!-- Dashboard -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">System overview</div>
+
+      <div class="cards cards-4" id="dashCards">
+        <div class="card"><div class="card-label">Status</div><div class="card-value green" id="dc-status">—</div><div class="card-sub">API server</div></div>
+        <div class="card"><div class="card-label">Agents</div><div class="card-value gold" id="dc-agents">—</div><div class="card-sub">Loaded</div></div>
+        <div class="card"><div class="card-label">TTS</div><div class="card-value" id="dc-tts">—</div><div class="card-sub">Kokoro engine</div></div>
+        <div class="card"><div class="card-label">Version</div><div class="card-value" id="dc-version">—</div><div class="card-sub">API</div></div>
+      </div>
+
+      <div class="table-wrap">
+        <div class="table-head"><span class="table-title">Recent Activity</span><span style="font-size:9px;color:var(--text-muted)" id="lastRefresh">—</span></div>
+        <table>
+          <thead><tr><th>Time</th><th>Event</th><th>Details</th></tr></thead>
+          <tbody id="activityLog">
+            <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:24px">Loading activity...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Artists -->
+    <div class="page" id="page-artists">
+      <div class="page-title">Artists</div>
+      <div class="page-sub">All registered artists</div>
+      <div class="alert" id="artists-alert"></div>
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="table-title">Artist Roster</span>
+          <button class="btn btn-outline" onclick="loadArtists()">↻ Refresh</button>
+        </div>
+        <table>
+          <thead><tr><th>Name</th><th>Tier</th><th>Genre</th><th>Location</th><th>Status</th></tr></thead>
+          <tbody id="artistsTable">
+            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Add Artist -->
+    <div class="page" id="page-add-artist">
+      <div class="page-title">Add Artist</div>
+      <div class="page-sub">Register a new artist profile</div>
+      <div class="alert" id="add-alert"></div>
+
+      <div class="form-section">
+        <div class="form-section-title">Artist Information</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Artist / Stage Name *</label>
+            <input type="text" id="f-name" placeholder="e.g. Nova Ray">
+          </div>
+          <div class="form-group">
+            <label>Real Name</label>
+            <input type="text" id="f-real-name" placeholder="Legal name">
+          </div>
+          <div class="form-group">
+            <label>Email *</label>
+            <input type="email" id="f-email" placeholder="artist@email.com">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <input type="text" id="f-phone" placeholder="+44 7700 000000">
+          </div>
+          <div class="form-group">
+            <label>Genre</label>
+            <select id="f-genre">
+              <option value="">Select genre</option>
+              <option>Pop</option><option>Hip-Hop / Rap</option><option>R&B / Soul</option>
+              <option>Electronic / Dance</option><option>Rock</option><option>Indie</option>
+              <option>Jazz</option><option>Classical</option><option>Folk / Acoustic</option>
+              <option>Afrobeats</option><option>Reggae / Dancehall</option><option>Latin</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Location</label>
+            <input type="text" id="f-location" placeholder="City, Country">
+          </div>
+          <div class="form-group">
+            <label>Tier</label>
+            <select id="f-tier">
+              <option value="developing">Developing</option>
+              <option value="emerging">Emerging</option>
+              <option value="established">Established</option>
+              <option value="major">Major</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Label / Management</label>
+            <input type="text" id="f-label" placeholder="Independent / Label name">
+          </div>
+          <div class="form-group span2">
+            <label>Bio / Notes</label>
+            <textarea id="f-bio" placeholder="Brief artist bio or internal notes..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Social & Streaming</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Spotify URL</label>
+            <input type="text" id="f-spotify" placeholder="https://open.spotify.com/artist/...">
+          </div>
+          <div class="form-group">
+            <label>Apple Music URL</label>
+            <input type="text" id="f-apple" placeholder="https://music.apple.com/...">
+          </div>
+          <div class="form-group">
+            <label>Instagram</label>
+            <input type="text" id="f-instagram" placeholder="@handle">
+          </div>
+          <div class="form-group">
+            <label>TikTok</label>
+            <input type="text" id="f-tiktok" placeholder="@handle">
+          </div>
+          <div class="form-group">
+            <label>YouTube Channel</label>
+            <input type="text" id="f-youtube" placeholder="https://youtube.com/@...">
+          </div>
+          <div class="form-group">
+            <label>Website</label>
+            <input type="text" id="f-website" placeholder="https://artistname.com">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn btn-gold" onclick="submitArtist()">+ Register Artist</button>
+        <button class="btn btn-outline" onclick="clearForm()">Clear</button>
+      </div>
+    </div>
+
+    <!-- Agents -->
+    <div class="page" id="page-agents">
+      <div class="page-title">Agents</div>
+      <div class="page-sub">All available AI agents</div>
+      <div class="agent-grid" id="agentGrid">
+        <div style="color:var(--text-muted);font-size:10px">Loading agents...</div>
+      </div>
+    </div>
+
+    <!-- Usage & Costs -->
+    <div class="page" id="page-usage">
+      <div class="page-title">Usage & Costs</div>
+      <div class="page-sub">Token usage and estimated spend</div>
+      <div class="cards cards-3">
+        <div class="card"><div class="card-label">Total Requests</div><div class="card-value gold" id="u-requests">—</div><div class="card-sub">All time</div></div>
+        <div class="card"><div class="card-label">Est. Tokens Used</div><div class="card-value" id="u-tokens">—</div><div class="card-sub">Input + Output</div></div>
+        <div class="card"><div class="card-label">Est. Cost</div><div class="card-value green" id="u-cost">—</div><div class="card-sub">USD (approx)</div></div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-head"><span class="table-title">Usage by Agent</span></div>
+        <table>
+          <thead><tr><th>Agent</th><th>Requests</th><th>Model</th><th>Voice</th><th>Est. Cost</th></tr></thead>
+          <tbody id="usageTable">
+            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">No usage data available yet</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- System -->
+    <div class="page" id="page-system">
+      <div class="page-title">System</div>
+      <div class="page-sub">Server health and configuration</div>
+
+      <div class="sys-grid">
+        <div class="sys-block">
+          <div class="sys-block-title">API Server</div>
+          <div class="sys-row"><span class="sys-key">Status</span><span class="sys-val green" id="s-status">—</span></div>
+          <div class="sys-row"><span class="sys-key">Version</span><span class="sys-val" id="s-version">—</span></div>
+          <div class="sys-row"><span class="sys-key">Host</span><span class="sys-val">localhost:8765</span></div>
+          <div class="sys-row"><span class="sys-key">Agents Loaded</span><span class="sys-val gold" id="s-agents">—</span></div>
+        </div>
+        <div class="sys-block">
+          <div class="sys-block-title">TTS Engine</div>
+          <div class="sys-row"><span class="sys-key">Engine</span><span class="sys-val">Kokoro</span></div>
+          <div class="sys-row"><span class="sys-key">Status</span><span class="sys-val" id="s-tts">—</span></div>
+          <div class="sys-row"><span class="sys-key">Model</span><span class="sys-val">voices-v1.0</span></div>
+          <div class="sys-row"><span class="sys-key">Voices Available</span><span class="sys-val gold">10+</span></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Server Log (tail)</div>
+        <div class="log-box" id="logBox">Loading log...</div>
+        <div style="margin-top:10px;display:flex;gap:10px">
+          <button class="btn btn-outline" onclick="loadLog()">↻ Refresh Log</button>
+          <button class="btn btn-outline" onclick="document.getElementById('logBox').scrollTop=99999">↓ Scroll to Bottom</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Support -->
+    <div class="page" id="page-support">
+      <div class="page-title">Support</div>
+      <div class="page-sub">Documentation and help</div>
+
+      <div class="form-section">
+        <div class="form-section-title">API Endpoints</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <div class="sys-row"><span class="sys-key" style="color:var(--green)">GET</span><span class="sys-val">/api/health — Server health check</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--green)">GET</span><span class="sys-val">/api/agents — List all agents</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--blue)">POST</span><span class="sys-val">/api/greet — Agent greeting (agent_id, tts)</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--blue)">POST</span><span class="sys-val">/api/chat_stream — Streaming chat (agent_id, message, history, tts)</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--blue)">POST</span><span class="sys-val">/api/transcribe — Voice transcription (audio file)</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--green)">GET</span><span class="sys-val">/api/tts?text=...&voice=... — Text-to-speech</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--blue)">POST</span><span class="sys-val">/api/artist — Register/update artist</span></div>
+          <div class="sys-row"><span class="sys-key" style="color:var(--green)">GET</span><span class="sys-val">/api/artist — List all artists</span></div>
+        </div>
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Quick Test</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Test Agent ID</label>
+            <input type="text" id="test-agent" placeholder="puppet-master" value="puppet-master">
+          </div>
+          <div class="form-group">
+            <label>Test Message</label>
+            <input type="text" id="test-msg" placeholder="Hello, who are you?" value="Hello, who are you?">
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-gold" onclick="quickTest()">▶ Run Test</button>
+        </div>
+        <div id="test-result" style="margin-top:14px;padding:12px;background:var(--bg2);border:1px solid var(--border-dim);font-size:10px;line-height:1.7;color:var(--text-dim);display:none;white-space:pre-wrap;max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<script>
+const API = 'http://localhost:8765';
+let activityLog = [];
+
+// Clock
+setInterval(() => {
+  const now = new Date();
+  document.getElementById('clockEl').textContent =
+    [now.getHours(), now.getMinutes(), now.getSeconds()].map(n => String(n).padStart(2,'0')).join(':');
+}, 1000);
+
+// Navigation
+function nav(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (page === 'artists') loadArtists();
+  if (page === 'agents') loadAgents();
+  if (page === 'system') { loadSystemInfo(); loadLog(); }
+}
+
+// Health check
+async function checkHealth() {
+  try {
+    const res = await fetch(API + '/api/health');
+    const data = await res.json();
+    const ok = data.status === 'ok';
+    document.getElementById('healthDot').className = 'dot ' + (ok ? 'green' : 'red');
+    document.getElementById('healthLabel').textContent = ok ? 'Online' : 'Error';
+    document.getElementById('agentCount').textContent = (data.agents || '—') + ' agents';
+    // Dashboard cards
+    document.getElementById('dc-status').textContent = ok ? 'Online' : 'Error';
+    document.getElementById('dc-status').className = 'card-value ' + (ok ? 'green' : 'red');
+    document.getElementById('dc-agents').textContent = data.agents || '—';
+    document.getElementById('dc-tts').textContent = data.kokoro ? 'Ready' : 'Unavailable';
+    document.getElementById('dc-tts').className = 'card-value ' + (data.kokoro ? 'green' : 'red');
+    document.getElementById('dc-version').textContent = data.version || '—';
+    // System page
+    document.getElementById('s-status').textContent = ok ? 'Running' : 'Error';
+    document.getElementById('s-version').textContent = data.version || '—';
+    document.getElementById('s-agents').textContent = data.agents || '—';
+    document.getElementById('s-tts').textContent = data.kokoro ? 'Loaded' : 'Unavailable';
+    document.getElementById('s-tts').className = 'sys-val ' + (data.kokoro ? 'green' : 'red');
+    logActivity('Health Check', 'OK — ' + data.agents + ' agents, Kokoro: ' + (data.kokoro ? 'yes' : 'no'));
+  } catch(e) {
+    document.getElementById('healthDot').className = 'dot red';
+    document.getElementById('healthLabel').textContent = 'Offline';
+    logActivity('Health Check', 'Failed — server unreachable');
+  }
+}
+
+function logActivity(event, details) {
+  const now = new Date().toLocaleTimeString();
+  activityLog.unshift({time: now, event, details});
+  if (activityLog.length > 20) activityLog.pop();
+  const tbody = document.getElementById('activityLog');
+  if (tbody) {
+    tbody.innerHTML = activityLog.map(a =>
+      `<tr><td style="color:var(--text-muted)">${a.time}</td><td>${a.event}</td><td>${a.details}</td></tr>`
+    ).join('');
+  }
+  document.getElementById('lastRefresh').textContent = 'Last updated: ' + now;
+}
+
+// Load Artists
+async function loadArtists() {
+  const tbody = document.getElementById('artistsTable');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px"><span class="spinner"></span> Loading...</td></tr>';
+  try {
+    const res = await fetch(API + '/api/artist');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const artists = data.artists || data || [];
+    if (!artists.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">No artists registered yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = artists.map(a => `
+      <tr>
+        <td style="color:var(--text)">${a.name || '—'}</td>
+        <td><span class="badge ${tierBadge(a.tier)}">${a.tier || 'developing'}</span></td>
+        <td>${a.genre || '—'}</td>
+        <td>${a.location || '—'}</td>
+        <td><span class="badge green">Active</span></td>
+      </tr>`).join('');
+    logActivity('Artists', 'Loaded ' + artists.length + ' artist(s)');
+  } catch(e) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--red);padding:24px">Failed to load: ' + e.message + '</td></tr>';
+    showAlert('artists-alert', 'error', 'Could not load artists: ' + e.message);
+  }
+}
+
+function tierBadge(tier) {
+  if (!tier) return 'dim';
+  const map = {developing:'dim', emerging:'blue', established:'gold', major:'green'};
+  return map[tier.toLowerCase()] || 'dim';
+}
+
+// Add Artist
+async function submitArtist() {
+  const name = document.getElementById('f-name').value.trim();
+  const email = document.getElementById('f-email').value.trim();
+  if (!name || !email) { showAlert('add-alert','error','Name and email are required.'); return; }
+  const payload = {
+    name, email,
+    real_name: document.getElementById('f-real-name').value.trim(),
+    phone: document.getElementById('f-phone').value.trim(),
+    genre: document.getElementById('f-genre').value,
+    location: document.getElementById('f-location').value.trim(),
+    tier: document.getElementById('f-tier').value,
+    label: document.getElementById('f-label').value.trim(),
+    bio: document.getElementById('f-bio').value.trim(),
+    spotify: document.getElementById('f-spotify').value.trim(),
+    apple_music: document.getElementById('f-apple').value.trim(),
+    instagram: document.getElementById('f-instagram').value.trim(),
+    tiktok: document.getElementById('f-tiktok').value.trim(),
+    youtube: document.getElementById('f-youtube').value.trim(),
+    website: document.getElementById('f-website').value.trim(),
+  };
+  try {
+    const form = new FormData();
+    Object.entries(payload).forEach(([k,v]) => { if(v) form.append(k, v); });
+    const res = await fetch(API + '/api/artist', {method:'POST', body:form});
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    showAlert('add-alert','success','Artist "' + name + '" registered successfully.');
+    logActivity('Add Artist', name + ' (' + email + ')');
+    clearForm();
+  } catch(e) {
+    showAlert('add-alert','error','Failed to register artist: ' + e.message);
+  }
+}
+
+function clearForm() {
+  ['f-name','f-real-name','f-email','f-phone','f-location','f-label','f-bio','f-spotify','f-apple','f-instagram','f-tiktok','f-youtube','f-website'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('f-genre').value = '';
+  document.getElementById('f-tier').value = 'developing';
+}
+
+// Load Agents
+async function loadAgents() {
+  const grid = document.getElementById('agentGrid');
+  grid.innerHTML = '<div style="color:var(--text-muted);font-size:10px"><span class="spinner"></span> Loading agents...</div>';
+  try {
+    const res = await fetch(API + '/api/agents');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const agents = data.agents || data || [];
+    grid.innerHTML = agents.map(a => `
+      <div class="agent-card">
+        <div class="agent-card-name">${a.name || a.id}</div>
+        <div class="agent-card-title">${a.title || ''}</div>
+        <div class="agent-card-id">${a.id}</div>
+        <div class="agent-card-voice">Voice: ${a.voice || '—'}</div>
+        ${a.specialty ? '<div style="font-size:8px;color:var(--text-muted);margin-top:6px">' + a.specialty + '</div>' : ''}
+      </div>`).join('');
+    logActivity('Agents', 'Loaded ' + agents.length + ' agent(s)');
+  } catch(e) {
+    grid.innerHTML = '<div style="color:var(--red);font-size:10px">Failed to load agents: ' + e.message + '</div>';
+  }
+}
+
+// System info
+async function loadSystemInfo() {
+  await checkHealth();
+}
+
+async function loadLog() {
+  const box = document.getElementById('logBox');
+  box.textContent = 'Loading...';
+  try {
+    const res = await fetch(API + '/api/health');
+    const data = await res.json();
+    box.textContent = JSON.stringify(data, null, 2) + '\n\n[Log tail not available via API — check /tmp/maestro.log on the server]';
+  } catch(e) {
+    box.textContent = 'Could not reach server: ' + e.message;
+  }
+}
+
+// Quick test
+async function quickTest() {
+  const agentId = document.getElementById('test-agent').value.trim() || 'puppet-master';
+  const msg = document.getElementById('test-msg').value.trim() || 'Hello';
+  const result = document.getElementById('test-result');
+  result.style.display = 'block';
+  result.textContent = 'Sending request...';
+  try {
+    const form = new FormData();
+    form.append('agent_id', agentId);
+    form.append('tts', 'false');
+    const res = await fetch(API + '/api/greet', {method:'POST', body:form});
+    const data = await res.json();
+    result.textContent = JSON.stringify(data, null, 2);
+    logActivity('Quick Test', agentId + ': ' + (data.reply || '').substring(0, 60) + '...');
+  } catch(e) {
+    result.textContent = 'Error: ' + e.message;
+  }
+}
+
+// Alert helper
+function showAlert(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = 'alert ' + type + ' show';
+  el.textContent = msg;
+  setTimeout(() => el.classList.remove('show'), 5000);
+}
+
+// Init
+checkHealth();
+setInterval(checkHealth, 30000);
+</script>
+</body>
+</html>
