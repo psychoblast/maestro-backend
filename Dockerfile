@@ -13,23 +13,21 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy Kokoro model files (large — separate layer so code changes don't re-copy them)
-COPY kokoro-v1.0.onnx voices-v1.0.bin ./
-
 # Copy application code and static assets
 COPY main.py .
 COPY static/ ./static/
 COPY skills/ ./skills/
 COPY data/ ./data/
 
-# Copy knowledge base if present (optional — won't fail if missing)
+# Copy knowledge base if present (optional)
 COPY KNOWLEDGE.md* ./
 
-# Runtime data dirs (SQLite DB and audio cache) — use a Railway volume for persistence
+# Runtime data dirs (SQLite DB and audio cache)
 RUN mkdir -p audio_cache static/temp_audio data/artists
 
 EXPOSE 8765
 
 ENV MAESTRO_DIR=/app
 
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8765"]
+# $PORT is injected by Railway; falls back to 8765 for local use
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8765}"]
