@@ -33,6 +33,10 @@ KNOWLEDGE_BASE= Path(os.environ.get("KNOWLEDGE_BASE", _BASE / "KNOWLEDGE.md"))
 AUDIO_CACHE   = Path(os.environ.get("AUDIO_CACHE_DIR",_BASE / "audio_cache"))
 AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
 
+# Cloud integrations (optional — graceful degradation when absent)
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
+
 # Sync client for non-streaming endpoints, async client for streaming
 client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
@@ -543,10 +547,12 @@ def get_kokoro():
     return _kokoro if _kokoro_available else None
 
 async def synthesize_speech(text: str, voice: str) -> Optional[bytes]:
-    """Synthesize text → WAV bytes. Serialized via lock (Kokoro not thread-safe)."""
-    kokoro = get_kokoro()
-    if not kokoro or not text.strip():
+    """Synthesize text → WAV bytes. Uses Kokoro locally, ElevenLabs on cloud."""
+    if not text.strip():
         return None
+    kokoro = get_kokoro()
+    if not kokoro:
+        return await _synthesize_elevenlabs(text, voice)
 
     cache_key  = hashlib.md5(f"{voice}:1.1:{text}".encode()).hexdigest()
     cache_file = AUDIO_CACHE / f"{cache_key}.wav"
@@ -573,6 +579,74 @@ async def synthesize_speech(text: str, voice: str) -> Optional[bytes]:
         except Exception as e:
             print(f"[TTS] error: {e}")
             return None
+
+# ── ElevenLabs TTS (cloud fallback) ────────────────────────────────────────────
+# Maps Kokoro voice prefix → ElevenLabs pre-made voice ID
+_EL_VOICES = {
+    "af": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — American female
+    "am": "pNInz6obpgDQGcFmaJgB",  # Adam     — American male
+    "bf": "XB0fDUnXU5powFXDhCwa",  # Charlotte — British female
+    "bm": "onwK4e9ZLuTAKqWW03F9",  # Daniel   — British male
+    "ef": "LcfcDJNUP1GQjkzn1xUU",  # Emily    — European female
+    "em": "GBv7mTt0atIp3Br8iCZE",  # Thomas   — European male
+    "ff": "XB0fDUnXU5powFXDhCwa",  # Charlotte — French female
+    "hf": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — Hindi female
+    "hm": "pNInz6obpgDQGcFmaJgB",  # Adam     — Hindi male
+    "if": "LcfcDJNUP1GQjkzn1xUU",  # Emily    — Italian female
+    "im": "GBv7mTt0atIp3Br8iCZE",  # Thomas   — Italian male
+    "jf": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — Japanese female
+    "jm": "TxGEqnHWrfWFTfGW9XjX",  # Josh     — Japanese male
+    "pf": "XB0fDUnXU5powFXDhCwa",  # Charlotte — Polish female
+    "pm": "onwK4e9ZLuTAKqWW03F9",  # Daniel   — Polish male
+    "zf": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — Chinese female
+    "zm": "pNInz6obpgDQGcFmaJgB",  # Adam     — Chinese male
+}
+
+def _pcm_to_wav(pcm_bytes: bytes, sr: int = 24000) -> bytes:
+    """Wrap 16-bit PCM bytes in a WAV container."""
+    import struct
+    channels, sw = 1, 2
+    buf = io.BytesIO()
+    buf.write(b"RIFF")
+    buf.write(struct.pack("<I", 36 + len(pcm_bytes)))
+    buf.write(b"WAVEfmt ")
+    buf.write(struct.pack("<IHHIIHH", 16, 1, channels, sr,
+                          sr * channels * sw, channels * sw, sw * 8))
+    buf.write(b"data")
+    buf.write(struct.pack("<I", len(pcm_bytes)))
+    buf.write(pcm_bytes)
+    return buf.getvalue()
+
+async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
+    """ElevenLabs TTS — returns WAV bytes via PCM output. Cloud fallback for Kokoro."""
+    if not ELEVENLABS_API_KEY or not text.strip():
+        return None
+    prefix   = voice[:2] if len(voice) >= 2 else "am"
+    voice_id = _EL_VOICES.get(prefix, "pNInz6obpgDQGcFmaJgB")
+
+    cache_key  = hashlib.md5(f"el:{voice_id}:{text}".encode()).hexdigest()
+    cache_file = AUDIO_CACHE / f"{cache_key}.wav"
+    if cache_file.exists():
+        return cache_file.read_bytes()
+
+    try:
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}?output_format=pcm_24000"
+        headers = {"xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json"}
+        body = {
+            "text": text,
+            "model_id": "eleven_turbo_v2",
+            "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
+        }
+        async with httpx.AsyncClient(timeout=30) as cl:
+            r = await cl.post(url, json=body, headers=headers)
+            r.raise_for_status()
+        wav = _pcm_to_wav(r.content, sr=24000)
+        cache_file.write_bytes(wav)
+        print(f"[TTS] ElevenLabs OK: {len(wav)} bytes")
+        return wav
+    except Exception as e:
+        print(f"[TTS] ElevenLabs error: {e}")
+        return None
 
 async def tts(text: str, voice: str) -> Optional[bytes]:
     """Strip markdown, then synthesize."""
@@ -1086,12 +1160,31 @@ async def tts_endpoint(text: str, voice: str = "am_michael"):
 
 @app.get("/api/tts/status")
 async def tts_status():
-    """Returns whether Kokoro TTS is warmed up and ready for voice calls."""
-    return {"ready": _kokoro_available is True}
+    """Returns whether TTS is ready. True if Kokoro loaded OR ElevenLabs key present."""
+    kokoro_ready = _kokoro_available is True
+    el_ready     = bool(ELEVENLABS_API_KEY)
+    return {"ready": kokoro_ready or el_ready, "engine": "kokoro" if kokoro_ready else ("elevenlabs" if el_ready else "none")}
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "version": "2.1.0", "kokoro": get_kokoro() is not None, "agents": len(AGENTS)}
+    tts_engine = "kokoro" if get_kokoro() else ("elevenlabs" if ELEVENLABS_API_KEY else "none")
+    return {"status": "ok", "version": "2.2.0", "tts": tts_engine, "agents": len(AGENTS)}
+
+# Agent photo route: redirects to Cloudinary when configured, else serves local file.
+# Must be registered BEFORE the static mount so it takes priority for /static/agents/*.
+@app.get("/static/agents/{slug}")
+async def agent_photo(slug: str):
+    from fastapi.responses import RedirectResponse, FileResponse
+    if CLOUDINARY_CLOUD_NAME:
+        # Strip query params / extensions for public_id lookup
+        public_id = slug.split("?")[0]          # drop ?v=4 etc.
+        base       = public_id.rsplit(".", 1)[0] # drop .jpg
+        url = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/agents/{base}.jpg"
+        return RedirectResponse(url=url, status_code=302)
+    img_path = _BASE / "static" / "agents" / slug.split("?")[0]
+    if img_path.exists():
+        return FileResponse(img_path)
+    raise HTTPException(status_code=404, detail="Photo not found")
 
 app.mount("/static", StaticFiles(directory=str(_BASE / "static"), html=True), name="static")
 
