@@ -17,6 +17,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse as _RedirectResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 import anthropic
 import httpx
@@ -751,8 +753,20 @@ def _check_env():
 _check_env()
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Maestro", version="2.1.0")
+app = FastAPI(title="Maestro", version="2.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+class _CloudinaryPhotoMiddleware(BaseHTTPMiddleware):
+    """Redirect /static/agents/* to Cloudinary CDN when CLOUDINARY_CLOUD_NAME is set."""
+    async def dispatch(self, request, call_next):
+        if CLOUDINARY_CLOUD_NAME and request.url.path.startswith("/static/agents/"):
+            filename = request.url.path.split("/static/agents/", 1)[1].split("?")[0]
+            base = filename.rsplit(".", 1)[0]  # strip .jpg
+            cdn = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/agents/{base}.jpg"
+            return _RedirectResponse(url=cdn, status_code=302)
+        return await call_next(request)
+
+app.add_middleware(_CloudinaryPhotoMiddleware)
 
 # ── Conversation history DB ────────────────────────────────────────────────────
 DB_PATH  = Path(os.environ.get("DB_PATH", _BASE / "memory.db"))
@@ -1169,22 +1183,6 @@ async def tts_status():
 async def health():
     tts_engine = "kokoro" if get_kokoro() else ("elevenlabs" if ELEVENLABS_API_KEY else "none")
     return {"status": "ok", "version": "2.2.0", "tts": tts_engine, "agents": len(AGENTS)}
-
-# Agent photo route: redirects to Cloudinary when configured, else serves local file.
-# Must be registered BEFORE the static mount so it takes priority for /static/agents/*.
-@app.get("/static/agents/{slug}")
-async def agent_photo(slug: str):
-    from fastapi.responses import RedirectResponse, FileResponse
-    if CLOUDINARY_CLOUD_NAME:
-        # Strip query params / extensions for public_id lookup
-        public_id = slug.split("?")[0]          # drop ?v=4 etc.
-        base       = public_id.rsplit(".", 1)[0] # drop .jpg
-        url = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/agents/{base}.jpg"
-        return RedirectResponse(url=url, status_code=302)
-    img_path = _BASE / "static" / "agents" / slug.split("?")[0]
-    if img_path.exists():
-        return FileResponse(img_path)
-    raise HTTPException(status_code=404, detail="Photo not found")
 
 app.mount("/static", StaticFiles(directory=str(_BASE / "static"), html=True), name="static")
 
