@@ -324,14 +324,27 @@ _RULES_SHARED = """
 EXPERT CALL RULES:
 1. You are the expert. Speak with full authority. Never defer, never hedge.
 2. Never repeat anything from a previous turn. The artist remembers. Build forward.
-3. Always reference the artist's name, genre, and situation from their profile.
+3. Use the artist's profile for context. Only mention their genre, stats, or background when directly relevant to their question — never recite it unprompted.
 4. CONVERSATION CONTINUITY: If the conversation history contains prior messages, you are RESUMING an existing conversation. Do NOT introduce yourself by name or title. Continue naturally from where you left off. Only introduce yourself on the very first interaction when there is zero prior history.
-5. ROUTING — CRITICAL: When handing off to a specialist, use this EXACT format:
-   "I'm handing you to [FIRST NAME], our [TITLE]. [NAME], meet [ARTIST NAME] — [one sentence
-   of specific context the new agent needs]. Take it from here."
-   Example: "I'm handing you to Lex, our Entertainment Lawyer. Lex, meet Jordan —
-   they've got a 360 deal offer from a mid-size label they need reviewed urgently. Take it from here."
-   This exact phrase "I'm handing you to" triggers the system switch. Use it every time.
+5. ROUTING — CRITICAL: When a specialist from the AGENT ROSTER is needed, end your response with EXACTLY this sentence and nothing after it:
+   "I'll hand you over to [FIRST NAME], our [TITLE]. When you're ready, click the button below to be connected."
+   Then STOP completely. Do not ask follow-up questions. Do not continue.
+   The exact phrase "hand you over to" triggers the routing system — use it precisely.
+   Use the AGENT ROSTER below to choose the right specialist and their exact first name and title.
+
+AGENT ROSTER (routing reference):
+Marcus — Artist Manager | Lex — Entertainment Lawyer | Ray — Performance Rights
+Cleo — Neighbouring Rights | Finn — Mechanical Royalties | Reed — Music Publisher
+Victor — Business Manager | Nadia — Accountant | Jade — Grants & Funding
+Mo — Monetization | Tommy — Label Services | Zara — Publicist
+Kai — Digital Marketing | Nia — Brand Partnerships | Solo — Radio & Playlist
+Aria — Fan Engagement | Max — Merchandise | Store — Fan Store | Pen — Content Creation
+Press — Media Monitor | Ray B — Booking Agent | Knox — Booking Agent
+Miles — Tour Manager | Coach — Performance Coach | Luna — AI Visuals
+Diego — Brand Designer | Cree — Creative Director | Reel — Music Video
+Sync — Sync Licensing | Scout — A&R | Beat — Production | Nova — International
+Collab — Networking | Prof — Education | Data — Analytics | Audio — Quality Control
+Neo — AI Tools | Maya — Wellness | Doc — Royalty Recovery | Cal — Scheduling
 """
 
 # Voice mode: 150-word hard cap, zero formatting, fast sharp answers
@@ -404,13 +417,13 @@ for _a in AGENTS:
 _ROUTE_KEYS = sorted(_ROUTE_LOOKUP.keys(), key=len, reverse=True)
 
 _ROUTING_TRIGGERS = [
-    # New canonical trigger (matches the new handoff wording)
+    # Primary canonical trigger — matches new button-handoff wording
+    "hand you over to", "i'll hand you over to", "i will hand you over to",
+    # Legacy triggers kept for safety
     "i'm handing you to", "i am handing you to", "handing you to",
-    # Legacy triggers kept for safety — Marcus may still use these occasionally
     "routing you to", "connecting you with", "switching you to",
     "i'm routing", "i am routing", "let me connect you", "i'll connect you",
     "passing you to", "transfer you to", "handing this to",
-    "speak to", "talk to", "loop in", "bring in",
     "routed you to", "connected you with", "switched you to",
     "transferred you to", "handed you to", "passed you to",
 ]
@@ -693,6 +706,23 @@ def _ensure_db():
 
 import threading as _threading
 
+async def _get_message_count(artist_id: str, agent_id: str) -> int:
+    """Return saved message count for an artist+agent pair (checks DB directly)."""
+    if not artist_id or not agent_id:
+        return 0
+    def _count():
+        conn = sqlite3.connect(str(DB_PATH))
+        cur  = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM messages WHERE artist_id=? AND agent_id=?",
+            (artist_id, agent_id),
+        )
+        n = cur.fetchone()[0]
+        conn.close()
+        return n
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _count)
+
 async def _save_exchange(artist_id: str, agent_id: str, user_msg: str, assistant_msg: str):
     """Persist one user+assistant exchange; prune to 40 most recent rows per pair."""
     if not artist_id or not user_msg.strip() or not assistant_msg.strip():
@@ -892,8 +922,17 @@ async def chat_stream(req: ChatStreamRequest):
     except Exception:
         history_list = []
 
-    do_tts        = tts_on.lower() == "true"
-    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=len(history_list) > 0)
+    do_tts = tts_on.lower() == "true"
+
+    # For greeting pings, verify history from DB directly — don't trust client-provided
+    # history list, which may be empty on first open even if the artist profile exists.
+    if message == "__greet__":
+        db_count  = await _get_message_count(artist_id, agent_id)
+        has_history = db_count > 0
+    else:
+        has_history = len(history_list) > 0
+
+    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=has_history)
 
     # Use tighter history cap for voice (faster, cheaper); wider for text (more context)
     history_cap = HISTORY_CAP_VOICE if do_tts else HISTORY_CAP_TEXT
@@ -1015,11 +1054,13 @@ async def chat_stream(req: ChatStreamRequest):
 
         route = detect_routing(full_text)
         if route:
+            slug = route["name"].lower().replace(" ", "-")
             yield sse({
                 "type":        "route",
                 "agent_id":    route["id"],
                 "agent_name":  route["name"],
                 "agent_title": route["title"],
+                "agent_slug":  slug,
             })
         yield sse({"type": "done", "full_text": full_text})
 
@@ -1042,6 +1083,11 @@ async def tts_endpoint(text: str, voice: str = "am_michael"):
     if audio_bytes:
         return Response(content=audio_bytes, media_type="audio/wav")
     return JSONResponse({"error": "TTS unavailable"}, status_code=503)
+
+@app.get("/api/tts/status")
+async def tts_status():
+    """Returns whether Kokoro TTS is warmed up and ready for voice calls."""
+    return {"ready": _kokoro_available is True}
 
 @app.get("/api/health")
 async def health():

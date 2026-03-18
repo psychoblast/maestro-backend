@@ -7,6 +7,7 @@ voices-v1.0.bin
 memory.db
 audio_cache/
 static/temp_audio/
+data/artists/*.json
 __pycache__/
 *.pyc
 *.pyo
