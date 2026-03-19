@@ -753,7 +753,7 @@ def _check_env():
 _check_env()
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Maestro", version="2.2.1")
+app = FastAPI(title="Playmaker", version="2.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class _CloudinaryPhotoMiddleware(BaseHTTPMiddleware):
