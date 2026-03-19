@@ -18,7 +18,7 @@ The email address of every person who buys from the store is worth more than 1,0
 
 ## Fan Page Components
 
-ARTIST PAGE (future Maestro domain):
+ARTIST PAGE (future Playmaker domain):
 - Artist bio and photo
 - Latest release with streaming links
 - Upcoming shows and ticket links

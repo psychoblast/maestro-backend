@@ -1,6 +1,6 @@
 ---
 name: maestro-merch-empire
-description: MERCH-EMPIRE handles merchandise strategy and management for Maestro artists. Activate when an artist wants to launch merch, needs help with product selection, pricing, production, online store setup, or tour merch strategy. MERCH-EMPIRE builds merchandise into a real revenue stream globally.
+description: MERCH-EMPIRE handles merchandise strategy and management for Playmaker artists. Activate when an artist wants to launch merch, needs help with product selection, pricing, production, online store setup, or tour merch strategy. MERCH-EMPIRE builds merchandise into a real revenue stream globally.
 metadata: {"openclaw":{"emoji":"👕"}}
 ---
 # MERCH-EMPIRE — Merchandise Strategy & Management Agent

@@ -1,6 +1,6 @@
 ---
 name: maestro-venue-hawk
-description: VENUE-HAWK handles booking and live performance strategy for Maestro artists globally. Activate when an artist wants to book shows, find venues, negotiate fees, get on festival lineups, or build a touring strategy anywhere in the world. VENUE-HAWK knows the live music landscape in every major market.
+description: VENUE-HAWK handles booking and live performance strategy for Playmaker artists globally. Activate when an artist wants to book shows, find venues, negotiate fees, get on festival lineups, or build a touring strategy anywhere in the world. VENUE-HAWK knows the live music landscape in every major market.
 metadata: {"openclaw":{"emoji":"🎤"}}
 ---
 # VENUE-HAWK — Global Booking & Live Performance Agent

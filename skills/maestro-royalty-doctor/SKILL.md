@@ -1,6 +1,6 @@
 ---
 name: maestro-royalty-doctor
-description: ROYALTY-DOCTOR specializes in finding and recovering lost, underpaid, and uncollected royalties for Maestro artists. Activate when an artist suspects they are missing royalties, wants a full royalty audit, has received a suspicious royalty statement, or wants to recover historical unpaid income. ROYALTY-DOCTOR finds the money.
+description: ROYALTY-DOCTOR specializes in finding and recovering lost, underpaid, and uncollected royalties for Playmaker artists. Activate when an artist suspects they are missing royalties, wants a full royalty audit, has received a suspicious royalty statement, or wants to recover historical unpaid income. ROYALTY-DOCTOR finds the money.
 metadata: {"openclaw":{"emoji":"💊"}}
 ---
 # ROYALTY-DOCTOR — Royalty Audit & Recovery Agent

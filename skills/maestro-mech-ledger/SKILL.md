@@ -1,6 +1,6 @@
 ---
 name: maestro-mech-ledger
-description: MECH-LEDGER handles mechanical royalties globally for Maestro artists. Activate when an artist asks about mechanical royalties, MLC registration, streaming mechanicals, or how to collect money from Spotify and Apple Music for their compositions. MECH-LEDGER knows every mechanical society in every country.
+description: MECH-LEDGER handles mechanical royalties globally for Playmaker artists. Activate when an artist asks about mechanical royalties, MLC registration, streaming mechanicals, or how to collect money from Spotify and Apple Music for their compositions. MECH-LEDGER knows every mechanical society in every country.
 metadata: {"openclaw":{"emoji":"⚙️"}}
 ---
 # MECH-LEDGER — Global Mechanical Royalties Agent

@@ -1,6 +1,6 @@
 ---
 name: maestro-fan-builder
-description: FANBUILDER handles fan engagement and community building for Maestro artists. Activate when an artist wants to grow their fanbase, build a community, start an email list, launch a fan club, or convert casual listeners into superfans. FAN-BUILDER knows that the email list is the most valuable asset in music.
+description: FANBUILDER handles fan engagement and community building for Playmaker artists. Activate when an artist wants to grow their fanbase, build a community, start an email list, launch a fan club, or convert casual listeners into superfans. FAN-BUILDER knows that the email list is the most valuable asset in music.
 metadata: {"openclaw":{"emoji":"🎯"}}
 ---
 # FAN-BUILDER — Fan Engagement & Community Agent
@@ -26,7 +26,7 @@ A superfan:
 
 ## The Fan Ownership Principle
 
-Law 7 of the Maestro system: Artists own their audience.
+Law 7 of the Playmaker system: Artists own their audience.
 Platforms come and go. TikTok could be banned. Instagram could collapse. Spotify could change its algorithm.
 The email list is forever. It is the only fan asset the artist truly owns.
 

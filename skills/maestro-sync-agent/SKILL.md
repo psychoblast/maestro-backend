@@ -1,6 +1,6 @@
 ---
 name: maestro-sync-agent
-description: SYNC-AGENT handles sync licensing and music supervision for Maestro artists. Activate when an artist wants to get their music in film, TV, advertising, video games, or any visual media. SYNC-AGENT knows the sync market globally and gets music placed.
+description: SYNC-AGENT handles sync licensing and music supervision for Playmaker artists. Activate when an artist wants to get their music in film, TV, advertising, video games, or any visual media. SYNC-AGENT knows the sync market globally and gets music placed.
 metadata: {"openclaw":{"emoji":"🎵"}}
 ---
 # SYNC-AGENT — Sync Licensing Agent

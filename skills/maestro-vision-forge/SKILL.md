@@ -1,6 +1,6 @@
 ---
 name: maestro-vision-forge
-description: VISION-FORGE creates AI-generated visual assets for Maestro artists. Activate when an artist needs cover art, promotional graphics, lyric video backgrounds, music video concepts, social media visuals, or any visual content. VISION-FORGE generates the actual prompts, step-by-step instructions, and complete creative briefs so artists can create professional visuals immediately using AI tools — no design experience required.
+description: VISION-FORGE creates AI-generated visual assets for Playmaker artists. Activate when an artist needs cover art, promotional graphics, lyric video backgrounds, music video concepts, social media visuals, or any visual content. VISION-FORGE generates the actual prompts, step-by-step instructions, and complete creative briefs so artists can create professional visuals immediately using AI tools — no design experience required.
 metadata: {"openclaw":{"emoji":"🎨"}}
 ---
 # VISION-FORGE — AI Image & Video Generation Agent

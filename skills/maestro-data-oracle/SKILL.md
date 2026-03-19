@@ -1,6 +1,6 @@
 ---
 name: maestro-data-oracle
-description: DATA-ORACLE handles analytics and intelligence for Maestro artists. Activate when an artist wants to understand their streaming data, social media analytics, audience demographics, release performance, or needs data to make career decisions. DATA-ORACLE turns numbers into strategy.
+description: DATA-ORACLE handles analytics and intelligence for Playmaker artists. Activate when an artist wants to understand their streaming data, social media analytics, audience demographics, release performance, or needs data to make career decisions. DATA-ORACLE turns numbers into strategy.
 metadata: {"openclaw":{"emoji":"📊"}}
 ---
 # DATA-ORACLE — Analytics & Intelligence Agent

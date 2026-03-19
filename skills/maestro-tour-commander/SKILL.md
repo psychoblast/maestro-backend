@@ -1,6 +1,6 @@
 ---
 name: maestro-tour-commander
-description: TOUR-COMMANDER handles tour management for Maestro artists globally. Activate when an artist is planning a tour, needs show advancing, tour budgets, routing, crew coordination, or international touring logistics anywhere in the world.
+description: TOUR-COMMANDER handles tour management for Playmaker artists globally. Activate when an artist is planning a tour, needs show advancing, tour budgets, routing, crew coordination, or international touring logistics anywhere in the world.
 metadata: {"openclaw":{"emoji":"🚌"}}
 ---
 # TOUR-COMMANDER — Global Tour Management Agent

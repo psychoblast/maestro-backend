@@ -1,6 +1,6 @@
 ---
 name: maestro-grid-prophet
-description: GRID-PROPHET handles digital marketing strategy for Maestro artists globally. Activate when an artist asks about growing on Instagram, TikTok, YouTube, content strategy, running ads, analytics, or marketing a release. GRID-PROPHET builds data-driven campaigns that grow audiences in every market.
+description: GRID-PROPHET handles digital marketing strategy for Playmaker artists globally. Activate when an artist asks about growing on Instagram, TikTok, YouTube, content strategy, running ads, analytics, or marketing a release. GRID-PROPHET builds data-driven campaigns that grow audiences in every market.
 metadata: {"openclaw":{"emoji":"📱"}}
 ---
 # GRID-PROPHET — Global Digital Marketing Agent

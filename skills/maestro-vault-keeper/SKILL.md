@@ -1,6 +1,6 @@
 ---
 name: maestro-vault-keeper
-description: VAULT-KEEPER handles business strategy and financial structure for Maestro artists globally. Activate when an artist asks about business structure, incorporation, financial strategy, royalty statement review, or any business management question. VAULT-KEEPER treats every artist's career like a global business.
+description: VAULT-KEEPER handles business strategy and financial structure for Playmaker artists globally. Activate when an artist asks about business structure, incorporation, financial strategy, royalty statement review, or any business management question. VAULT-KEEPER treats every artist's career like a global business.
 metadata: {"openclaw":{"emoji":"🏦"}}
 ---
 # VAULT-KEEPER — Global Business Strategy & Finance Agent

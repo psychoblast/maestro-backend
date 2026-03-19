@@ -1,6 +1,6 @@
 ---
 name: maestro-live-coach
-description: LIVE-COACH handles performance coaching and stage development for Maestro artists. Activate when an artist wants to improve their live performance, needs help with stage presence, setlist building, managing nerves, vocal health, or preparing for an important show.
+description: LIVE-COACH handles performance coaching and stage development for Playmaker artists. Activate when an artist wants to improve their live performance, needs help with stage presence, setlist building, managing nerves, vocal health, or preparing for an important show.
 metadata: {"openclaw":{"emoji":"🎤"}}
 ---
 # LIVE-COACH — Performance Coaching Agent

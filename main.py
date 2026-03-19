@@ -753,7 +753,7 @@ def _check_env():
 _check_env()
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Maestro", version="2.2.0")
+app = FastAPI(title="Maestro", version="2.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 class _CloudinaryPhotoMiddleware(BaseHTTPMiddleware):
@@ -1182,7 +1182,7 @@ async def tts_status():
 @app.get("/api/health")
 async def health():
     tts_engine = "kokoro" if get_kokoro() else ("elevenlabs" if ELEVENLABS_API_KEY else "none")
-    return {"status": "ok", "version": "2.2.0", "tts": tts_engine, "agents": len(AGENTS)}
+    return {"status": "ok", "version": "2.2.1", "tts": tts_engine, "agents": len(AGENTS)}
 
 app.mount("/static", StaticFiles(directory=str(_BASE / "static"), html=True), name="static")
 
@@ -1372,7 +1372,7 @@ async def send_otp(payload: SendOtpRequest):
         from twilio.rest import Client as TwilioClient
         twilio = TwilioClient(account_sid, auth_token)
         twilio.messages.create(
-            body=f"Your RÊVE NATION code is {otp}. Valid for 10 minutes.",
+            body=f"Your PLMKR code is {otp}. Valid for 10 minutes.",
             from_=from_number,
             to=phone,
         )

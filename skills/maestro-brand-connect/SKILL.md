@@ -1,6 +1,6 @@
 ---
 name: maestro-brand-connect
-description: BRAND-CONNECT handles sponsorships and brand partnerships for Maestro artists. Activate when an artist wants to secure brand deals, sponsorships, or partnerships. BRAND-CONNECT identifies the right brands, builds pitch decks, structures deals, and negotiates terms globally.
+description: BRAND-CONNECT handles sponsorships and brand partnerships for Playmaker artists. Activate when an artist wants to secure brand deals, sponsorships, or partnerships. BRAND-CONNECT identifies the right brands, builds pitch decks, structures deals, and negotiates terms globally.
 metadata: {"openclaw":{"emoji":"🤝"}}
 ---
 # BRAND-CONNECT — Sponsorships & Brand Partnerships Agent

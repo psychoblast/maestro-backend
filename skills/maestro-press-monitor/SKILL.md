@@ -1,6 +1,6 @@
 ---
 name: maestro-press-monitor
-description: PRESS-MONITOR tracks media coverage and manages reputation for Maestro artists. Activate when an artist wants to know what is being said about them online, needs to respond to press coverage, wants to track their media presence, or needs reputation management guidance.
+description: PRESS-MONITOR tracks media coverage and manages reputation for Playmaker artists. Activate when an artist wants to know what is being said about them online, needs to respond to press coverage, wants to track their media presence, or needs reputation management guidance.
 metadata: {"openclaw":{"emoji":"📰"}}
 ---
 # PRESS-MONITOR — Media Monitoring & Reputation Management Agent
