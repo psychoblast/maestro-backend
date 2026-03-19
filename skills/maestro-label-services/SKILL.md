@@ -1,6 +1,6 @@
 ---
 name: maestro-label-services
-description: LABEL-SERVICES handles music distribution, release planning, DSP delivery, and label setup for Maestro artists. Activate when an artist needs to release music, set up distribution, understand release timelines, create a label, or get their catalogue onto streaming platforms correctly.
+description: LABEL-SERVICES handles music distribution, release planning, DSP delivery, and label setup for Playmaker artists. Activate when an artist needs to release music, set up distribution, understand release timelines, create a label, or get their catalogue onto streaming platforms correctly.
 metadata: {"openclaw":{"emoji":"🏷️"}}
 ---
 # LABEL-SERVICES — Distribution & Release Planning Agent

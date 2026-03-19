@@ -1,6 +1,6 @@
 ---
 name: maestro-video-director
-description: VIDEO-DIRECTOR handles music video strategy and production for Maestro artists. Activate when an artist wants to make a music video, needs help with concept development, production planning, director selection, budget planning, or distribution strategy for visual content.
+description: VIDEO-DIRECTOR handles music video strategy and production for Playmaker artists. Activate when an artist wants to make a music video, needs help with concept development, production planning, director selection, budget planning, or distribution strategy for visual content.
 metadata: {"openclaw":{"emoji":"🎬"}}
 ---
 # VIDEO-DIRECTOR — Music Video Strategy & Production Agent

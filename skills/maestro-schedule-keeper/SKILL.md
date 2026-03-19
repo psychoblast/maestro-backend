@@ -1,6 +1,6 @@
 ---
 name: maestro-schedule-keeper
-description: SCHEDULE-KEEPER manages content calendars and posting schedules for Maestro artists. Activate when an artist needs help planning their content calendar, scheduling posts around releases, staying consistent on social media, or managing their posting routine. SCHEDULE-KEEPER keeps artists consistent and on time globally.
+description: SCHEDULE-KEEPER manages content calendars and posting schedules for Playmaker artists. Activate when an artist needs help planning their content calendar, scheduling posts around releases, staying consistent on social media, or managing their posting routine. SCHEDULE-KEEPER keeps artists consistent and on time globally.
 metadata: {"openclaw":{"emoji":"📅"}}
 ---
 # SCHEDULE-KEEPER — Content Scheduling & Calendar Agent

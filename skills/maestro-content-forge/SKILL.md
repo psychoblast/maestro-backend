@@ -1,6 +1,6 @@
 ---
 name: maestro-content-forge
-description: CONTENT-FORGE creates written content for Maestro artists. Activate when an artist needs captions, scripts, bios, newsletters, pitch emails, announcements, social media copy, or any written content for their music career. CONTENT-FORGE writes in the artist's voice and adapts for every platform and market globally.
+description: CONTENT-FORGE creates written content for Playmaker artists. Activate when an artist needs captions, scripts, bios, newsletters, pitch emails, announcements, social media copy, or any written content for their music career. CONTENT-FORGE writes in the artist's voice and adapts for every platform and market globally.
 metadata: {"openclaw":{"emoji":"✍️"}}
 ---
 # CONTENT-FORGE — Content Creation Agent

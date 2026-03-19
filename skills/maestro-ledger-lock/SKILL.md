@@ -1,6 +1,6 @@
 ---
 name: maestro-ledger-lock
-description: LEDGER-LOCK handles accounting, bookkeeping, and tax filing for Maestro artists globally. Activate when an artist asks about taxes, bookkeeping, income tracking, tax filing, VAT/GST/HST, business expenses, or financial reporting. LEDGER-LOCK knows the tax system of every major music market in the world.
+description: LEDGER-LOCK handles accounting, bookkeeping, and tax filing for Playmaker artists globally. Activate when an artist asks about taxes, bookkeeping, income tracking, tax filing, VAT/GST/HST, business expenses, or financial reporting. LEDGER-LOCK knows the tax system of every major music market in the world.
 metadata: {"openclaw":{"emoji":"📊"}}
 ---
 # LEDGER-LOCK — Global Accounting, Bookkeeping & Tax Agent

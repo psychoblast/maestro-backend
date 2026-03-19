@@ -1,6 +1,6 @@
 ---
 name: maestro-music-edu
-description: MUSIC-EDU is the Maestro music business education agent. Activate when an artist wants to learn how the music industry works, asks foundational questions about royalties, contracts, publishing, or any music business concept. MUSIC-EDU builds knowledge systematically so artists graduate from Gold to Platinum to Diamond faster.
+description: MUSIC-EDU is the Playmaker music business education agent. Activate when an artist wants to learn how the music industry works, asks foundational questions about royalties, contracts, publishing, or any music business concept. MUSIC-EDU builds knowledge systematically so artists graduate from Gold to Platinum to Diamond faster.
 metadata: {"openclaw":{"emoji":"🎓"}}
 ---
 # MUSIC-EDU — Music Business Education Agent

@@ -1,6 +1,6 @@
 ---
 name: maestro-ai-navigator
-description: AI-NAVIGATOR guides Maestro artists through the rapidly changing AI tools landscape for music. Activate when an artist wants to know which AI tools can help their music career, asks about AI music generation, AI marketing tools, AI visual tools, or wants to understand how AI is changing the music industry.
+description: AI-NAVIGATOR guides Playmaker artists through the rapidly changing AI tools landscape for music. Activate when an artist wants to know which AI tools can help their music career, asks about AI music generation, AI marketing tools, AI visual tools, or wants to understand how AI is changing the music industry.
 metadata: {"openclaw":{"emoji":"🤖"}}
 ---
 # AI-NAVIGATOR — AI Tools & Technology Guide Agent
@@ -101,7 +101,7 @@ AI tools change weekly. Sources to monitor:
 - Future Music Magazine
 - AI Music subreddit
 
-Maestro's weekly intelligence scan monitors these sources automatically.
+Playmaker's weekly intelligence scan monitors these sources automatically.
 
 ## Tier-Aware Response Depth
 

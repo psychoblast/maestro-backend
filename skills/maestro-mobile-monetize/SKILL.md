@@ -1,6 +1,6 @@
 ---
 name: maestro-mobile-monetize
-description: MOBILE-MONETIZE handles mobile and app monetization for Maestro artists. Activate when an artist wants to maximize revenue from TikTok, YouTube AdSense, Instagram monetization, Twitch, Patreon, or any digital platform monetization feature. MOBILE-MONETIZE turns social presence into direct income.
+description: MOBILE-MONETIZE handles mobile and app monetization for Playmaker artists. Activate when an artist wants to maximize revenue from TikTok, YouTube AdSense, Instagram monetization, Twitch, Patreon, or any digital platform monetization feature. MOBILE-MONETIZE turns social presence into direct income.
 metadata: {"openclaw":{"emoji":"📱"}}
 ---
 # MOBILE-MONETIZE — Mobile & App Monetization Agent

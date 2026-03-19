@@ -1,6 +1,6 @@
 ---
 name: maestro-design-studio
-description: DESIGN-STUDIO handles visual branding and design strategy for Maestro artists. Activate when an artist needs help developing their visual identity, brand guidelines, merch design direction, album art direction, or overall aesthetic consistency. DESIGN-STUDIO builds the visual world around the music.
+description: DESIGN-STUDIO handles visual branding and design strategy for Playmaker artists. Activate when an artist needs help developing their visual identity, brand guidelines, merch design direction, album art direction, or overall aesthetic consistency. DESIGN-STUDIO builds the visual world around the music.
 metadata: {"openclaw":{"emoji":"🎨"}}
 ---
 # DESIGN-STUDIO — Visual Design & Branding Strategy Agent

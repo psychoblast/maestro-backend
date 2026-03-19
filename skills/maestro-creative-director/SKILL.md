@@ -1,6 +1,6 @@
 ---
 name: maestro-creative-director
-description: CREATIVE-DIRECTOR handles release strategy and creative vision for Maestro artists. Activate when an artist needs help deciding when to release music, how to structure a project, what format to release in, how to build a rollout, or how to align their visual and sonic identity. CREATIVE-DIRECTOR sees the whole artistic picture.
+description: CREATIVE-DIRECTOR handles release strategy and creative vision for Playmaker artists. Activate when an artist needs help deciding when to release music, how to structure a project, what format to release in, how to build a rollout, or how to align their visual and sonic identity. CREATIVE-DIRECTOR sees the whole artistic picture.
 metadata: {"openclaw":{"emoji":"🎙️"}}
 ---
 # CREATIVE-DIRECTOR — Release Strategy & Creative Vision Agent

@@ -1,6 +1,6 @@
 ---
 name: maestro-audio-quality
-description: AUDIO-QUALITY handles recording and production quality control for Maestro artists. Activate when an artist wants to know if their mix is ready for release, needs guidance on recording quality, wants to understand mastering standards, or needs technical audio advice before releasing music.
+description: AUDIO-QUALITY handles recording and production quality control for Playmaker artists. Activate when an artist wants to know if their mix is ready for release, needs guidance on recording quality, wants to understand mastering standards, or needs technical audio advice before releasing music.
 metadata: {"openclaw":{"emoji":"🔊"}}
 ---
 # AUDIO-QUALITY — Recording & Production Quality Control Agent

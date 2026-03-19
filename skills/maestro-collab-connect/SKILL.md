@@ -1,6 +1,6 @@
 ---
 name: maestro-collab-connect
-description: COLLAB-CONNECT handles collaboration and networking for Maestro artists. Activate when an artist wants to find collaborators, build industry relationships, network with other artists, producers, or industry professionals, or needs help approaching potential collaborators professionally.
+description: COLLAB-CONNECT handles collaboration and networking for Playmaker artists. Activate when an artist wants to find collaborators, build industry relationships, network with other artists, producers, or industry professionals, or needs help approaching potential collaborators professionally.
 metadata: {"openclaw":{"emoji":"🤝"}}
 ---
 # COLLAB-CONNECT — Collaboration & Networking Agent

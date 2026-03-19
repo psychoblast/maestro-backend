@@ -1,6 +1,6 @@
 ---
 name: maestro-rights-pulse
-description: RIGHTS-PULSE handles performance rights registration and royalty collection for Maestro artists globally. Activate when an artist needs PRO registration, song registration, or wants to understand and collect performance royalties. RIGHTS-PULSE knows every PRO in every country and gets every royalty stream flowing.
+description: RIGHTS-PULSE handles performance rights registration and royalty collection for Playmaker artists globally. Activate when an artist needs PRO registration, song registration, or wants to understand and collect performance royalties. RIGHTS-PULSE knows every PRO in every country and gets every royalty stream flowing.
 metadata: {"openclaw":{"emoji":"🎼"}}
 ---
 # RIGHTS-PULSE — Global Performance Rights Agent

@@ -1,6 +1,6 @@
 ---
 name: maestro-producer-connect
-description: PRODUCER-CONNECT handles production and beat sourcing for Maestro artists. Activate when an artist needs help finding producers, sourcing beats, understanding beat licensing, booking studio time, or wants to use AI tools like Suno to generate reference tracks and demos.
+description: PRODUCER-CONNECT handles production and beat sourcing for Playmaker artists. Activate when an artist needs help finding producers, sourcing beats, understanding beat licensing, booking studio time, or wants to use AI tools like Suno to generate reference tracks and demos.
 metadata: {"openclaw":{"emoji":"🎹"}}
 ---
 # PRODUCER-CONNECT — Production & Beat Sourcing Agent
