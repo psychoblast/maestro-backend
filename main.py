@@ -585,23 +585,25 @@ async def synthesize_speech(text: str, voice: str) -> Optional[bytes]:
 # ── ElevenLabs TTS (cloud fallback) ────────────────────────────────────────────
 # Maps Kokoro voice prefix → ElevenLabs pre-made voice ID
 _EL_VOICES = {
-    "af": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — American female
-    "am": "pNInz6obpgDQGcFmaJgB",  # Adam     — American male
-    "bf": "XB0fDUnXU5powFXDhCwa",  # Charlotte — British female
-    "bm": "onwK4e9ZLuTAKqWW03F9",  # Daniel   — British male
-    "ef": "LcfcDJNUP1GQjkzn1xUU",  # Emily    — European female
-    "em": "GBv7mTt0atIp3Br8iCZE",  # Thomas   — European male
-    "ff": "XB0fDUnXU5powFXDhCwa",  # Charlotte — French female
-    "hf": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — Hindi female
-    "hm": "pNInz6obpgDQGcFmaJgB",  # Adam     — Hindi male
-    "if": "LcfcDJNUP1GQjkzn1xUU",  # Emily    — Italian female
-    "im": "GBv7mTt0atIp3Br8iCZE",  # Thomas   — Italian male
-    "jf": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — Japanese female
-    "jm": "TxGEqnHWrfWFTfGW9XjX",  # Josh     — Japanese male
-    "pf": "XB0fDUnXU5powFXDhCwa",  # Charlotte — Polish female
-    "pm": "onwK4e9ZLuTAKqWW03F9",  # Daniel   — Polish male
-    "zf": "EXAVITQu4vr4xnSDxMaL",  # Sarah    — Chinese female
-    "zm": "pNInz6obpgDQGcFmaJgB",  # Adam     — Chinese male
+    # Female voices
+    "af": "21m00Tcm4TlvDq8ikWAM",  # Rachel — American female
+    "bf": "EXAVITQu4vr4xnSDxMaL",  # Bella  — British female
+    "ef": "MF3mGyEYCl7XYWbV9V6O",  # Elli   — European female
+    "ff": "AZnzlk1XvdvUeBnXmlld",  # Domi   — French female
+    "hf": "21m00Tcm4TlvDq8ikWAM",  # Rachel — Hindi female
+    "if": "EXAVITQu4vr4xnSDxMaL",  # Bella  — Italian female
+    "jf": "MF3mGyEYCl7XYWbV9V6O",  # Elli   — Japanese female
+    "pf": "AZnzlk1XvdvUeBnXmlld",  # Domi   — Polish female
+    "zf": "21m00Tcm4TlvDq8ikWAM",  # Rachel — Chinese female
+    # Male voices
+    "am": "pNInz6obpgDQGcFmaJgB",  # Adam   — American male
+    "bm": "ErXwobaYiN019PkySvjV",  # Antoni — British male
+    "em": "VR6AewLTigWG4xSOukaG",  # Arnold — European male
+    "hm": "yoZ06aMxZJJ28mfd3POQ",  # Sam    — Hindi male
+    "im": "TxGEqnHWrfWFTfGW9XjX",  # Josh   — Italian male
+    "jm": "VR6AewLTigWG4xSOukaG",  # Arnold — Japanese male
+    "pm": "yoZ06aMxZJJ28mfd3POQ",  # Sam    — Polish male
+    "zm": "pNInz6obpgDQGcFmaJgB",  # Adam   — Chinese male
 }
 
 def _pcm_to_wav(pcm_bytes: bytes, sr: int = 24000) -> bytes:
@@ -1185,15 +1187,35 @@ async def tts_endpoint(text: str, voice: str = "am_michael"):
         return Response(content=audio_bytes, media_type="audio/wav")
     return JSONResponse({"error": "TTS unavailable"}, status_code=503)
 
+_cancelled_calls: set = set()  # call_ids cancelled mid-flight; checked before returning audio
+
 class TtsSynthRequest(BaseModel):
-    text: str
-    voice: str = "am_onyx"
+    text:    str
+    voice:   str = "am_onyx"
+    call_id: str = ""
+
+class TtsCancelRequest(BaseModel):
+    call_id: str
+
+@app.post("/api/tts/cancel")
+async def tts_cancel(req: TtsCancelRequest):
+    """Mark a call as ended so any in-flight /api/tts/synth for that call returns null."""
+    if req.call_id:
+        _cancelled_calls.add(req.call_id)
+    return {"cancelled": req.call_id}
 
 @app.post("/api/tts/synth")
 async def tts_synth(req: TtsSynthRequest):
     """Synthesize text → base64 WAV. Used by app to bypass SSE buffering."""
+    if req.call_id and req.call_id in _cancelled_calls:
+        _cancelled_calls.discard(req.call_id)
+        return JSONResponse({"audio": None, "cancelled": True}, status_code=200)
     _tts_last_error.clear()
     audio_bytes = await tts(req.text, req.voice)
+    # Check again — call may have ended while synthesis was running
+    if req.call_id and req.call_id in _cancelled_calls:
+        _cancelled_calls.discard(req.call_id)
+        return JSONResponse({"audio": None, "cancelled": True}, status_code=200)
     if audio_bytes:
         return {"audio": base64.b64encode(audio_bytes).decode()}
     detail = _tts_last_error.get("detail", "unknown")
