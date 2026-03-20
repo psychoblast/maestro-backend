@@ -584,26 +584,30 @@ async def synthesize_speech(text: str, voice: str) -> Optional[bytes]:
 
 # ── ElevenLabs TTS (cloud fallback) ────────────────────────────────────────────
 # Maps Kokoro voice prefix → ElevenLabs pre-made voice ID
+_RACHEL = "21m00Tcm4TlvDq8ikWAM"
+_BELLA  = "EXAVITQu4vr4xnSDxMaL"
+_ADAM   = "pNInz6obpgDQGcFmaJgB"
+
 _EL_VOICES = {
-    # Female voices
-    "af": "21m00Tcm4TlvDq8ikWAM",  # Rachel — American female
-    "bf": "EXAVITQu4vr4xnSDxMaL",  # Bella  — British female
-    "ef": "MF3mGyEYCl7XYWbV9V6O",  # Elli   — European female
-    "ff": "AZnzlk1XvdvUeBnXmlld",  # Domi   — French female
-    "hf": "21m00Tcm4TlvDq8ikWAM",  # Rachel — Hindi female
-    "if": "EXAVITQu4vr4xnSDxMaL",  # Bella  — Italian female
-    "jf": "MF3mGyEYCl7XYWbV9V6O",  # Elli   — Japanese female
-    "pf": "AZnzlk1XvdvUeBnXmlld",  # Domi   — Polish female
-    "zf": "21m00Tcm4TlvDq8ikWAM",  # Rachel — Chinese female
-    # Male voices
-    "am": "pNInz6obpgDQGcFmaJgB",  # Adam   — American male
-    "bm": "ErXwobaYiN019PkySvjV",  # Antoni — British male
-    "em": "VR6AewLTigWG4xSOukaG",  # Arnold — European male
-    "hm": "yoZ06aMxZJJ28mfd3POQ",  # Sam    — Hindi male
-    "im": "TxGEqnHWrfWFTfGW9XjX",  # Josh   — Italian male
-    "jm": "VR6AewLTigWG4xSOukaG",  # Arnold — Japanese male
-    "pm": "yoZ06aMxZJJ28mfd3POQ",  # Sam    — Polish male
-    "zm": "pNInz6obpgDQGcFmaJgB",  # Adam   — Chinese male
+    # Female → Rachel (American/Asian) or Bella (British/European)
+    "af": _RACHEL,  # American female
+    "bf": _BELLA,   # British female
+    "ef": _BELLA,   # European female
+    "ff": _BELLA,   # French female
+    "hf": _RACHEL,  # Hindi female
+    "if": _BELLA,   # Italian female
+    "jf": _RACHEL,  # Japanese female
+    "pf": _BELLA,   # Polish female
+    "zf": _RACHEL,  # Chinese female
+    # Male → Adam
+    "am": _ADAM,    # American male
+    "bm": _ADAM,    # British male
+    "em": _ADAM,    # European male
+    "hm": _ADAM,    # Hindi male
+    "im": _ADAM,    # Italian male
+    "jm": _ADAM,    # Japanese male
+    "pm": _ADAM,    # Polish male
+    "zm": _ADAM,    # Chinese male
 }
 
 def _pcm_to_wav(pcm_bytes: bytes, sr: int = 24000) -> bytes:
@@ -628,7 +632,7 @@ async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
     if not ELEVENLABS_API_KEY or not text.strip():
         return None
     prefix   = voice[:2] if len(voice) >= 2 else "am"
-    voice_id = _EL_VOICES.get(prefix, "pNInz6obpgDQGcFmaJgB")
+    voice_id = _EL_VOICES.get(prefix, _ADAM)
 
     cache_key  = hashlib.md5(f"el:{voice_id}:{text}".encode()).hexdigest()
     cache_file = AUDIO_CACHE / f"{cache_key}.wav"
