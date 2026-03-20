@@ -4,6 +4,7 @@ httpx==0.28.1
 kokoro-onnx==0.5.0
 numpy==2.4.2
 onnxruntime==1.24.3
+openai>=1.50.0
 openai-whisper==20250625
 pydantic==2.12.5
 pydantic_core==2.41.5
