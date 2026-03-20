@@ -641,13 +641,16 @@ async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
         }
         async with httpx.AsyncClient(timeout=30) as cl:
             r = await cl.post(url, json=body, headers=headers)
+            print(f"[TTS] ElevenLabs HTTP {r.status_code} | voice_id={voice_id} | key_prefix={ELEVENLABS_API_KEY[:8]}...")
+            if r.status_code != 200:
+                print(f"[TTS] ElevenLabs error body: {r.text[:500]}")
             r.raise_for_status()
         wav = _pcm_to_wav(r.content, sr=24000)
         cache_file.write_bytes(wav)
         print(f"[TTS] ElevenLabs OK: {len(wav)} bytes")
         return wav
     except Exception as e:
-        print(f"[TTS] ElevenLabs error: {e}")
+        print(f"[TTS] ElevenLabs exception: {type(e).__name__}: {e}")
         return None
 
 async def tts(text: str, voice: str) -> Optional[bytes]:
