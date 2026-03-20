@@ -756,13 +756,17 @@ _check_env()
 app = FastAPI(title="Playmaker", version="2.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
+_ID_TO_NAME = {a["id"]: a["name"].lower().replace(" ", "-") for a in AGENTS}
+
 class _CloudinaryPhotoMiddleware(BaseHTTPMiddleware):
     """Redirect /static/agents/* to Cloudinary CDN when CLOUDINARY_CLOUD_NAME is set."""
     async def dispatch(self, request, call_next):
         if CLOUDINARY_CLOUD_NAME and request.url.path.startswith("/static/agents/"):
             filename = request.url.path.split("/static/agents/", 1)[1].split("?")[0]
             base = filename.rsplit(".", 1)[0]  # strip .jpg
-            cdn = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/agents/{base}.jpg"
+            name = _ID_TO_NAME.get(base, base)  # resolve agent ID → lowercase name
+            cdn = f"https://res.cloudinary.com/{CLOUDINARY_CLOUD_NAME}/image/upload/{name}.jpg"
             return _RedirectResponse(url=cdn, status_code=302)
         return await call_next(request)
 
