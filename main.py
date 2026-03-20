@@ -619,6 +619,8 @@ def _pcm_to_wav(pcm_bytes: bytes, sr: int = 24000) -> bytes:
     buf.write(pcm_bytes)
     return buf.getvalue()
 
+_tts_last_error: dict = {}  # temporary diagnostic: stores last ElevenLabs error detail
+
 async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
     """ElevenLabs TTS — returns WAV bytes via PCM output. Cloud fallback for Kokoro."""
     if not ELEVENLABS_API_KEY or not text.strip():
@@ -643,14 +645,18 @@ async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
             r = await cl.post(url, json=body, headers=headers)
             print(f"[TTS] ElevenLabs HTTP {r.status_code} | voice_id={voice_id} | key_prefix={ELEVENLABS_API_KEY[:8]}...")
             if r.status_code != 200:
+                _tts_last_error["detail"] = f"HTTP {r.status_code}: {r.text[:500]}"
                 print(f"[TTS] ElevenLabs error body: {r.text[:500]}")
             r.raise_for_status()
         wav = _pcm_to_wav(r.content, sr=24000)
         cache_file.write_bytes(wav)
+        _tts_last_error["detail"] = None
         print(f"[TTS] ElevenLabs OK: {len(wav)} bytes")
         return wav
     except Exception as e:
-        print(f"[TTS] ElevenLabs exception: {type(e).__name__}: {e}")
+        msg = f"{type(e).__name__}: {e}"
+        _tts_last_error.setdefault("detail", msg)
+        print(f"[TTS] ElevenLabs exception: {msg}")
         return None
 
 async def tts(text: str, voice: str) -> Optional[bytes]:
@@ -1186,10 +1192,12 @@ class TtsSynthRequest(BaseModel):
 @app.post("/api/tts/synth")
 async def tts_synth(req: TtsSynthRequest):
     """Synthesize text → base64 WAV. Used by app to bypass SSE buffering."""
+    _tts_last_error.clear()
     audio_bytes = await tts(req.text, req.voice)
     if audio_bytes:
         return {"audio": base64.b64encode(audio_bytes).decode()}
-    return JSONResponse({"audio": None, "error": "TTS unavailable"}, status_code=503)
+    detail = _tts_last_error.get("detail", "unknown")
+    return JSONResponse({"audio": None, "error": "TTS unavailable", "detail": detail}, status_code=503)
 
 @app.get("/api/tts/status")
 async def tts_status():
