@@ -1172,6 +1172,18 @@ async def tts_endpoint(text: str, voice: str = "am_michael"):
         return Response(content=audio_bytes, media_type="audio/wav")
     return JSONResponse({"error": "TTS unavailable"}, status_code=503)
 
+class TtsSynthRequest(BaseModel):
+    text: str
+    voice: str = "am_onyx"
+
+@app.post("/api/tts/synth")
+async def tts_synth(req: TtsSynthRequest):
+    """Synthesize text → base64 WAV. Used by app to bypass SSE buffering."""
+    audio_bytes = await tts(req.text, req.voice)
+    if audio_bytes:
+        return {"audio": base64.b64encode(audio_bytes).decode()}
+    return JSONResponse({"audio": None, "error": "TTS unavailable"}, status_code=503)
+
 @app.get("/api/tts/status")
 async def tts_status():
     """Returns whether TTS is ready. True if Kokoro loaded OR ElevenLabs key present."""
