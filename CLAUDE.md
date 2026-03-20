@@ -81,3 +81,44 @@ A web interface where artists can:
 - Working code over perfect code
 - Test as you go
 - No placeholders — real functionality only
+
+---
+
+## MANDATORY RULES - NO EXCEPTIONS:
+
+### BEFORE TOUCHING ANY CODE:
+- Always use Plan Mode before making any changes
+- Document the exact current working state before changing anything
+- Never swap a dependency without recording what was working first
+- If you don't know the exact error, investigate first — never guess
+
+### INVESTIGATION RULES:
+- Never say "likely" or "probably" — verify before reporting
+- Always test with real data, never trust status endpoints alone
+- curl every endpoint with real payloads before calling anything done
+- Check Railway logs directly when status and behavior don't match
+
+### FIXING RULES:
+- One problem, one fix, verify, then move to next
+- Never fix more than one thing at a time
+- Never push without verifying the fix end-to-end first
+- Always commit after every single working change
+- Never call something done without screenshot or curl proof
+
+### REBUILD RULES:
+- Maximum one rebuild per session
+- Batch ALL fixes before rebuilding
+- Verify everything in code before rebuild, not after
+- Never approve rebuild without: grep shows zero hits + Railway curl confirmed
+
+### VOICE/TTS RULES:
+- Never change TTS provider without documenting exact current voice mapping first
+- Always restore exact voice assignments when reverting
+- Test female AND male voices after any TTS change before calling it done
+
+### WHAT WENT WRONG THIS WEEK (never repeat):
+- Swapped ElevenLabs to OpenAI without saving voice mapping — lost all voice assignments
+- Reverted without checking OpenAI key had credits — wasted two deploys
+- Called TTS "working" based on /api/tts/status alone — key was invalid, status lied
+- Used unverified ElevenLabs voice IDs — Elli/Domi/Antoni/Arnold/Sam all failed
+- Fix: only use Rachel (21m00Tcm4TlvDq8ikWAM), Bella (EXAVITQu4vr4xnSDxMaL), Adam (pNInz6obpgDQGcFmaJgB)
