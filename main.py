@@ -78,13 +78,13 @@ AGENTS = [
     {"id": "ai-navigator",     "name": "Neo",     "title": "AI Tools",             "skill": "maestro-ai-navigator",     "voice": "hm_psi",       "color": "#1E1B4B", "emoji": "🤖", "specialty": "AI tools, automation, tech stack for artists"},
     {"id": "royalty-doctor",   "name": "Doc",     "title": "Royalty Recovery",     "skill": "maestro-royalty-doctor",   "voice": "bm_fable",     "color": "#0C4A6E", "emoji": "💊", "specialty": "Unclaimed royalties, black box money, audits"},
     {"id": "video-director",   "name": "Reel",    "title": "Music Video",          "skill": "maestro-video-director",   "voice": "em_santa",     "color": "#1A1A2E", "emoji": "🎥", "specialty": "Music video production, directors, budgets"},
-    {"id": "mobile-monetize",  "name": "Mo",      "title": "Monetization",         "skill": "maestro-mobile-monetize",  "voice": "jm_kumo",      "color": "#064E3B", "emoji": "📲", "specialty": "TikTok, YouTube, mobile platform monetization"},
+    {"id": "mobile-monetize",  "name": "Mo",      "title": "Monetization",         "skill": "maestro-mobile-monetize",  "voice": "am_michael",   "color": "#064E3B", "emoji": "📲", "specialty": "TikTok, YouTube, mobile platform monetization"},
     {"id": "storefront",       "name": "Store",   "title": "Fan Store",            "skill": "maestro-storefront",       "voice": "bf_lily",      "color": "#3B0764", "emoji": "🛍️", "specialty": "Direct-to-fan store, digital products, memberships"},
     {"id": "ink-and-air",      "name": "Reed",    "title": "Music Publisher",      "skill": "maestro-ink-and-air",      "voice": "pm_alex",      "color": "#1E3A5F", "emoji": "📝", "specialty": "Publishing deals, sync licensing, songwriting royalties"},
     {"id": "live-wire",        "name": "Knox",    "title": "Booking Agent",        "skill": "maestro-live-wire",        "voice": "zm_yunxi",     "color": "#7F1D1D", "emoji": "🎤", "specialty": "Live shows, touring, festival bookings, performance fees"},
-    {"id": "label-services",   "name": "Tommy",   "title": "Label Services",       "skill": "maestro-label-services",   "voice": "zm_yunjian",   "color": "#0F172A", "emoji": "🏷️", "specialty": "Distribution, release planning, label setup, delivery to DSPs"},
+    {"id": "label-services",   "name": "Tommy",   "title": "Label Services",       "skill": "maestro-label-services",   "voice": "bm_george",    "color": "#0F172A", "emoji": "🏷️", "specialty": "Distribution, release planning, label setup, delivery to DSPs"},
     {"id": "content-forge",    "name": "Pen",     "title": "Content Creation",     "skill": "maestro-content-forge",    "voice": "if_sara",      "color": "#1C1917", "emoji": "✍️", "specialty": "Captions, bios, press releases, content strategy"},
-    {"id": "schedule-keeper",  "name": "Cal",     "title": "Scheduling",           "skill": "maestro-schedule-keeper",  "voice": "hf_beta",      "color": "#27272A", "emoji": "📅", "specialty": "Calendar, release scheduling, deadline management"},
+    {"id": "schedule-keeper",  "name": "Cal",     "title": "Scheduling",           "skill": "maestro-schedule-keeper",  "voice": "af_sarah",     "color": "#27272A", "emoji": "📅", "specialty": "Calendar, release scheduling, deadline management"},
 ]
 
 AGENTS_BY_ID = {a["id"]: a for a in AGENTS}
@@ -461,7 +461,7 @@ def detect_routing(text: str) -> Optional[dict]:
 # These are conservative — raise them if artists report losing context.
 HISTORY_CAP_VOICE = 10   # turns (5 exchanges) — voice sessions are short
 HISTORY_CAP_TEXT  = 20   # turns (10 exchanges) — text sessions can go deeper
-HISTORY_CAP_HANDOFF = 6  # turns — handoff only needs recent context
+HISTORY_CAP_HANDOFF = 20  # turns — full context so receiving agent knows everything discussed
 
 def trim_history(history_list: list, cap: int) -> list:
     """
@@ -925,17 +925,18 @@ async def greet(agent_id: str = Form(...), tts_on: str = Form(default="true", al
 
 @app.post("/api/handoff")
 async def handoff(
-    agent_id:  str = Form(...),
-    history:   str = Form(default="[]"),
-    tts_on:    str = Form(default="true", alias="tts"),
-    artist_id: str = Form(default=""),
+    agent_id:      str = Form(...),
+    history:       str = Form(default="[]"),
+    tts_on:        str = Form(default="true", alias="tts"),
+    artist_id:     str = Form(default=""),
+    from_agent_id: str = Form(default="puppet-master"),
 ):
     """
     New agent delivers a warm personalised greeting after Marcus routes to them.
 
-    The 15-second delay was caused by passing the full conversation history.
-    Now capped at HISTORY_CAP_HANDOFF (6 turns) — enough context for a warm
-    handoff without the token overhead.
+    Receiving agent gets full conversation context (HISTORY_CAP_HANDOFF turns)
+    so they can greet the artist by name and reference what was discussed.
+    The from_agent_id param makes the handoff prompt dynamic (not hardcoded to Marcus).
 
     The greeting prompt now instructs the agent to use the artist's name and
     reference something specific from the recent conversation. This fixes the
@@ -954,13 +955,16 @@ async def handoff(
     artist_name = artist.get("artist_name", "you")
     do_tts      = tts_on.lower() == "true"
 
+    from_agent  = AGENTS_BY_ID.get(from_agent_id)
+    from_name   = from_agent["name"] if from_agent else "Marcus"
+
     system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts)
 
-    # Only the most recent context — enough to personalise, fast to process
+    # Full conversation history — receiving agent gets complete context
     trimmed_history = trim_history(history_list, HISTORY_CAP_HANDOFF)
 
     handoff_prompt = (
-        f"Marcus just handed {artist_name} directly to you. You are now their point of contact.\n"
+        f"{from_name} just handed {artist_name} directly to you. You are now their point of contact.\n"
         f"Greet {artist_name} by name in one warm, confident spoken sentence.\n"
         f"Then in a second sentence, reference something specific from the conversation above "
         f"and tell them exactly what you're going to do for them right now.\n"
