@@ -588,8 +588,30 @@ _RACHEL = "21m00Tcm4TlvDq8ikWAM"
 _BELLA  = "EXAVITQu4vr4xnSDxMaL"
 _ADAM   = "pNInz6obpgDQGcFmaJgB"
 
+# ── Per-agent distinct ElevenLabs voice IDs — 16 active agents ────────────────
+# Each voice is chosen to match the agent's character: gender, age, accent, personality.
+# No two active agents share a voice ID.
+_EL_VOICE_MAP = {
+    "am_onyx":    "pNInz6obpgDQGcFmaJgB",  # Marcus — Adam   (authoritative American male)
+    "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel (clear, professional female)
+    "af_heart":   "LcfcDJNUP1GQjkzn1xUU",  # Jade   — Emily  (warm, encouraging female)
+    "am_echo":    "VR6AewLTigWG4xSOukaG",  # Ray    — Arnold (firm, knowledgeable male)
+    "bf_emma":    "ThT5KcBeYPX3keUQqHPh",  # Nadia  — Dorothy (precise British female)
+    "am_michael": "TX3LPaxmHKxFdv7VOFE",  # Mo     — Liam   (energetic young male)
+    "bm_george":  "IKne3meq5aSn9XLyUdCD",  # Tommy  — Charlie (distinct British/Aus male)
+    "af_bella":   "AZnzlk1XvdvUeBnXmlld",  # Zara   — Domi   (strong, energetic female)
+    "am_adam":    "ErXwobaYiN019PkySvjV",  # Kai    — Antoni (tech-savvy young male)
+    "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh   (smooth, charismatic male)
+    "am_fenrir":  "yoZ06aMxZJJ28mfd3POQ",  # Ray B  — Sam    (raspy, street-smart male)
+    "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas (calm, organized male)
+    "af_river":   "MF3mGyEYCl7XYWbV9V6O",  # Cree   — Elli   (creative, expressive female)
+    "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella  (sophisticated British female)
+    "af_kore":    "piTKgcLEGmPE4e6mEKli",  # Scout  — Nicole (perceptive, nuanced female)
+    "af_sarah":   "oWAxZDx7w5VEj9dCyTzz",  # Cal    — Grace  (warm, organized female)
+}
+
 _EL_VOICES = {
-    # Female → Rachel (American/Asian) or Bella (British/European)
+    # Prefix fallback for non-active agents
     "af": _RACHEL,  # American female
     "bf": _BELLA,   # British female
     "ef": _BELLA,   # European female
@@ -599,7 +621,6 @@ _EL_VOICES = {
     "jf": _RACHEL,  # Japanese female
     "pf": _BELLA,   # Polish female
     "zf": _RACHEL,  # Chinese female
-    # Male → Adam
     "am": _ADAM,    # American male
     "bm": _ADAM,    # British male
     "em": _ADAM,    # European male
@@ -631,8 +652,8 @@ async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
     """ElevenLabs TTS — returns WAV bytes via PCM output. Cloud fallback for Kokoro."""
     if not ELEVENLABS_API_KEY or not text.strip():
         return None
-    prefix   = voice[:2] if len(voice) >= 2 else "am"
-    voice_id = _EL_VOICES.get(prefix, _ADAM)
+    # Per-agent voice map first (distinct character voices), then prefix fallback
+    voice_id = _EL_VOICE_MAP.get(voice) or _EL_VOICES.get(voice[:2] if len(voice) >= 2 else "am", _ADAM)
 
     cache_key  = hashlib.md5(f"el:{voice_id}:{text}".encode()).hexdigest()
     cache_file = AUDIO_CACHE / f"{cache_key}.wav"
@@ -958,17 +979,21 @@ async def handoff(
     from_agent  = AGENTS_BY_ID.get(from_agent_id)
     from_name   = from_agent["name"] if from_agent else "Marcus"
 
-    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts)
-
     # Full conversation history — receiving agent gets complete context
     trimmed_history = trim_history(history_list, HISTORY_CAP_HANDOFF)
 
+    # Pass has_history so receiving agent doesn't intro themselves when context exists
+    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=bool(trimmed_history))
+
+    # Extract the reason for handoff from the last user message in the history
+    last_user_msg = next((t["content"] for t in reversed(trimmed_history) if t.get("role") == "user"), "")
+    reason_line = f"They came to {from_name} about: {last_user_msg[:200]}\n" if last_user_msg else ""
+
     handoff_prompt = (
         f"{from_name} just handed {artist_name} directly to you. You are now their point of contact.\n"
-        f"Greet {artist_name} by name in one warm, confident spoken sentence.\n"
-        f"Then in a second sentence, reference something specific from the conversation above "
-        f"and tell them exactly what you're going to do for them right now.\n"
-        f"Two sentences maximum. Under 60 words total. Zero markdown. No filler. Sound like a pro."
+        f"{reason_line}"
+        f"Greet {artist_name} by name. Reference exactly what they need. Tell them what you will do for them right now.\n"
+        f"Two sentences maximum. Under 60 words. Zero markdown. No filler. Sound like the expert you are."
     )
 
     messages = []
@@ -1040,6 +1065,19 @@ async def chat_stream(req: ChatStreamRequest):
     if message == "__greet__":
         db_count  = await _get_message_count(artist_id, agent_id)
         has_history = db_count > 0
+        if not has_history:
+            # First-time greeting: return static greeting instantly — zero Claude API call.
+            # This cuts greeting latency from 10-14s to ~2s (TTS only).
+            greeting_text = _get_greeting(agent)
+            print(f"[GREET] {agent['name']} — static greeting ({len(greeting_text)} chars)")
+            async def _static_greet():
+                yield sse({"type": "text",  "text": greeting_text})
+                yield sse({"type": "done",  "full_text": greeting_text})
+            return StreamingResponse(
+                _static_greet(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
     else:
         has_history = len(history_list) > 0
 
@@ -1418,13 +1456,13 @@ async def send_otp(payload: SendOtpRequest):
 
         # Validate auth token format — Twilio tokens are exactly 32 lowercase hex chars
         import re as _re
-        token_valid = bool(auth_token and len(auth_token) == 32 and _re.fullmatch(r"[0-9a-f]+", auth_token))
+        token_valid = bool(auth_token and len(auth_token) == 32 and _re.fullmatch(r"[0-9a-f]+", auth_token.lower()))
 
         if not token_valid:
-            # Dev bypass: token is malformed — print OTP to console, skip Twilio
-            print(f"[OTP] ⚠️  TWILIO_AUTH_TOKEN invalid (len={len(auth_token or '')}, not 32 hex chars)")
-            print(f"[OTP] 🔑 DEV BYPASS — code for ...{phone[-4:]}: {otp}")
-            return {"status": "ok", "message": "Code sent (dev mode — check server console)"}
+            raise HTTPException(
+                status_code=503,
+                detail=f"SMS not configured — TWILIO_AUTH_TOKEN must be exactly 32 lowercase hex characters (got {len(auth_token or '')} chars). Set the correct token in Railway env vars."
+            )
 
         from twilio.rest import Client as TwilioClient
         twilio = TwilioClient(account_sid, auth_token)
