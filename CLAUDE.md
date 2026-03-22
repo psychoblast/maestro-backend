@@ -1,124 +1,207 @@
-# Maestro — AI Artist Management Platform
+# PLMKR — CLAUDE.md (Backend: ~/maestro/)
+# Read this file completely before touching any code.
+# These rules are not suggestions. They are hard constraints.
 
-## What This Is
-Maestro is a global AI artist management platform with 38 specialist agents. The brain is already built and running via OpenClaw. We are now building the voice interface and web portal on top of it.
+## WHAT YOU ARE BUILDING
+PLMKR is an AI-powered artist management platform.
+Agents do NOT just give advice — they take real-world action.
+An agent that only talks is INCOMPLETE.
+Read PLMKR_Master_PRD_v3.docx before every session.
 
-## Existing Infrastructure
-- OpenClaw gateway: running as systemd service
-- 38 agent SKILL.md files: ~/.openclaw/workspace/skills/
-- Artist data store: ~/.openclaw/workspace/maestro/data/artist_store.json
-- Knowledge base: ~/.openclaw/workspace/KNOWLEDGE.md
-- Claude API: already configured in OpenClaw
+## AUTONOMOUS OPERATION — HOW YOU WORK
 
-## What We Are Building — Phase 2: Voice
-A web interface where artists can:
-1. See all 38 agents as real people with names and photos
-2. Click any agent to start a voice call
-3. Speak — Whisper transcribes their voice to text
-4. Text goes to Claude API with the correct agent SKILL.md as system prompt
-5. Response comes back as text
-6. Kokoro TTS speaks the response in that agent's unique voice
-7. Artist hears the agent respond like a real person
+You work autonomously through tasks. You do NOT come back to the user mid-task.
+You do NOT ask questions. You make decisions and document them.
+You do NOT return partial results.
+You ONLY return to the user when a task is 100% complete AND verified.
+Never pause to ask the user a question or wait for approval between sub-tasks within a phase. Make all decisions independently, document every decision made, and only return to the user when the entire phase is complete and fully verified.
 
-## Agent Names
-- PUPPET-MASTER → Marcus (Artist Manager)
-- LEX-CIPHER → Lex (Entertainment Lawyer)
-- FUND-PHANTOM → Jade (Grants & Funding)
-- RIGHTS-PULSE → Ray (Performance Rights)
-- BORDER-ROYALTY → Cleo (Neighbouring Rights)
-- MECH-LEDGER → Finn (Mechanical Royalties)
-- VAULT-KEEPER → Victor (Business Manager)
-- LEDGER-LOCK → Nadia (Accountant)
-- SIGNAL-BLASTER → Zara (Publicist)
-- GRID-PROPHET → Kai (Digital Marketing)
-- VISION-FORGE → Luna (AI Visuals)
-- DESIGN-STUDIO → Diego (Brand Designer)
-- VENUE-HAWK → Ray B (Booking Agent)
-- TOUR-COMMANDER → Miles (Tour Manager)
-- AIRWAVE → Solo (Radio & Playlist)
-- BRAND-CONNECT → Nia (Brand Partnerships)
-- MERCH-EMPIRE → Max (Merchandise)
-- FAN-BUILDER → Aria (Fan Engagement)
-- SYNC-AGENT → Sync (Sync Licensing)
-- GLOBAL-SCOUT → Nova (International)
-- CREATIVE-DIRECTOR → Cree (Creative Director)
-- DATA-ORACLE → Data (Analytics)
-- AR-SCOUT → Scout (A&R)
-- PRODUCER-CONNECT → Beat (Production)
-- MUSIC-EDU → Prof (Education)
-- COLLAB-CONNECT → Collab (Networking)
-- ARTIST-WELLNESS → Maya (Wellness)
-- PRESS-MONITOR → Press (Media Monitor)
-- LIVE-COACH → Coach (Performance)
-- AUDIO-QUALITY → Audio (Quality Control)
-- AI-NAVIGATOR → Neo (AI Tools)
-- ROYALTY-DOCTOR → Doc (Royalty Recovery)
-- VIDEO-DIRECTOR → Reel (Music Video)
-- MOBILE-MONETIZE → Mo (Monetization)
-- STOREFRONT → Store (Fan Store)
-- CONTENT-FORGE → Pen (Content Creation)
-- SCHEDULE-KEEPER → Cal (Scheduling)
-- COLLAB-CONNECT → Link (Collaboration)
+### Before Reporting ANY Task Done — All 4 Must Pass:
+1. grep confirms old/broken code is gone — zero hits
+2. curl endpoint with real data confirms it works — show actual output
+3. Railway logs confirm new code is live — not just status page
+4. Screenshot or log output saved as proof
 
-## Tech Stack
-- Backend: FastAPI (Python)
-- Voice input: Whisper (already installed via pip)
-- Voice output: Kokoro TTS (open source, install via pip)
-- Frontend: HTML/CSS/JS — production grade, dark aesthetic
-- Agent brains: Claude API (claude-sonnet-4-20250514)
-- Data: existing artist_store.json
+If any of the 4 fail — fix it yourself. Do not report done until all 4 pass.
 
-## Design Direction
-- Dark, premium aesthetic — think high-end music industry
-- Each agent has a profile card with photo placeholder, name, title, specialty
-- Clean dashboard — artist sees their whole team at a glance
-- Click to call — simple, intuitive
-- Voice visualizer when agent is speaking
-- Mobile responsive
+### If Something Breaks Mid-Task:
+- git stash immediately — preserve last working state
+- Document exactly what failed and why
+- Revert to last commit
+- Report the failure with full details
+- Do NOT patch forward on top of a broken state
+- Do NOT ask the user to run anything manually
 
-## GSD Rules
-- Build it, don't just plan it
-- Working code over perfect code
-- Test as you go
-- No placeholders — real functionality only
+### Phase Completion:
+- Complete EVERY item in the phase before reporting back
+- Run end-to-end test of the entire phase
+- Produce a phase completion report:
+  - What was built
+  - What was tested
+  - Test results with proof (curl output, logs, screenshots)
+  - What is ready for user review
+- Never say a phase is done unless every single item passes verification
+- Never move to next phase without explicit user sign-off
 
 ---
 
-## MANDATORY RULES - NO EXCEPTIONS:
+## HARD RULES — ZERO EXCEPTIONS
 
-### BEFORE TOUCHING ANY CODE:
-- Always use Plan Mode before making any changes
-- Document the exact current working state before changing anything
-- Never swap a dependency without recording what was working first
-- If you don't know the exact error, investigate first — never guess
+### Never Do These:
+- Never ask the user to run a command manually — ever
+- Never say "this should work" — prove it works
+- Never say "likely" or "probably" — read the actual code first
+- Never trust status endpoints — always curl with real data
+- Never approve a rebuild without: grep zero hits + curl confirmed + screenshot
+- Never change more than one thing at a time
+- Never use background processes, polling loops, or sleep commands (Railway kills them)
+- Never expose API keys in any file that touches Git
+- Never modify auth flow, database, or Railway config without explicit instruction
+- Never swap a provider or core system without documenting exact current state first
+- Never move to the next task without committing the current working change
+- Never let a session exceed 2 hours without verified forward progress
 
-### INVESTIGATION RULES:
-- Never say "likely" or "probably" — verify before reporting
-- Always test with real data, never trust status endpoints alone
-- curl every endpoint with real payloads before calling anything done
-- Check Railway logs directly when status and behavior don't match
+### Always Do These:
+- Use Plan Mode before making any changes — no exceptions
+- Read the actual code before suggesting any fix
+- State the exact file, exact line, exact reason before any change
+- Commit after every single working change
+- Verify Railway is serving new code after every deploy
+- Test with real data — not synthetic test data
+- Create a new branch before starting any task — never work on main directly
+- Check git status before reporting done — no uncommitted changes
 
-### FIXING RULES:
-- One problem, one fix, verify, then move to next
-- Never fix more than one thing at a time
-- Never push without verifying the fix end-to-end first
-- Always commit after every single working change
-- Never call something done without screenshot or curl proof
+---
 
-### REBUILD RULES:
+## INVESTIGATION PROTOCOL
+
+Before forming any hypothesis:
+1. Read the actual file — do not assume
+2. Check Railway logs — not the status page
+3. curl the endpoint with real data
+4. State: "I think X is broken because Y" — with file and line number
+5. If you cannot point to the specific cause in the code — keep diagnosing
+
+If stuck for more than 20 minutes:
+- Stop
+- Document what you tried and what you found
+- /clear and re-approach with a cleaner prompt
+
+---
+
+## VERIFICATION CHECKLIST (Run After Every Fix)
+
+```
+[ ] grep confirms old code is gone — zero hits
+[ ] curl endpoint with real payload — show actual response
+[ ] Railway logs show new code is live
+[ ] Feature tested end-to-end with real data
+[ ] Committed to GitHub with descriptive message
+[ ] No uncommitted changes remaining
+```
+
+---
+
+## COMMIT MESSAGE FORMAT
+
+[PHASE-TASK] short description
+Examples:
+[0.1] Fix voice mapping — pass agent.voice to tts/synth
+[1.2] Add sendEmail() core function with Gmail API
+[FIX] Revert broken voice mapping — restore from last working state
+
+---
+
+## COST CONTROL
+
 - Maximum one rebuild per session
 - Batch ALL fixes before rebuilding
-- Verify everything in code before rebuild, not after
-- Never approve rebuild without: grep shows zero hits + Railway curl confirmed
+- Log token usage at start and end of session
+- Cache repeated API responses — never pay for the same call twice
+- If credits exceed $10 in a session without a working result — stop
 
-### VOICE/TTS RULES:
-- Never change TTS provider without documenting exact current voice mapping first
-- Always restore exact voice assignments when reverting
-- Test female AND male voices after any TTS change before calling it done
+---
 
-### WHAT WENT WRONG THIS WEEK (never repeat):
-- Swapped ElevenLabs to OpenAI without saving voice mapping — lost all voice assignments
-- Reverted without checking OpenAI key had credits — wasted two deploys
-- Called TTS "working" based on /api/tts/status alone — key was invalid, status lied
-- Used unverified ElevenLabs voice IDs — Elli/Domi/Antoni/Arnold/Sam all failed
-- Fix: only use Rachel (21m00Tcm4TlvDq8ikWAM), Bella (EXAVITQu4vr4xnSDxMaL), Adam (pNInz6obpgDQGcFmaJgB)
+## RAILWAY / BACKEND KNOWLEDGE
+
+- Always curl actual endpoint with real data after every deploy
+- GitHub must be connected for auto-deploy
+- Env vars update without rebuild — save and redeploy only
+- SSE streaming is buffered by Railway — use separate POST for audio
+- Never use background processes or polling loops — Railway kills them
+- After any deploy — verify new code is live before reporting done
+
+---
+
+## ENVIRONMENT VARIABLES
+
+Never hardcode. Always use env vars. Document every var in ENV_VARS.md.
+Never test with prod keys during development.
+Rotate keys immediately if exposed.
+
+Required env vars for this backend:
+- ANTHROPIC_API_KEY
+- ELEVENLABS_API_KEY (paid Starter account — do not use free tier on Railway)
+- CLOUDINARY_CLOUD_NAME
+- TWILIO_ACCOUNT_SID
+- TWILIO_AUTH_TOKEN (must be exactly 32 lowercase hex chars)
+- TWILIO_PHONE_NUMBER
+- STRIPE_SECRET_KEY
+- STRIPE_WEBHOOK_SECRET
+- OPENAI_API_KEY (backup TTS only)
+
+---
+
+## CURRENT BUILD STATUS — BACKEND
+
+Working:
+- FastAPI on Railway — live and auto-deploying
+- 16 active agents with skills, greetings, voice routing
+- ElevenLabs TTS — paid Starter account, not flagged
+- Cloudinary photo redirect — uses agent first name at root level
+- Stripe billing — checkout + webhook handler
+- SQLite memory.db — conversation history
+
+Broken / Not Built:
+- Voice mapping: app not passing agent.voice correctly (fix in frontend)
+- Agent handoff: context lost between agents
+- Gmail OAuth: not started
+- sendEmail() function: not started
+- All databases (curators, press, venues): not started
+- Function calling on agents: not started
+- Twilio: dev bypass active — auth token invalid format
+
+---
+
+## PHASE 0 — CURRENT PRIORITY (Fix Before Building Anything New)
+
+Complete in order. Verify each before moving to next.
+
+0.1 Voice mapping — backend is correct. Fix is in frontend CallScreen.js
+0.2 Voice delay — verify /api/tts/synth wiring in frontend
+0.3 Audio stops on hangup — AbortController in frontend
+0.4 Agent handoff — pass full context: profile + history + reason + actions taken
+0.5 Twilio SMS OTP — fix auth token, test real OTP end-to-end
+
+Do not start Phase 1 until all of Phase 0 is verified and user has approved.
+
+---
+
+## SESSION OPENING PROTOCOL
+
+Every session must start with:
+1. State the single task for this session
+2. State starting credit balance
+3. Read this CLAUDE.md completely
+4. Read PLMKR_Master_PRD_v3.docx
+5. Use Plan Mode before touching any code
+
+## SESSION CLOSING PROTOCOL
+
+Before closing every session:
+1. Output 3-line handoff note: done / verified / still open
+2. Commit every working change
+3. State ending credit balance
+4. Note what phase item is next
+
+Last updated: March 2026
