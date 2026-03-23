@@ -930,7 +930,14 @@ def _pg_all() -> list[dict]:
 # first request arrives (avoids the 20-35s first-call warmup delay).
 _ensure_db()
 if DATABASE_URL:
-    _pg_init()
+    print(f"[DB] DATABASE_URL detected (prefix: {DATABASE_URL[:20]}...) — initialising PostgreSQL")
+    try:
+        _pg_init()
+    except Exception as _pg_err:
+        print(f"[DB] PostgreSQL init FAILED: {_pg_err}")
+        raise
+else:
+    print("[DB] No DATABASE_URL — using file-based artist storage")
 _threading.Thread(target=get_kokoro, daemon=True, name="kokoro-warmup").start()
 print("[INIT] DB ready, Kokoro warmup thread started")
 
