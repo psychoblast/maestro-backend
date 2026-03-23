@@ -38,7 +38,7 @@ AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
 # Cloud integrations (optional — graceful degradation when absent)
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
-DATABASE_URL          = os.environ.get("DATABASE_URL", "")  # Railway PostgreSQL — persists artist profiles
+DATABASE_URL: str     = os.environ.get("DATABASE_URL", "")  # Railway PostgreSQL — persists artist profiles
 
 # Sync client for non-streaming endpoints, async client for streaming
 client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -934,8 +934,8 @@ if DATABASE_URL:
     try:
         _pg_init()
     except Exception as _pg_err:
-        print(f"[DB] PostgreSQL init FAILED: {_pg_err}")
-        raise
+        print(f"[DB] PostgreSQL init FAILED — falling back to file storage: {_pg_err}")
+        DATABASE_URL = ""  # disable PG so all branches use file fallback
 else:
     print("[DB] No DATABASE_URL — using file-based artist storage")
 _threading.Thread(target=get_kokoro, daemon=True, name="kokoro-warmup").start()
