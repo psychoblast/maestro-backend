@@ -38,6 +38,7 @@ AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
 # Cloud integrations (optional — graceful degradation when absent)
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
+DATABASE_URL          = os.environ.get("DATABASE_URL", "")  # Railway PostgreSQL — persists artist profiles
 
 # Sync client for non-streaming endpoints, async client for streaming
 client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -702,6 +703,8 @@ def load_skill(skill_dir: str) -> str:
 def load_artist(artist_id: str = "") -> dict:
     if not artist_id:
         return {}
+    if DATABASE_URL:
+        return _pg_get(artist_id)
     path = ARTISTS_DIR / f"{artist_id}.json"
     return json.loads(path.read_text()) if path.exists() else {}
 
@@ -882,10 +885,52 @@ async def _save_exchange(artist_id: str, agent_id: str, user_msg: str, assistant
     async with _db_lock:
         await loop.run_in_executor(None, _write)
 
+# ── PostgreSQL artist store (used when DATABASE_URL env var is set) ────────────
+# Falls back to flat-file storage when DATABASE_URL is absent (local dev).
+def _pg_init():
+    import psycopg2
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS artists (
+                    artist_id TEXT PRIMARY KEY,
+                    data      JSONB NOT NULL DEFAULT '{}'
+                )
+            """)
+    print("[DB] PostgreSQL artists table ready")
+
+def _pg_get(artist_id: str) -> dict:
+    import psycopg2
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM artists WHERE artist_id = %s", (artist_id,))
+            row = cur.fetchone()
+    return dict(row[0]) if row else {}
+
+def _pg_put(artist_id: str, data: dict):
+    import psycopg2, psycopg2.extras
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO artists (artist_id, data) VALUES (%s, %s) "
+                "ON CONFLICT (artist_id) DO UPDATE SET data = EXCLUDED.data",
+                (artist_id, psycopg2.extras.Json(data))
+            )
+
+def _pg_all() -> list[dict]:
+    import psycopg2
+    with psycopg2.connect(DATABASE_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM artists")
+            rows = cur.fetchall()
+    return [dict(r[0]) for r in rows]
+
 # ── Module-level init ──────────────────────────────────────────────────────────
 # Run synchronously at import time so the DB and Kokoro are ready before the
 # first request arrives (avoids the 20-35s first-call warmup delay).
 _ensure_db()
+if DATABASE_URL:
+    _pg_init()
 _threading.Thread(target=get_kokoro, daemon=True, name="kokoro-warmup").start()
 print("[INIT] DB ready, Kokoro warmup thread started")
 
@@ -1297,29 +1342,20 @@ class ArtistProfile(BaseModel):
 @app.post("/api/artist/save")
 async def save_artist(profile: ArtistProfile):
     try:
-        ARTISTS_DIR.mkdir(parents=True, exist_ok=True)
-        artist_file = ARTISTS_DIR / f"{profile.artist_id}.json"
-
-        # Load existing profile or start fresh
-        existing = {}
-        if artist_file.exists():
-            try:
-                existing = json.loads(artist_file.read_text())
-            except Exception:
-                existing = {}
+        existing = load_artist(profile.artist_id)
 
         # Map app profile fields to the store format Maestro expects
         existing.update({
-            "artist_id":        profile.artist_id,
-            "artist_name":      profile.name,
-            "country":          profile.country,
-            "genres":           profile.genres,
+            "artist_id":         profile.artist_id,
+            "artist_name":       profile.name,
+            "country":           profile.country,
+            "genres":            profile.genres,
             "monthly_listeners": profile.monthly_listeners,
-            "tier":             profile.tier,
-            "onboarded":        profile.onboarded,
+            "tier":              profile.tier,
+            "onboarded":         profile.onboarded,
         })
 
-        artist_file.write_text(json.dumps(existing, indent=2))
+        _save_artist_file(profile.artist_id, existing)
         print(f"[ARTIST] Saved profile for {profile.name} ({profile.artist_id})")
         return {"status": "ok", "artist_id": profile.artist_id}
     except Exception as e:
@@ -1337,18 +1373,10 @@ async def billing_upgrade(payload: BillingUpgrade):
         if payload.tier not in ("Starter", "Gold", "Platinum", "Diamond"):
             raise HTTPException(status_code=400, detail="Invalid tier")
 
-        ARTISTS_DIR.mkdir(parents=True, exist_ok=True)
-        artist_file = ARTISTS_DIR / f"{payload.artist_id}.json"
-
-        existing = {}
-        if artist_file.exists():
-            try:
-                existing = json.loads(artist_file.read_text())
-            except Exception:
-                existing = {}
-
+        existing = load_artist(payload.artist_id)
+        existing["artist_id"] = payload.artist_id
         existing["tier"] = payload.tier
-        artist_file.write_text(json.dumps(existing, indent=2))
+        _save_artist_file(payload.artist_id, existing)
         print(f"[BILLING] {payload.artist_id} upgraded to {payload.tier}")
         return {"status": "ok", "tier": payload.tier}
     except HTTPException:
@@ -1380,16 +1408,21 @@ async def get_history(artist_id: str, agent_id: str):
 # ── Artist lookup by name ──────────────────────────────────────────────────────
 @app.get("/api/artist/lookup")
 async def lookup_artist(name: str):
-    """Find existing artist profile by name (case-insensitive) across all artist files."""
+    """Find existing artist profile by name (case-insensitive) across all artist profiles."""
     try:
-        if not ARTISTS_DIR.exists():
-            return {"found": False}
         target = name.lower().strip()
-        for path in ARTISTS_DIR.glob("*.json"):
-            try:
-                profile = json.loads(path.read_text())
-            except Exception:
-                continue
+        if DATABASE_URL:
+            profiles = _pg_all()
+        else:
+            if not ARTISTS_DIR.exists():
+                return {"found": False}
+            profiles = []
+            for path in ARTISTS_DIR.glob("*.json"):
+                try:
+                    profiles.append(json.loads(path.read_text()))
+                except Exception:
+                    pass
+        for profile in profiles:
             if profile.get("artist_name", "").lower() == target:
                 return {
                     "found": True,
@@ -1519,16 +1552,21 @@ class SendNotificationRequest(BaseModel):
     data: dict = {}
 
 
-def _load_artist_file(artist_id: str) -> tuple[Path, dict]:
-    """Return (path, data) for an artist's JSON file."""
+def _load_artist_file(artist_id: str) -> tuple:
+    """Return (key, data). Key is Path in file mode, artist_id str in PG mode."""
+    if DATABASE_URL:
+        return artist_id, _pg_get(artist_id)
     path = ARTISTS_DIR / f"{artist_id}.json"
     data = json.loads(path.read_text()) if path.exists() else {}
     return path, data
 
 
-def _save_artist_file(path: Path, data: dict):
+def _save_artist_file(path_or_id, data: dict):
+    if DATABASE_URL:
+        _pg_put(data["artist_id"], data)
+        return
     ARTISTS_DIR.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2))
+    Path(path_or_id).write_text(json.dumps(data, indent=2))
 
 
 @app.post("/api/notifications/register")
@@ -1712,16 +1750,24 @@ async def billing_webhook(request: Request):
     elif etype in ("customer.subscription.updated", "customer.subscription.deleted"):
         sub_id = data.get("id", "")
         status = data.get("status", "")
-        for f in ARTISTS_DIR.glob("*.json"):
+        if DATABASE_URL:
+            all_artists = _pg_all()
+        else:
+            all_artists = []
+            for f in ARTISTS_DIR.glob("*.json"):
+                try:
+                    all_artists.append(json.loads(f.read_text()))
+                except Exception:
+                    pass
+        for adata in all_artists:
             try:
-                adata = json.loads(f.read_text())
                 if adata.get("subscription_id") == sub_id:
                     if etype == "customer.subscription.deleted" or status == "canceled":
                         adata["subscription_status"] = "canceled"
                         adata["tier"] = "Gold"
                     else:
                         adata["subscription_status"] = status
-                    _save_artist_file(f, adata)
+                    _save_artist_file(adata["artist_id"], adata)
                     print(f"[STRIPE] sub {sub_id} → {status}")
                     break
             except Exception:
