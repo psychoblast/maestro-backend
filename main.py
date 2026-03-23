@@ -1346,6 +1346,8 @@ class ArtistProfile(BaseModel):
     monthly_listeners: str = ""
     tier: str = "Gold"
     onboarded: bool = False
+    bio: str = ""
+    photo: Optional[str] = None
 
 @app.post("/api/artist/save")
 async def save_artist(profile: ArtistProfile):
@@ -1361,6 +1363,8 @@ async def save_artist(profile: ArtistProfile):
             "monthly_listeners": profile.monthly_listeners,
             "tier":              profile.tier,
             "onboarded":         profile.onboarded,
+            "bio":               profile.bio,
+            "photo":             profile.photo,
         })
 
         _save_artist_file(profile.artist_id, existing)
