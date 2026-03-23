@@ -30,7 +30,7 @@ ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 _BASE = Path(__file__).parent
 
 SKILLS_DIR    = Path(os.environ.get("SKILLS_DIR",     _BASE / "skills"))
-ARTISTS_DIR   = Path(os.environ.get("ARTISTS_DIR",    _BASE / "data/artists"))
+ARTISTS_DIR   = Path(os.environ.get("ARTISTS_DIR",    "/data/artists"))
 KNOWLEDGE_BASE= Path(os.environ.get("KNOWLEDGE_BASE", _BASE / "KNOWLEDGE.md"))
 AUDIO_CACHE   = Path(os.environ.get("AUDIO_CACHE_DIR",_BASE / "audio_cache"))
 AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
@@ -333,7 +333,7 @@ EXPERT CALL RULES:
 3. Use the artist's profile for context. Only mention their genre, stats, or background when directly relevant to their question — never recite it unprompted.
 4. CONVERSATION CONTINUITY: If the conversation history contains prior messages, you are RESUMING an existing conversation. Do NOT introduce yourself by name or title. Continue naturally from where you left off. Only introduce yourself on the very first interaction when there is zero prior history.
 5. ROUTING — CRITICAL: When a specialist from the AGENT ROSTER is needed, end your response with EXACTLY this sentence and nothing after it:
-   "I'll hand you over to [FIRST NAME], our [TITLE]. When you're ready, click the button below to be connected."
+   "I'll hand you over to [FIRST NAME], our [TITLE]."
    Then STOP completely. Do not ask follow-up questions. Do not continue.
    The exact phrase "hand you over to" triggers the routing system — use it precisely.
    Use the AGENT ROSTER below to choose the right specialist and their exact first name and title.
@@ -592,22 +592,22 @@ _ADAM   = "pNInz6obpgDQGcFmaJgB"
 # Each voice is chosen to match the agent's character: gender, age, accent, personality.
 # No two active agents share a voice ID.
 _EL_VOICE_MAP = {
-    "am_onyx":    "pNInz6obpgDQGcFmaJgB",  # Marcus — Adam   (authoritative American male)
-    "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel (clear, professional female)
-    "af_heart":   "LcfcDJNUP1GQjkzn1xUU",  # Jade   — Emily  (warm, encouraging female)
-    "am_echo":    "VR6AewLTigWG4xSOukaG",  # Ray    — Arnold (firm, knowledgeable male)
+    "am_onyx":    "nPczCjzI2devNBz1zQrb",  # Marcus — Brian   (deep, commanding Black male)
+    "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel  (clear, professional female)
+    "af_heart":   "pMsXgVXv3BLzUgSXRplE",  # Jade   — Serena  (warm, professional; EL pre-made lacks South Asian accent)
+    "am_echo":    "VR6AewLTigWG4xSOukaG",  # Ray    — Arnold  (firm, knowledgeable male)
     "bf_emma":    "ThT5KcBeYPX3keUQqHPh",  # Nadia  — Dorothy (precise British female)
-    "am_michael": "TX3LPaxmHKxFdv7VOFE",  # Mo     — Liam   (energetic young male)
+    "am_michael": "TX3LPaxmHKxFdv7VOFE",  # Mo     — Liam    (energetic young male)
     "bm_george":  "IKne3meq5aSn9XLyUdCD",  # Tommy  — Charlie (distinct British/Aus male)
-    "af_bella":   "AZnzlk1XvdvUeBnXmlld",  # Zara   — Domi   (strong, energetic female)
-    "am_adam":    "ErXwobaYiN019PkySvjV",  # Kai    — Antoni (tech-savvy young male)
-    "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh   (smooth, charismatic male)
-    "am_fenrir":  "yoZ06aMxZJJ28mfd3POQ",  # Ray B  — Sam    (raspy, street-smart male)
-    "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas (calm, organized male)
-    "af_river":   "MF3mGyEYCl7XYWbV9V6O",  # Cree   — Elli   (creative, expressive female)
-    "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella  (sophisticated British female)
-    "af_kore":    "piTKgcLEGmPE4e6mEKli",  # Scout  — Nicole (perceptive, nuanced female)
-    "af_sarah":   "oWAxZDx7w5VEj9dCyTzz",  # Cal    — Grace  (warm, organized female)
+    "af_bella":   "AZnzlk1XvdvUeBnXmlld",  # Zara   — Domi    (strong, energetic female)
+    "am_adam":    "cjVigY5qzO86Huf0OWal",  # Kai    — Eric    (distinct male; EL pre-made lacks East Asian accent)
+    "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh    (smooth, charismatic male)
+    "am_fenrir":  "yoZ06aMxZJJ28mfd3POQ",  # Ray B  — Sam     (raspy, street-smart male)
+    "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas  (calm, organized male)
+    "af_river":   "MF3mGyEYCl7XYWbV9V6O",  # Cree   — Elli    (creative, expressive female)
+    "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella   (sophisticated British female)
+    "af_kore":    "piTKgcLEGmPE4e6mEKli",  # Scout  — Nicole  (perceptive, nuanced female)
+    "af_sarah":   "oWAxZDx7w5VEj9dCyTzz",  # Cal    — Grace   (warm, organized female)
 }
 
 _EL_VOICES = {
