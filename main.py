@@ -596,14 +596,14 @@ _EL_VOICE_MAP = {
     "am_onyx":    "nPczCjzI2devNBz1zQrb",  # Marcus — Brian   (deep, commanding Black male)
     "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel  (clear, professional female)
     "af_heart":   "pMsXgVXv3BLzUgSXRplE",  # Jade   — Serena  (warm, professional; EL pre-made lacks South Asian accent)
-    "am_echo":    "D38z5RcWu1voky8WS1ja",  # Ray    — Patrick (confident, assertive male)
+    "am_echo":    "N2lVS1w4EtoT3dr4eOWO",  # Ray    — Callum  (natural, calm male; distinct from Patrick/Adam)
     "bf_emma":    "ThT5KcBeYPX3keUQqHPh",  # Nadia  — Dorothy (precise British female)
-    "am_michael": "pNInz6obpgDQGcFmaJgB",  # Mo     — Adam    (solid adult male; fixed 19-char invalid ID)
+    "am_michael": "yoZ06aMxZJJ28mfd3POQ",  # Mo     — Sam     (raspy, street-smart; fits digital monetization expert)
     "bm_george":  "IKne3meq5aSn9XLyUdCD",  # Tommy  — Charlie (distinct British/Aus male)
     "af_bella":   "AZnzlk1XvdvUeBnXmlld",  # Zara   — Domi    (strong, energetic female)
     "am_adam":    "cjVigY5qzO86Huf0OWal",  # Kai    — Eric    (distinct male; EL pre-made lacks East Asian accent)
     "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh    (smooth, charismatic male)
-    "am_fenrir":  "VR6AewLTigWG4xSOukaG",  # Ray B  — Arnold  (deep, commanding male)
+    "am_fenrir":  "ErXwobaYiN019PkySvjV",  # Ray B  — Antoni  (confident, assured; fits booking agent)
     "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas  (calm, organized male)
     "af_river":   "jBpfuIE2acCO8z3wKNLl",  # Cree   — Gigi    (young, energetic female; 20s)
     "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella   (sophisticated British female)
@@ -1440,6 +1440,8 @@ async def lookup_artist(name: str):
                     "genres": profile.get("genres", []),
                     "country": profile.get("country", ""),
                     "monthly_listeners": profile.get("monthly_listeners", ""),
+                    "bio": profile.get("bio", ""),
+                    "photo": profile.get("photo", None),
                     "onboarded": profile.get("onboarded", False),
                 }
         return {"found": False}
