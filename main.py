@@ -596,7 +596,7 @@ _EL_VOICE_MAP = {
     "am_onyx":    "nPczCjzI2devNBz1zQrb",  # Marcus — Brian   (deep, commanding Black male)
     "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel  (clear, professional female)
     "af_heart":   "pMsXgVXv3BLzUgSXRplE",  # Jade   — Serena  (warm, professional; EL pre-made lacks South Asian accent)
-    "am_echo":    "VR6AewLTigWG4xSOukaG",  # Ray    — Arnold  (firm, knowledgeable male)
+    "am_echo":    "ErXwobaYiN019PkySvjV",  # Ray    — Antoni  (calm, confident male; 30s)
     "bf_emma":    "ThT5KcBeYPX3keUQqHPh",  # Nadia  — Dorothy (precise British female)
     "am_michael": "TX3LPaxmHKxFdv7VOFE",  # Mo     — Liam    (energetic young male)
     "bm_george":  "IKne3meq5aSn9XLyUdCD",  # Tommy  — Charlie (distinct British/Aus male)
@@ -605,10 +605,10 @@ _EL_VOICE_MAP = {
     "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh    (smooth, charismatic male)
     "am_fenrir":  "yoZ06aMxZJJ28mfd3POQ",  # Ray B  — Sam     (raspy, street-smart male)
     "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas  (calm, organized male)
-    "af_river":   "MF3mGyEYCl7XYWbV9V6O",  # Cree   — Elli    (creative, expressive female)
+    "af_river":   "jBpfuIE2acCO8z3wKNLl",  # Cree   — Gigi    (young, energetic female; 20s)
     "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella   (sophisticated British female)
     "af_kore":    "piTKgcLEGmPE4e6mEKli",  # Scout  — Nicole  (perceptive, nuanced female)
-    "af_sarah":   "oWAxZDx7w5VEj9dCyTzz",  # Cal    — Grace   (warm, organized female)
+    "af_sarah":   "XB0fDUnXU5powFXDhCwa",  # Cal    — Charlotte (young professional female)
 }
 
 _EL_VOICES = {
@@ -1261,6 +1261,7 @@ async def chat_stream(req: ChatStreamRequest):
                 "agent_id":    route["id"],
                 "agent_name":  route["name"],
                 "agent_title": route["title"],
+                "agent_voice": route["voice"],
                 "agent_slug":  slug,
             })
         yield sse({"type": "done", "full_text": full_text})
