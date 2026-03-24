@@ -794,8 +794,8 @@ _check_env()
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(title="Playmaker", version="2.2.1")
 
-@app.get("/api/health")
-async def health():
+@app.get("/health")
+def health():
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
