@@ -1966,8 +1966,7 @@ async def avatar_status():
     """Check if D-ID avatar feature is available."""
     return {"available": D_ID_AVAILABLE}
 
-
-@app.post("/send-test-email")
+@app.get("/send-test-email")
 def send_test_email():
     import os
     import smtplib
@@ -1976,19 +1975,18 @@ def send_test_email():
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
 
-    msg = MIMEText("Test from PLMKR")
-    msg["Subject"] = "Test"
+    recipient = "yourpersonalemail@gmail.com"
+
+    msg = MIMEText("This is a test email from PLMKR 🚀")
+    msg["Subject"] = "PLMKR Test"
     msg["From"] = sender
-    msg["To"] = sender
+    msg["To"] = recipient
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(sender, password)
-    server.send_message(msg)
-    server.quit()
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, password)
+        server.send_message(msg)
 
-    return {"status": "sent"}
-
+    return {"status": "email sent"}
 
 @app.get("/api/health")
 def health():
