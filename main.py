@@ -792,10 +792,7 @@ def _check_env():
 _check_env()
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Playmaker", version="2.2.1", root_path="/api")
-@app.get("/api/health")
-def health():
-    return {"status": "ok"}
+app = FastAPI(title="Playmaker", version="2.2.1")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
@@ -1966,6 +1963,7 @@ async def avatar_status():
     """Check if D-ID avatar feature is available."""
     return {"available": D_ID_AVAILABLE}
 
+
 @app.get("/send-test-email")
 def send_test_email():
     import os
@@ -1987,6 +1985,7 @@ def send_test_email():
         server.send_message(msg)
 
     return {"status": "email sent"}
+
 
 @app.get("/api/health")
 def health():
