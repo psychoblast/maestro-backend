@@ -31,4 +31,4 @@ EXPOSE 8765
 ENV MAESTRO_DIR=/app
 
 # $PORT is injected by Railway; falls back to 8765 for local use
-CMD ["sh", "-c", "exec python -m uvicorn main:app --host 0.0.0.0 --port $PORT"]
+CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port $PORT"]
