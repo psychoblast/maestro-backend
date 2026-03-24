@@ -1985,9 +1985,7 @@ def send_test_email():
         server.send_message(msg)
 
     return {"status": "email sent"}
-    @app.get("/health")
-def health():
-    return {"status": "ok"}
+
 
 @app.get("/api/health")
 def health():
