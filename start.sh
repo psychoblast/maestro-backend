@@ -15,4 +15,4 @@ export SKILLS_DIR="${SKILLS_DIR:-/home/tommy/.openclaw/workspace/skills}"
 export ARTISTS_DIR="${ARTISTS_DIR:-/home/tommy/.openclaw/workspace/maestro/data/artists}"
 export KNOWLEDGE_BASE="${KNOWLEDGE_BASE:-/home/tommy/.openclaw/workspace/KNOWLEDGE.md}"
 
-python3 -m uvicorn main:app --host 0.0.0.0 --port 8765 --reload
+python3 -m uvicorn main:app --host 0.0.0.0 --port $PORT
