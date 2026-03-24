@@ -1964,7 +1964,7 @@ async def avatar_status():
     return {"available": D_ID_AVAILABLE}
 
 
-@app.post("/send-test-email")
+@app.get("/send-test-email")
 def send_test_email():
     import os
     import smtplib
@@ -1973,7 +1973,7 @@ def send_test_email():
     sender = os.getenv("EMAIL_USER")
     password = os.getenv("EMAIL_PASS")
 
-    recipient = "mypsychoblast@gmail.com"  # change this
+    recipient = "yourpersonalemail@gmail.com"
 
     msg = MIMEText("This is a test email from PLMKR 🚀")
     msg["Subject"] = "PLMKR Test"
@@ -1985,5 +1985,5 @@ def send_test_email():
         server.send_message(msg)
 
     return {"status": "email sent"}
-
+    
 [TEST] Add send-test-email endpoint
