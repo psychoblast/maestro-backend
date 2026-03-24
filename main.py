@@ -792,7 +792,7 @@ def _check_env():
 _check_env()
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Playmaker", version="2.2.1")
+app = FastAPI(title="Playmaker", version="2.2.1", root_path="/api")
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
