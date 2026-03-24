@@ -1985,3 +1985,5 @@ def send_test_email():
         server.send_message(msg)
 
     return {"status": "email sent"}
+
+[TEST] Add send-test-email endpoint
