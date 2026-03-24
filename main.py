@@ -1988,5 +1988,9 @@ def send_test_email():
     @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
     
 [TEST] Add send-test-email endpoint
