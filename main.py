@@ -1985,5 +1985,8 @@ def send_test_email():
         server.send_message(msg)
 
     return {"status": "email sent"}
+    @app.get("/api/health")
+def health():
+    return {"status": "ok"}
     
 [TEST] Add send-test-email endpoint
