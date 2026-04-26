@@ -585,51 +585,53 @@ async def synthesize_speech(text: str, voice: str) -> Optional[bytes]:
 
 # ── ElevenLabs TTS (cloud fallback) ────────────────────────────────────────────
 # Maps Kokoro voice prefix → ElevenLabs pre-made voice ID
-_RACHEL = "21m00Tcm4TlvDq8ikWAM"
-_BELLA  = "EXAVITQu4vr4xnSDxMaL"
-_ADAM   = "pNInz6obpgDQGcFmaJgB"
+_RACHEL  = "21m00Tcm4TlvDq8ikWAM"
+_BELLA   = "EXAVITQu4vr4xnSDxMaL"
+_ADAM    = "pNInz6obpgDQGcFmaJgB"
+_MATILDA = "XrExE9yKIg1WjnnlVkGX"  # warm, international female — South Asian prefix fallback
+_LIAM    = "TX3LPaxmHKxFdv7VOQHJ"  # articulate male — Asian male prefix fallback
 
 # ── Per-agent distinct ElevenLabs voice IDs — 16 active agents ────────────────
 # Each voice is chosen to match the agent's character: gender, age, accent, personality.
 # No two active agents share a voice ID.
 _EL_VOICE_MAP = {
-    "am_onyx":    "nPczCjzI2devNBz1zQrb",  # Marcus — Brian   (deep, commanding Black male)
-    "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel  (clear, professional female)
-    "af_heart":   "pMsXgVXv3BLzUgSXRplE",  # Jade   — Serena  (warm, professional; EL pre-made lacks South Asian accent)
-    "am_echo":    "N2lVS1w4EtoT3dr4eOWO",  # Ray    — Callum  (natural, calm male; distinct from Patrick/Adam)
-    "bf_emma":    "ThT5KcBeYPX3keUQqHPh",  # Nadia  — Dorothy (precise British female)
-    "am_michael": "yoZ06aMxZJJ28mfd3POQ",  # Mo     — Sam     (raspy, street-smart; fits digital monetization expert)
-    "bm_george":  "IKne3meq5aSn9XLyUdCD",  # Tommy  — Charlie (distinct British/Aus male)
-    "af_bella":   "AZnzlk1XvdvUeBnXmlld",  # Zara   — Domi    (strong, energetic female)
-    "am_adam":    "cjVigY5qzO86Huf0OWal",  # Kai    — Eric    (distinct male; EL pre-made lacks East Asian accent)
-    "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh    (smooth, charismatic male)
-    "am_fenrir":  "ErXwobaYiN019PkySvjV",  # Ray B  — Antoni  (confident, assured; fits booking agent)
-    "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas  (calm, organized male)
-    "af_river":   "jBpfuIE2acCO8z3wKNLl",  # Cree   — Gigi    (young, energetic female; 20s)
-    "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella   (sophisticated British female)
-    "af_kore":    "piTKgcLEGmPE4e6mEKli",  # Scout  — Nicole  (perceptive, nuanced female)
-    "af_sarah":   "XB0fDUnXU5powFXDhCwa",  # Cal    — Charlotte (young professional female)
+    "am_onyx":    "nPczCjzI2devNBz1zQrb",  # Marcus — Brian    (deep, commanding Black male)
+    "af_jessica": "21m00Tcm4TlvDq8ikWAM",  # Lex    — Rachel   (clear, professional American female)
+    "af_heart":   "XrExE9yKIg1WjnnlVkGX",  # Jade   — Matilda  (warm, international female; closest EL pre-made for South Asian character)
+    "am_echo":    "N2lVS1w4EtoT3dr4eOWO",  # Ray    — Callum   (natural, calm American male)
+    "bf_emma":    "ThT5KcBeYPX3keUQqHPh",  # Nadia  — Dorothy  (precise British female; fits accountant)
+    "am_michael": "yoZ06aMxZJJ28mfd3POQ",  # Mo     — Sam      (raspy, street-smart; fits digital monetization)
+    "bm_george":  "IKne3meq5aSn9XLyUdCD",  # Tommy  — Charlie  (Australian/British male; fits label services)
+    "af_bella":   "AZnzlk1XvdvUeBnXmlld",  # Zara   — Domi     (strong, energetic American female; fits publicist)
+    "am_adam":    "TX3LPaxmHKxFdv7VOQHJ",  # Kai    — Liam     (articulate, tech-clear male; East Asian digital marketing)
+    "am_liam":    "TxGEqnHWrfWFTfGW9XjX",  # Solo   — Josh     (smooth, charismatic male; fits radio/playlist)
+    "am_fenrir":  "ErXwobaYiN019PkySvjV",  # Ray B  — Antoni   (confident, assured; fits booking agent)
+    "bm_lewis":   "GBv7mTt0atIp3Br8iCZE",  # Miles  — Thomas   (calm, organized British male; fits tour manager)
+    "af_river":   "jBpfuIE2acCO8z3wKNLl",  # Cree   — Gigi     (young, energetic female; Creative Director)
+    "bf_isabella":"EXAVITQu4vr4xnSDxMaL",  # Sync   — Bella    (sophisticated British female; fits sync licensing)
+    "af_kore":    "piTKgcLEGmPE4e6mEKli",  # Scout  — Nicole   (perceptive, nuanced female; fits A&R)
+    "af_sarah":   "XB0fDUnXU5powFXDhCwa",  # Cal    — Charlotte (young professional female; fits scheduling)
 }
 
 _EL_VOICES = {
     # Prefix fallback for non-active agents
-    "af": _RACHEL,  # American female
-    "bf": _BELLA,   # British female
-    "ef": _BELLA,   # European female
-    "ff": _BELLA,   # French female
-    "hf": _RACHEL,  # Hindi female
-    "if": _BELLA,   # Italian female
-    "jf": _RACHEL,  # Japanese female
-    "pf": _BELLA,   # Polish female
-    "zf": _RACHEL,  # Chinese female
-    "am": _ADAM,    # American male
-    "bm": _ADAM,    # British male
-    "em": _ADAM,    # European male
-    "hm": _ADAM,    # Hindi male
-    "im": _ADAM,    # Italian male
-    "jm": _ADAM,    # Japanese male
-    "pm": _ADAM,    # Polish male
-    "zm": _ADAM,    # Chinese male
+    "af": _RACHEL,   # American female
+    "bf": _BELLA,    # British female
+    "ef": _BELLA,    # European female
+    "ff": _BELLA,    # French female
+    "hf": _MATILDA,  # South Asian / Hindi female — warm international voice
+    "if": _BELLA,    # Italian female
+    "jf": _RACHEL,   # Japanese female
+    "pf": _BELLA,    # Polish female
+    "zf": _RACHEL,   # Chinese female
+    "am": _ADAM,     # American male
+    "bm": _ADAM,     # British male
+    "em": _ADAM,     # European male
+    "hm": _ADAM,     # Hindi male
+    "im": _ADAM,     # Italian male
+    "jm": _LIAM,     # Japanese male — articulate male voice
+    "pm": _ADAM,     # Polish male
+    "zm": _LIAM,     # Chinese / Asian male — articulate male voice
 }
 
 def _pcm_to_wav(pcm_bytes: bytes, sr: int = 24000) -> bytes:
