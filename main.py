@@ -795,7 +795,7 @@ _check_env()
 app = FastAPI(title="Playmaker", version="2.2.1")
 
 @app.get("/health")
-def health():
+def health_check():
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
@@ -1332,7 +1332,7 @@ async def tts_status():
     return {"ready": kokoro_ready or el_ready, "engine": "kokoro" if kokoro_ready else ("elevenlabs" if el_ready else "none")}
 
 @app.get("/api/health")
-async def health():
+async def api_health():
     tts_engine = "kokoro" if get_kokoro() else ("elevenlabs" if ELEVENLABS_API_KEY else "none")
     return {"status": "ok", "version": "2.2.1", "tts": tts_engine, "agents": len(AGENTS)}
 
@@ -1990,9 +1990,3 @@ def send_test_email():
 
     return {"status": "email sent"}
 
-
-@app.get("/api/health")
-def health():
-    return {"status": "ok"}
-    
-[TEST] Add send-test-email endpoint
