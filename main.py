@@ -424,7 +424,7 @@ for _a in AGENTS:
 _ROUTE_KEYS = sorted(_ROUTE_LOOKUP.keys(), key=len, reverse=True)
 
 _ROUTING_TRIGGERS = [
-    # Primary canonical trigger — matches new button-handoff wording
+    # Primary canonical trigger — automatic handoff, no button in UI
     "hand you over to", "i'll hand you over to", "i will hand you over to",
     # Legacy triggers kept for safety
     "i'm handing you to", "i am handing you to", "handing you to",
