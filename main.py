@@ -707,8 +707,7 @@ def load_artist(artist_id: str = "") -> dict:
         return {}
     if DATABASE_URL:
         return _pg_get(artist_id)
-    path = ARTISTS_DIR / f"{artist_id}.json"
-    return json.loads(path.read_text()) if path.exists() else {}
+    return _sqlite_get_artist(artist_id)
 
 def load_knowledge() -> str:
     return KNOWLEDGE_BASE.read_text() if KNOWLEDGE_BASE.exists() else ""
@@ -818,11 +817,12 @@ class _CloudinaryPhotoMiddleware(BaseHTTPMiddleware):
 app.add_middleware(_CloudinaryPhotoMiddleware)
 
 # ── Conversation history DB ────────────────────────────────────────────────────
-DB_PATH  = Path(os.environ.get("DB_PATH", _BASE / "memory.db"))
+DB_PATH  = Path(os.environ.get("DB_PATH", "/data/memory.db"))
 _db_lock = asyncio.Lock()
 
 def _ensure_db():
-    """Create messages table + index on first use (idempotent)."""
+    """Create messages + artists tables on first use (idempotent)."""
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.execute("""
         CREATE TABLE IF NOT EXISTS messages (
@@ -837,9 +837,40 @@ def _ensure_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_msg ON messages (artist_id, agent_id, id)"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS artists (
+            artist_id TEXT PRIMARY KEY,
+            data      TEXT NOT NULL DEFAULT '{}'
+        )
+    """)
     conn.commit()
     conn.close()
     print("[DB] memory.db ready")
+
+def _sqlite_get_artist(artist_id: str) -> dict:
+    conn = sqlite3.connect(str(DB_PATH))
+    cur  = conn.cursor()
+    cur.execute("SELECT data FROM artists WHERE artist_id=?", (artist_id,))
+    row  = cur.fetchone()
+    conn.close()
+    return json.loads(row[0]) if row else {}
+
+def _sqlite_put_artist(artist_id: str, data: dict):
+    conn = sqlite3.connect(str(DB_PATH))
+    conn.execute(
+        "INSERT OR REPLACE INTO artists (artist_id, data) VALUES (?, ?)",
+        (artist_id, json.dumps(data))
+    )
+    conn.commit()
+    conn.close()
+
+def _sqlite_all_artists() -> list[dict]:
+    conn = sqlite3.connect(str(DB_PATH))
+    cur  = conn.cursor()
+    cur.execute("SELECT data FROM artists")
+    rows = cur.fetchall()
+    conn.close()
+    return [json.loads(r[0]) for r in rows]
 
 import threading as _threading
 
@@ -1432,14 +1463,7 @@ async def lookup_artist(name: str):
         if DATABASE_URL:
             profiles = _pg_all()
         else:
-            if not ARTISTS_DIR.exists():
-                return {"found": False}
-            profiles = []
-            for path in ARTISTS_DIR.glob("*.json"):
-                try:
-                    profiles.append(json.loads(path.read_text()))
-                except Exception:
-                    pass
+            profiles = _sqlite_all_artists()
         for profile in profiles:
             if profile.get("artist_name", "").lower() == target:
                 return {
@@ -1573,20 +1597,17 @@ class SendNotificationRequest(BaseModel):
 
 
 def _load_artist_file(artist_id: str) -> tuple:
-    """Return (key, data). Key is Path in file mode, artist_id str in PG mode."""
+    """Return (artist_id, data). artist_id is passed through as the key for _save_artist_file."""
     if DATABASE_URL:
         return artist_id, _pg_get(artist_id)
-    path = ARTISTS_DIR / f"{artist_id}.json"
-    data = json.loads(path.read_text()) if path.exists() else {}
-    return path, data
+    return artist_id, _sqlite_get_artist(artist_id)
 
 
 def _save_artist_file(path_or_id, data: dict):
     if DATABASE_URL:
         _pg_put(data["artist_id"], data)
         return
-    ARTISTS_DIR.mkdir(parents=True, exist_ok=True)
-    Path(path_or_id).write_text(json.dumps(data, indent=2))
+    _sqlite_put_artist(data["artist_id"], data)
 
 
 @app.post("/api/notifications/register")
@@ -1773,12 +1794,7 @@ async def billing_webhook(request: Request):
         if DATABASE_URL:
             all_artists = _pg_all()
         else:
-            all_artists = []
-            for f in ARTISTS_DIR.glob("*.json"):
-                try:
-                    all_artists.append(json.loads(f.read_text()))
-                except Exception:
-                    pass
+            all_artists = _sqlite_all_artists()
         for adata in all_artists:
             try:
                 if adata.get("subscription_id") == sub_id:
