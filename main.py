@@ -32,7 +32,7 @@ _BASE = Path(__file__).parent
 SKILLS_DIR    = Path(os.environ.get("SKILLS_DIR",     _BASE / "skills"))
 ARTISTS_DIR   = Path(os.environ.get("ARTISTS_DIR",    "/data/artists"))
 KNOWLEDGE_BASE= Path(os.environ.get("KNOWLEDGE_BASE", _BASE / "KNOWLEDGE.md"))
-AUDIO_CACHE   = Path(os.environ.get("AUDIO_CACHE_DIR",_BASE / "audio_cache"))
+AUDIO_CACHE   = Path(os.environ.get("AUDIO_CACHE_DIR", "/data/audio_cache"))
 AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
 
 # Cloud integrations (optional — graceful degradation when absent)

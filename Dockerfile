@@ -23,8 +23,8 @@ COPY data/ ./data/
 COPY KNOWLEDGE.md* ./
 
 # Runtime data dirs (SQLite DB and audio cache)
-# /data/artists is the default ARTISTS_DIR — mount a Railway volume at /data for persistence
-RUN mkdir -p audio_cache static/temp_audio /data/artists
+# /data is the Railway persistent volume — both DB and audio cache live here
+RUN mkdir -p audio_cache static/temp_audio /data/artists /data/audio_cache
 
 EXPOSE 8765
 
