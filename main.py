@@ -770,8 +770,8 @@ def _check_env():
     if not sid:
         print("\u26a0️  TWILIO_ACCOUNT_SID not set \u2014 SMS OTP disabled")
         ok = False
-    if not re.fullmatch(r'[0-9a-f]{32}', token):
-        print(f"\u26a0️  TWILIO_AUTH_TOKEN invalid (got {len(token)} chars, need exactly 32 lowercase hex chars)")
+    if not re.fullmatch(r'[0-9a-f]{32}', token.strip().lower()):
+        print(f"\u26a0️  TWILIO_AUTH_TOKEN invalid (got {len(token.strip())} chars, need exactly 32 lowercase hex chars)")
         print("    \u27a4  Get it from: console.twilio.com \u2192 Account \u2192 General Settings \u2192 Auth Token")
         print("    \u27a4  Format: 32 chars, only 0-9 and a-f, e.g. a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4")
         print("    \u27a4  Update ~/.bashrc then: source ~/.bashrc && restart uvicorn")
@@ -1074,15 +1074,31 @@ async def handoff(
     # Pass has_history so receiving agent doesn't intro themselves when context exists
     system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=bool(trimmed_history))
 
-    # Extract the reason for handoff from the last user message in the history
-    last_user_msg = next((t["content"] for t in reversed(trimmed_history) if t.get("role") == "user"), "")
-    reason_line = f"They came to {from_name} about: {last_user_msg[:200]}\n" if last_user_msg else ""
+    # Build rich handoff context: last 3 user messages (topic) + any actions already taken by from_agent
+    user_msgs    = [t["content"] for t in trimmed_history if t.get("role") == "user"]
+    agent_msgs   = [t["content"] for t in trimmed_history if t.get("role") == "assistant"]
+    topic        = " | ".join(user_msgs[-3:])[:350] if user_msgs else ""
+    _action_kws  = ["i sent", "i emailed", "i pitched", "i submitted", "i scheduled",
+                    "i booked", "i drafted", "i found", "i created", "i looked", "i reviewed"]
+    actions_done = next(
+        (m[:200] for m in reversed(agent_msgs[-5:])
+         if any(w in m.lower() for w in _action_kws)),
+        ""
+    )
+
+    context_block = ""
+    if topic:
+        context_block += f"What the artist needs: {topic}\n"
+    if actions_done:
+        context_block += f"Actions {from_name} already took: {actions_done}\n"
 
     handoff_prompt = (
-        f"{from_name} just handed {artist_name} directly to you. You are now their point of contact.\n"
-        f"{reason_line}"
-        f"Greet {artist_name} by name. Reference exactly what they need. Tell them what you will do for them right now.\n"
-        f"Two sentences maximum. Under 60 words. Zero markdown. No filler. Sound like the expert you are."
+        f"{from_name} just handed {artist_name} directly to you. Full context is above.\n"
+        f"{context_block}"
+        f'Open with EXACTLY this pattern — fill in the specific issue from context:\n'
+        f'"{artist_name}, {from_name} filled me in — I understand you need help with [specific issue]. '
+        f'Let me take it from here."\n'
+        f"One sentence only. No preamble. No filler. Sound like the expert you are."
     )
 
     messages = []
@@ -1524,14 +1540,16 @@ async def send_otp(payload: SendOtpRequest):
         otp = str(secrets.randbelow(1000000)).zfill(6)
         _otp_store[phone] = {"otp": otp, "expires": time.time() + OTP_EXPIRY_SECONDS}
 
-        # Validate auth token format — Twilio tokens are exactly 32 lowercase hex chars
-        import re as _re
-        token_valid = bool(auth_token and len(auth_token) == 32 and _re.fullmatch(r"[0-9a-f]+", auth_token.lower()))
+        # Strip whitespace — Railway env vars can have trailing newlines/spaces
+        auth_token  = (auth_token  or "").strip()
+        account_sid = (account_sid or "").strip()
+        from_number = (from_number or "").strip()
 
-        if not token_valid:
+        # Validate auth token format — Twilio tokens are exactly 32 lowercase hex chars
+        if not (auth_token and len(auth_token) == 32 and re.fullmatch(r"[0-9a-f]+", auth_token.lower())):
             raise HTTPException(
                 status_code=503,
-                detail=f"SMS not configured — TWILIO_AUTH_TOKEN must be exactly 32 lowercase hex characters (got {len(auth_token or '')} chars). Set the correct token in Railway env vars."
+                detail=f"SMS not configured — TWILIO_AUTH_TOKEN must be exactly 32 lowercase hex characters (got {len(auth_token)} chars). Set the correct token in Railway env vars."
             )
 
         from twilio.rest import Client as TwilioClient
