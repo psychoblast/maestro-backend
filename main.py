@@ -1149,24 +1149,17 @@ async def chat_stream(req: ChatStreamRequest):
 
     do_tts = tts_on.lower() == "true"
 
-    # For greeting pings, verify history from DB directly — don't trust client-provided
-    # history list, which may be empty on first open even if the artist profile exists.
     if message == "__greet__":
-        db_count  = await _get_message_count(artist_id, agent_id)
-        has_history = db_count > 0
-        if not has_history:
-            # First-time greeting: return static greeting instantly — zero Claude API call.
-            # This cuts greeting latency from 10-14s to ~2s (TTS only).
-            greeting_text = _get_greeting(agent)
-            print(f"[GREET] {agent['name']} — static greeting ({len(greeting_text)} chars)")
-            async def _static_greet():
-                yield sse({"type": "text",  "text": greeting_text})
-                yield sse({"type": "done",  "full_text": greeting_text})
-            return StreamingResponse(
-                _static_greet(),
-                media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-            )
+        greeting_text = _get_greeting(agent)
+        print(f"[GREET] {agent['name']} — static greeting ({len(greeting_text)} chars)")
+        async def _static_greet():
+            yield sse({"type": "text",  "text": greeting_text})
+            yield sse({"type": "done",  "full_text": greeting_text})
+        return StreamingResponse(
+            _static_greet(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     else:
         has_history = len(history_list) > 0
 
