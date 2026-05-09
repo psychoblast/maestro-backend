@@ -89,6 +89,7 @@ AGENTS = [
     {"id": "pr-agent",         "name": "Quinn",   "title": "PR Manager",           "skill": "maestro-pr-agent",         "voice": "af_nova",      "color": "#BE185D", "emoji": "📰", "specialty": "Press outreach, blogs, podcasts, magazines, editorial placement"},
     {"id": "booking-agent",    "name": "Avery",   "title": "Booking Agent",        "skill": "maestro-booking-agent",    "voice": "bm_fable",     "color": "#0F766E", "emoji": "🎤", "specialty": "Venue booking, festival pitching, promoter outreach, show deals"},
     {"id": "social-manager",   "name": "Riley",   "title": "Social Media Manager", "skill": "maestro-social-manager",   "voice": "af_sky",       "color": "#0EA5E9", "emoji": "📲", "specialty": "Social post strategy, Buffer scheduling, platform-specific content, trend awareness"},
+    {"id": "release-strategist","name": "Sage",   "title": "Release Strategist",   "skill": "maestro-release-strategist","voice": "af_jessica",   "color": "#7C3AED", "emoji": "🚀", "specialty": "Release planning, campaign orchestration, cross-phase launch strategy"},
 ]
 
 AGENTS_BY_ID = {a["id"]: a for a in AGENTS}
@@ -847,6 +848,26 @@ def health_check():
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+@app.exception_handler(Exception)
+async def _generic_error_handler(request: Request, exc: Exception):
+    """Return a structured error envelope on any unhandled exception."""
+    import uuid as _uuid
+    import logging
+    request_id = str(_uuid.uuid4())
+    logging.getLogger("main").error(
+        "unhandled_exception",
+        extra={"request_id": request_id, "path": str(request.url.path),
+               "error": str(exc)},
+        exc_info=exc,
+    )
+    status = exc.status_code if hasattr(exc, "status_code") else 500
+    detail = exc.detail if hasattr(exc, "detail") else str(exc)
+    return JSONResponse(
+        status_code=status,
+        content={"error": type(exc).__name__, "detail": detail, "request_id": request_id},
+    )
+
 # ── Phase 1 — Pitch service (Gmail, curators, pitch tracking) ─────────────────
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
@@ -860,6 +881,14 @@ app.include_router(_booking_router)
 # ── Phase 3 — Social scheduling + weekly reports ───────────────────────────────
 from social_service import router as _social_router, init_social_db, init_report_scheduler
 app.include_router(_social_router)
+
+# ── Admin — Stats + deep health ───────────────────────────────────────────────
+from admin_service import router as _admin_router
+app.include_router(_admin_router)
+
+# ── Phase 4 — Release campaign orchestration ──────────────────────────────────
+from release_service import router as _release_router, init_release_db, execute_all_due_campaign_actions
+app.include_router(_release_router)
 
 # Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
 _ID_TO_NAME = {a["id"]: a["name"].lower().replace(" ", "-") for a in AGENTS}
@@ -1043,6 +1072,24 @@ init_pr_db()
 init_booking_db()
 init_social_db()
 init_report_scheduler()
+init_release_db()
+
+# Wire campaign executor into scheduler (every 1h)
+_SCHEDULER_ENABLED_FLAG = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
+if _SCHEDULER_ENABLED_FLAG:
+    try:
+        from pitch_service import _scheduler as _pitch_sched
+        if _pitch_sched and _pitch_sched.running:
+            _pitch_sched.add_job(
+                execute_all_due_campaign_actions,
+                "interval",
+                hours=1,
+                id="campaign_executor",
+                replace_existing=True,
+            )
+            print("[Release] Campaign executor scheduled — every 1h")
+    except Exception as _sched_err:
+        print(f"[Release] Campaign scheduler hook failed: {_sched_err}")
 print("[INIT] DB ready, Kokoro warmup thread started, pitch/PR/booking/social services initialised")
 
 @app.get("/api/agents")

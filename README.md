@@ -10,6 +10,7 @@ Playmaker gives artists a team of AI agents that actually do the work:
 - **Quinn** (PR Manager) — pitches press contacts, tracks coverage
 - **Avery** (Booking Agent) — inquires with venues, tracks replies
 - **Riley** (Social Manager) — drafts and schedules social posts
+- **Sage** (Release Strategist) — coordinates full release campaigns across all phases
 - Plus 39 more specialist agents (legal, royalties, finance, visuals, etc.)
 
 All outreach agents connect to the artist's Gmail account and send real emails. Replies are scanned, classified by Claude, and surfaced in weekly reports.
@@ -22,6 +23,7 @@ All outreach agents connect to the artist's Gmail account and send real emails. 
 | Phase 1 | Gmail OAuth, curator pitching, inbox scanning, follow-ups | Local — needs deploy |
 | Phase 2 | PR outreach, booking inquiries, unified inbox scan | Local — needs deploy |
 | Phase 3 | Social post scheduling (Buffer), weekly AI reports | Local — needs deploy |
+| Phase 4 | Release campaign orchestration (Sage agent) | Local — needs deploy |
 
 ## Architecture
 
@@ -30,8 +32,10 @@ main.py                   FastAPI app — agent chat, TTS, billing
 pitch_service.py          Phase 1: Gmail + curator pitches
 pr_service.py             Phase 2a: PR contacts + outreach
 booking_service.py        Phase 2b: Booking contacts + inquiries
-booking_service.py        /api/inbox/scan-all  (unified scan)
+                          /api/inbox/scan-all  (unified scan)
 social_service.py         Phase 3: Social posts + weekly reports
+release_service.py        Phase 4: Release campaign orchestration
+admin_service.py          Admin: stats + deep health endpoints
 
 data/
   curators_seed.json      50 curator contacts
@@ -40,16 +44,22 @@ data/
 
 skills/maestro-*/SKILL.md  Agent skill definitions
 tests/
-  test_pitch_service.py   Phase 1 unit tests (15 tests)
+  test_pitch_service.py   Phase 1 unit tests (16 tests)
   test_pr_service.py      Phase 2a unit tests (10 tests)
   test_booking_service.py Phase 2b unit tests (11 tests)
   test_social_service.py  Phase 3 unit tests (8 tests)
-  test_reports.py         Weekly report unit tests (6 tests)
-  integration/            End-to-end lifecycle tests (6 tests)
+  test_reports.py         Weekly report unit tests (7 tests)
+  test_release_service.py Phase 4 unit tests (13 tests)
+  test_admin_service.py   Admin unit tests (6 tests)
+  integration/            End-to-end lifecycle tests (7 tests)
 
 docs/
   API_REFERENCE.md        Complete endpoint inventory
   DEPLOYMENT_CHECKLIST.md Railway deploy checklist + smoke tests
+  openapi.json            OpenAPI 3.x spec (auto-generated)
+
+scripts/
+  export_openapi.py       Dump OpenAPI JSON to docs/openapi.json
 ```
 
 ## Local Development
@@ -70,6 +80,10 @@ python3 -m pytest tests/ -v
 
 # Run integration tests only
 python3 -m pytest tests/integration/ -v
+
+# Export OpenAPI spec (for frontend developers)
+python3 scripts/export_openapi.py
+# → writes docs/openapi.json (76 endpoints)
 ```
 
 ## Deploy to Railway
