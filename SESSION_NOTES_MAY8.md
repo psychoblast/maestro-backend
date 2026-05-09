@@ -391,3 +391,82 @@ Priority order:
 3. **Marcus tool_use** — wire /api/chat_stream so Marcus/Quinn/Avery/Riley can trigger service actions mid-conversation
 4. **Frontend screens** — curator list, PR contacts, booking contacts, social calendar, weekly report view
 5. **Real contact data** — Tommy provides real emails for curators, PR contacts, booking contacts
+
+---
+
+## Session — 2026-05-09 (Integration Tests + API Docs)
+
+### What Was Built
+
+**Integration Tests (IT.1–IT.5) — 6/6 passing**
+
+All tests use FastAPI TestClient with fresh in-memory SQLite per test. All Claude and Gmail calls mocked.
+
+| Test | File | Flow |
+|------|------|------|
+| IT.1 | tests/integration/test_pitch_lifecycle.py | Curator → generate → batch send → inbox scan → replied + inbound interaction |
+| IT.2 | tests/integration/test_pr_lifecycle.py | PR contact → generate → batch send → PR scan → replied + inbound interaction |
+| IT.3 | tests/integration/test_booking_lifecycle.py | Venue → generate → batch send → booking scan → replied + inbound interaction |
+| IT.4a | tests/integration/test_social_lifecycle.py | Generate post → batch (4 posts) → PATCH to posted → filter → DELETE |
+| IT.4b | tests/integration/test_weekly_report.py | Cross-phase seed → generate report → GET → list → 404 for unknown |
+| IT.5 | tests/integration/test_full_artist_journey.py | Full week: 2 pitches + 2 PR + 2 booking + 4 social + weekly report |
+
+**Shared test infrastructure**: `tests/integration/conftest.py`
+- `build_app(db_path)` — reloads all service modules with temp DB path
+- `seed_artist()`, `seed_gmail_tokens()` — test data helpers
+- `mock_gmail_service()` — Gmail API mock returning one inbox message
+
+**Key bugs found during integration testing (documented, not fixed per session scope):**
+
+1. `momentum_score`, `headline`, `highlights` are NOT stored in `weekly_reports` DB table (`_WR_COLS` missing them). The generate endpoint returns them, but the GET endpoint does not. Fields live only in the in-memory return dict. Fix: add `momentum_score`, `headline`, `highlights` columns to `weekly_reports` table and persist them in `_db_save_report`.
+
+2. When batch-sending pitches/PR/booking to multiple contacts with a single `AsyncMock(return_value=...)`, all records get the same `gmail_thread_id`. The `detect_*_replies()` `thread_map` dict deduplicates by thread_id — only the last contact's outreach record wins. Fix: batch send should use unique thread_ids per email (AsyncMock with side_effect).
+
+**API.1 — OpenAPI tag enrichment**
+- All route decorators tagged: `tags=["gmail"]`, `["curators"]`, `["pitches"]`, `["pr"]`, `["booking"]`, `["social"]`, `["buffer"]`, `["reports"]`
+- FastAPI app description, contact, license, tag metadata added to `main.py`
+- Done via Python bulk-edit script (35+ decorators)
+
+**API.2 — docs/API_REFERENCE.md**
+- Complete endpoint inventory for all 4 phases
+- Request/response JSON examples for each group
+- Status transition diagrams per entity type
+
+**API.3 — docs/DEPLOYMENT_CHECKLIST.md**
+- All env vars documented (required + optional, per phase)
+- Railway volume note, pre-deploy test commands
+- Post-deploy smoke tests (curl commands with expected responses)
+- First-time setup sequence (seed → Gmail OAuth → test batch → enable scheduler)
+- Rollback plan (git revert vs git reset --hard)
+- Troubleshooting table (8 common failure modes)
+
+**API.4 — README.md**
+- Project overview, phase status table, architecture diagram
+- Local dev + test commands
+- Deploy quick path (5 steps)
+- Key env vars table
+
+### Test Results
+
+```
+41 passed in 9.67s
+  (6 integration + 35 unit tests for phases 2-3)
+
+7 pre-existing failures in test_pitch_service.py (sqlite3 + async mock issues)
+  — not introduced this session, confirmed pre-existing
+```
+
+### Commit
+
+`499fff1` — `[test-int] Integration tests IT.1–IT.5 + API docs API.1–API.4`
+
+Pushed to origin/main.
+
+### What's Next (Phase 4)
+
+1. **Tommy deploys** — `git push origin main` was done. Tommy sets Railway env vars and redeploys.
+2. **Fix momentum_score persistence bug** — add column to `weekly_reports` table, update `_db_save_report` + `_WR_COLS`
+3. **Marcus tool_use** — wire `/api/chat_stream` so agents can trigger service actions mid-conversation
+4. **Extend APScheduler** — add PR + booking inbox poll to the 6h job (currently pitch-only)
+5. **Frontend screens** — curator list, PR/booking contacts, social calendar, weekly report view
+6. **Replace placeholder emails** — Tommy provides real contact emails before any batch send
