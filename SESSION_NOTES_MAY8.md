@@ -67,11 +67,23 @@ See `PHASE1_PLAN.md` for full detail. Key decisions:
 | PHASE1_PLAN.md | Created | 11659b4 |
 | .gitignore | Updated (added *.docx) | 7daa27b |
 
-### Push Status — BLOCKED
-- Commits are local on branch `main`
-- Push to `psychoblast/maestro-backend.git` failed: 403 HTTPS, SSH key (`mindvisionllc`) lacks write access
-- **Tommy action required:** `git push origin main` after authenticating as `psychoblast`
-- Alternative: add `mindvisionllc` SSH key to `psychoblast` GitHub account as collaborator
+### Push Status — BLOCKED (see FIX_GIT_AUTH.md)
+
+**Root cause diagnosed:** `psychoblast` fine-grained PAT (`github_pat_11B7DJMRQ0...`) lacks
+`Contents: write` git permission. The PAT can call GitHub's REST API (Metadata:read works)
+but cannot perform git-over-HTTPS operations. This is why:
+- `gh auth status` shows no scopes (fine-grained PATs don't list scopes — a tell)
+- `gh api repos/.../maestro-backend` returns `push:true` — that reflects the *user's* role, not the *token's* git permissions
+- Every push attempt returns 403 regardless of how the credentials are passed
+
+**What was tried automatically:**
+- `gh auth refresh` with repo scope — `--account` flag unavailable in gh 2.67.0
+- Direct push with token embedded in URL — still 403 (confirms token permission issue, not helper issue)
+- Add mindvisionllc as collaborator via API — PAT lacks `admin:repo` permission
+- mindvisionllc push — not a collaborator on the repo
+
+**Fix:** See `FIX_GIT_AUTH.md` — 3 options ranked by speed. Fastest: create classic PAT at
+https://github.com/settings/tokens/new?scopes=repo,workflow then `gh auth login --with-token`
 
 ---
 
