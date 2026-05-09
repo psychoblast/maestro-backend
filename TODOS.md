@@ -26,21 +26,33 @@ Last updated: 2026-05-08 (autonomous session)
 
 ---
 
-## PHASE 1 — Core Action Layer (NOT STARTED)
+## PHASE 1 — Core Action Layer (IMPLEMENTED LOCALLY — needs Tommy deploy)
 
-See `PHASE1_PLAN.md` for full implementation outline.
+All units in `pitch_service.py`. Router wired into `main.py`. See `SESSION_NOTES_MAY8.md` for deploy checklist.
 
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 1.1 | Gmail OAuth — routes + token storage | ⬜ PLANNED | See PHASE1_PLAN.md |
-| 1.2 | Gmail token refresh logic | ⬜ PLANNED | |
-| 1.3 | sendEmail() core function | ⬜ PLANNED | |
-| 1.4 | Curator data model + SQLite table | ⬜ PLANNED | |
-| 1.5 | Curator seed data (initial list) | ⬜ PLANNED | |
-| 1.6 | Inbox parsing — read/categorize emails | ⬜ PLANNED | |
-| 1.7 | Marcus pitching agent — function calling | ⬜ PLANNED | |
-| 1.8 | Press database | ⬜ PLANNED | |
-| 1.9 | Venue database | ⬜ PLANNED | |
+| # | Task | Status | Commit | Notes |
+|---|------|--------|--------|-------|
+| 1.1 | Gmail OAuth routes + token storage | ✅ LOCAL | `3452271` | GET /api/gmail/auth, /callback, /status |
+| 1.2 | sendEmail() + token refresh | ✅ LOCAL | `02e0026` | Auto-refresh on expiry, GmailNotConnected/GmailAuthExpired errors |
+| 1.3 | Curator + Pitch + PitchInteraction DB + CRUD | ✅ LOCAL | `02e0026` | SQLite tables + GET/POST/PATCH endpoints |
+| 1.4 | 50 placeholder curators seed data | ✅ LOCAL | `b46ff4c` | seed_curators.py + data/curators_seed.json |
+| 1.5 | generatePitchEmail() — Claude Haiku | ✅ LOCAL | `02e0026` | Marcus persona, JSON output, POST /api/pitches/generate |
+| 1.6 | sendPitchEmails() batch orchestration | ✅ LOCAL | `02e0026` | POST /api/pitches/batch — generate + save + send |
+| 1.7 | detectReplies() inbox poller | ✅ LOCAL | `02e0026` | POST /api/inbox/scan — thread match + Claude classify |
+| 1.8 | APScheduler polling — every 6h | ✅ LOCAL | `02e0026` | Opt-in: SCHEDULER_ENABLED=true |
+| 1.9 | Follow-up triggers day 1/3/5 | ✅ LOCAL | `02e0026` | POST /api/pitches/followups/queue, tier-based thresholds |
+| test | Unit tests (15 tests, all mocked) | ✅ LOCAL | `02e0026` | tests/test_pitch_service.py, no real creds needed |
+
+### Phase 1 Deploy Checklist (Tommy does this)
+1. `git push origin main` — push 6 local commits
+2. Create Google Cloud OAuth credentials (see .env.example)
+3. Set GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET, GMAIL_OAUTH_REDIRECT_URI on Railway
+4. Railway redeploy (auto-deploys on push if GitHub connected)
+5. Run `python3 seed_curators.py` on Railway shell OR hit POST /api/curators/seed
+6. Replace all placeholder@example.com emails in curators table with real curator emails
+7. Artist connects Gmail: GET /api/gmail/auth?artist_id=ARTIST_ID
+8. Test pitch: POST /api/pitches/batch
+9. Set SCHEDULER_ENABLED=true when ready for automatic inbox polling
 
 ---
 
