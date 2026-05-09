@@ -118,6 +118,26 @@ def test_generate_weekly_report_saves_to_db(ss):
     assert saved["artist_id"] == "artist-001"
 
 
+def test_get_report_returns_momentum_headline_highlights(ss):
+    r = {
+        "id":              "rpt-ms",
+        "artist_id":       "artist-ms",
+        "week_start":      _WEEK_START,
+        "week_end":        _WEEK_END,
+        "summary":         {},
+        "insights":        "Insight text",
+        "recommendations": "Do more",
+        "momentum_score":  8,
+        "headline":        "Great week",
+        "highlights":      ["highlight A", "highlight B"],
+    }
+    ss._db_save_report(r)
+    fetched = ss._db_get_report("rpt-ms")
+    assert fetched["momentum_score"] == 8
+    assert fetched["headline"] == "Great week"
+    assert fetched["highlights"] == ["highlight A", "highlight B"]
+
+
 def test_generate_weekly_report_defaults_to_last_week(ss):
     mock_resp = MagicMock()
     mock_resp.content = [MagicMock(text=json.dumps(_MOCK_ANALYSIS))]

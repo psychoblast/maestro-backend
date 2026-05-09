@@ -78,6 +78,9 @@ def init_social_db():
             summary         TEXT DEFAULT '{}',
             insights        TEXT DEFAULT '',
             recommendations TEXT DEFAULT '',
+            momentum_score  INTEGER DEFAULT 5,
+            headline        TEXT DEFAULT '',
+            highlights      TEXT DEFAULT '[]',
             generated_at    TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -85,6 +88,18 @@ def init_social_db():
         "CREATE INDEX IF NOT EXISTS idx_weekly_reports_artist "
         "ON weekly_reports (artist_id)"
     )
+    # Schema migration for existing DBs
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(weekly_reports)").fetchall()}
+    for col, ddl in [
+        ("momentum_score", "INTEGER DEFAULT 5"),
+        ("headline",       "TEXT DEFAULT ''"),
+        ("highlights",     "TEXT DEFAULT '[]'"),
+    ]:
+        if col not in existing_cols:
+            try:
+                conn.execute(f"ALTER TABLE weekly_reports ADD COLUMN {col} {ddl}")
+            except sqlite3.OperationalError:
+                pass
     conn.commit()
     conn.close()
     print("[Social] SQLite social + report tables ready")
@@ -609,7 +624,8 @@ async def schedule_posts(req: BatchPostRequest):
 
 _WR_COLS = [
     "id", "artist_id", "week_start", "week_end",
-    "summary", "insights", "recommendations", "generated_at",
+    "summary", "insights", "recommendations",
+    "momentum_score", "headline", "highlights", "generated_at",
 ]
 
 
@@ -619,6 +635,10 @@ def _wr_row_to_dict(row, cols) -> dict:
         d["summary"] = json.loads(d["summary"]) if d["summary"] else {}
     except Exception:
         d["summary"] = {}
+    try:
+        d["highlights"] = json.loads(d["highlights"]) if d["highlights"] else []
+    except Exception:
+        d["highlights"] = []
     return d
 
 
@@ -650,12 +670,16 @@ def _db_save_report(r: dict):
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT OR REPLACE INTO weekly_reports
-           (id,artist_id,week_start,week_end,summary,insights,recommendations)
-           VALUES (?,?,?,?,?,?,?)""",
+           (id,artist_id,week_start,week_end,summary,insights,recommendations,
+            momentum_score,headline,highlights)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
         (
             r["id"], r["artist_id"], r["week_start"], r["week_end"],
             json.dumps(r.get("summary", {})),
             r.get("insights", ""), r.get("recommendations", ""),
+            r.get("momentum_score", 5),
+            r.get("headline", ""),
+            json.dumps(r.get("highlights", [])),
         ),
     )
     conn.commit()
