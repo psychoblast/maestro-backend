@@ -881,6 +881,10 @@ app.include_router(_booking_router)
 from social_service import router as _social_router, init_social_db, init_report_scheduler
 app.include_router(_social_router)
 
+# ── Admin — Stats + deep health ───────────────────────────────────────────────
+from admin_service import router as _admin_router
+app.include_router(_admin_router)
+
 # Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
 _ID_TO_NAME = {a["id"]: a["name"].lower().replace(" ", "-") for a in AGENTS}
 
