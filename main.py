@@ -847,6 +847,26 @@ def health_check():
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
+@app.exception_handler(Exception)
+async def _generic_error_handler(request: Request, exc: Exception):
+    """Return a structured error envelope on any unhandled exception."""
+    import uuid as _uuid
+    import logging
+    request_id = str(_uuid.uuid4())
+    logging.getLogger("main").error(
+        "unhandled_exception",
+        extra={"request_id": request_id, "path": str(request.url.path),
+               "error": str(exc)},
+        exc_info=exc,
+    )
+    status = exc.status_code if hasattr(exc, "status_code") else 500
+    detail = exc.detail if hasattr(exc, "detail") else str(exc)
+    return JSONResponse(
+        status_code=status,
+        content={"error": type(exc).__name__, "detail": detail, "request_id": request_id},
+    )
+
 # ── Phase 1 — Pitch service (Gmail, curators, pitch tracking) ─────────────────
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)

@@ -14,9 +14,12 @@ import json
 import uuid
 import base64
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger("booking_service")
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -562,15 +565,23 @@ async def send_booking_emails(req: BatchBookingRequest):
             })
             results["sent"] += 1
             results["inquiry_ids"].append(inquiry_id)
+            log.info("booking_sent", extra={"artist_id": req.artist_id,
+                     "contact_id": contact_id, "action": "booking_batch_send", "result": "ok"})
 
         except (GmailNotConnected, GmailAuthExpired) as e:
             _db_update_booking_inquiry(inquiry_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Gmail auth error for {contact_id}: {e}")
+            log.warning("booking_send_auth_error", extra={"artist_id": req.artist_id,
+                        "contact_id": contact_id, "action": "booking_batch_send",
+                        "result": "auth_error", "error": str(e)})
         except Exception as e:
             _db_update_booking_inquiry(inquiry_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Send failed for {contact_id}: {e}")
+            log.error("booking_send_error", extra={"artist_id": req.artist_id,
+                      "contact_id": contact_id, "action": "booking_batch_send",
+                      "result": "error", "error": str(e)})
 
     return results
 
@@ -692,6 +703,9 @@ async def detect_booking_replies(artist_id: str, gmail_service=None) -> dict:
         })
 
         results["matched"] += 1
+        log.info("booking_reply_matched", extra={"artist_id": artist_id,
+                 "contact_id": inquiry.get("contact_id"), "action": "booking_scan",
+                 "result": sentiment})
         results["classified"].append({
             "inquiry_id": inquiry["id"],
             "from":       from_addr,
