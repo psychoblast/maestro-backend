@@ -20,3 +20,6 @@ settings.local.json
 # Test artifacts
 test_tts.wav
 write_video.py
+
+# Working documents — not versioned
+*.docx
