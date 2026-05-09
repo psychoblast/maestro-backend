@@ -85,6 +85,36 @@ All units split between `pr_service.py` and `booking_service.py`. Routers wired 
 
 ---
 
+## PHASE 3 — Social Scheduling + Weekly Reports (IMPLEMENTED LOCALLY — needs Tommy deploy)
+
+All units in `social_service.py`. Riley (social-manager) wired into `main.py`.
+
+| # | Task | Status | Commit | Notes |
+|---|------|--------|--------|-------|
+| 3.1 | SocialPost schema + CRUD endpoints | ✅ LOCAL | `ac335fd` | GET/POST/PATCH/DELETE /api/social/posts/* |
+| 3.2 | Buffer API integration (mocked) | ✅ LOCAL | `ac335fd` | OAuth stubs + _buffer_schedule_post() mocked — real call commented out |
+| 3.3 | Riley (Social Media Manager) agent + skill | ✅ LOCAL | `fbf30d1` | AGENTS, greetings, roster, skill file |
+| 3.4 | generateSocialPost() — Riley persona | ✅ LOCAL | `ac335fd` | Claude Haiku, platform-specific limits, POST /api/social/posts/generate |
+| 3.5 | schedulePosts() batch orchestration | ✅ LOCAL | `ac335fd` | Evenly spaced 7-day calendar, optional Buffer push, POST /api/social/posts/batch |
+| 3.6 | WeeklyReport schema + endpoints | ✅ LOCAL | `ac335fd` | GET /api/reports/weekly, POST /api/reports/weekly/generate |
+| 3.7 | generateWeeklyReport() — Claude Sonnet synthesis | ✅ LOCAL | `ac335fd` | Aggregates all service tables, momentum_score 1-10, headline + insights + recommendations |
+| 3.8 | Weekly report scheduler — Sundays 18:00 UTC | ✅ LOCAL | `ac335fd` | Extends pitch_service APScheduler, opt-in via SCHEDULER_ENABLED |
+| 3.9 | Unit tests — 14 tests, 14/14 passing | ✅ LOCAL | `50f0c0b` | test_social_service.py (8) + test_reports.py (6) |
+
+### Phase 3 Deploy Checklist (Tommy does this)
+1. `git push origin main` — push local commits to origin
+2. Railway auto-deploys on push
+3. New DB tables created automatically at startup (social_posts, weekly_reports)
+4. (Optional) Create Buffer app at buffer.com/developers/apps
+5. Set BUFFER_CLIENT_ID, BUFFER_CLIENT_SECRET, BUFFER_REDIRECT_URI on Railway
+6. Artist connects Buffer: GET /api/buffer/auth?artist_id=ARTIST_ID
+7. Test social post generation: POST /api/social/posts/generate
+8. Test batch scheduling: POST /api/social/posts/batch
+9. Test weekly report: POST /api/reports/weekly/generate?artist_id=ARTIST_ID
+10. (Optional) Set SCHEDULER_ENABLED=true to enable Sundays auto-report
+
+---
+
 ## STANDING ITEMS
 
 - [ ] Tommy to test 0.D (Twilio OTP) on real device
@@ -98,5 +128,5 @@ All units split between `pr_service.py` and `booking_service.py`. Routers wired 
 ## NOTES
 
 - `ARTISTS_DIR` env var (line 33 main.py) is defined but unused — persistence now uses SQLite/Postgres directly. Harmless, but can be removed.
-- 42 total agents in AGENTS list (added Quinn + Avery); 16 have distinct EL voices in _EL_VOICE_MAP; rest use prefix fallback.
+- 43 total agents in AGENTS list (added Quinn, Avery, Riley); 16 have distinct EL voices in _EL_VOICE_MAP; rest use prefix fallback.
 - `PLMKR_Master_PRD_v3.docx` added to .gitignore (binary working doc, not versioned).

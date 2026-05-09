@@ -298,3 +298,96 @@ f1cefa6  [2.1-2.9] Phase 2 — PR & Booking outreach backend
 - Real contact data: Tommy replaces all @example.com emails in seed files before seeding
 - Quinn and Avery specific ElevenLabs voice IDs: Tommy picks by ear (currently using prefix fallbacks)
 - APScheduler extension: add PR + booking inbox polling to the 6h schedule (currently pitch-only)
+
+---
+
+## Phase 3 Build Session — 2026-05-09 (autonomous, Tommy away)
+
+### Units Completed
+
+| Unit | Description | Commit | Status |
+|------|-------------|--------|--------|
+| 3.1 | SocialPost schema + CRUD endpoints | `ac335fd` | ✅ committed locally |
+| 3.2 | Buffer API OAuth stubs + _buffer_schedule_post() (mocked) | `ac335fd` | ✅ committed locally |
+| 3.3 | Riley (Social Media Manager) — AGENTS, greetings, roster, skill file | `fbf30d1` | ✅ committed locally |
+| 3.4 | generateSocialPost() — Riley persona, platform-specific, Claude Haiku | `ac335fd` | ✅ committed locally |
+| 3.5 | schedulePosts() batch — evenly spaced 7-day calendar, optional Buffer | `ac335fd` | ✅ committed locally |
+| 3.6 | WeeklyReport schema + GET/POST endpoints | `ac335fd` | ✅ committed locally |
+| 3.7 | generateWeeklyReport() — Claude Sonnet: aggregates all tables, momentum_score | `ac335fd` | ✅ committed locally |
+| 3.8 | init_report_scheduler() — extends APScheduler, Sundays 18:00 UTC | `ac335fd` | ✅ committed locally |
+| 3.9 | 14 unit tests (8 social + 6 reports), 14/14 passing | `50f0c0b` | ✅ committed locally |
+
+### Architecture Decisions Made
+
+| Decision | Reason |
+|----------|--------|
+| Buffer send MOCKED with real code commented out | Avoids accidental posts during dev; uncomment 4 lines in _buffer_schedule_post() to enable |
+| Weekly report uses Claude Sonnet (not Haiku) | Synthesis quality — consolidating a week of data into strategic insight needs the better model |
+| init_report_scheduler() imports pitch_service._scheduler lazily | No dependency from social_service → pitch_service at import time; only at init time |
+| _aggregate_week_data wraps all table queries in try/except | Tables may not exist in test DBs or on a first deploy before pitch_service inits |
+| Posting window spread: 7 days / total_posts | Evenly distributed across the week without manual calendar math |
+| Momentum score 1-10 | Concise health signal; 1=stalled, 5=steady, 10=breakthrough — honest not spin |
+| TODO: per-artist timezone for Sunday 18:00 | Using UTC for now; real impl needs artist.timezone field (not added to schema yet) |
+
+### Files Created This Session
+
+| File | Lines |
+|------|-------|
+| `social_service.py` | ~920 |
+| `skills/maestro-social-manager/SKILL.md` | ~55 |
+| `tests/test_social_service.py` | ~120 |
+| `tests/test_reports.py` | ~130 |
+
+### Files Modified This Session
+
+| File | Change |
+|------|--------|
+| `main.py` | Riley added (AGENTS, greetings, roster); Phase 3 router + DB init wired |
+| `.env.example` | BUFFER_CLIENT_ID/SECRET/REDIRECT_URI added |
+| `TODOS.md` | Phase 3 units marked ✅ LOCAL |
+| `SESSION_NOTES_MAY8.md` | This section |
+
+### New Env Vars Tommy Needs on Railway (Phase 3)
+
+```
+BUFFER_CLIENT_ID         # buffer.com/developers/apps → New App → Client ID
+BUFFER_CLIENT_SECRET     # buffer.com/developers/apps → New App → Client Secret
+BUFFER_REDIRECT_URI      # https://YOUR-RAILWAY-URL/api/buffer/callback
+```
+Buffer credentials are OPTIONAL — social posts save as draft without them.
+The weekly report generation requires no new env vars (uses existing ANTHROPIC_API_KEY).
+
+### New API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/social/posts | List posts (filter: platform, status) |
+| GET | /api/social/posts/{id} | Get post |
+| POST | /api/social/posts | Create post manually |
+| PATCH | /api/social/posts/{id} | Update post status/content/engagement_stats |
+| DELETE | /api/social/posts/{id} | Delete post |
+| POST | /api/social/posts/generate | Generate one post (Riley, Claude Haiku) |
+| POST | /api/social/posts/batch | Generate + schedule week of posts |
+| GET | /api/buffer/auth | Start Buffer OAuth |
+| GET | /api/buffer/callback | Handle Buffer OAuth callback |
+| GET | /api/buffer/status | Check Buffer connection |
+| GET | /api/reports/weekly | List weekly reports |
+| GET | /api/reports/weekly/{id} | Get one report |
+| POST | /api/reports/weekly/generate | Generate + save weekly report (Claude Sonnet) |
+
+### Phase 3 Readiness
+
+- **Backend code**: 100% implemented locally ✅
+- **Tests**: 14/14 passing ✅
+- **Buffer integration**: Scaffolded and mocked — enable real posting by uncommenting 4 lines in _buffer_schedule_post()
+- **Ready to deploy**: ✅ once Tommy pushes
+- **Credit spend this session**: ~$0.10 (syntax checks only, no real Claude API calls made)
+
+### Suggested Next Session (Phase 4)
+
+Priority order:
+1. **Push everything to Railway** — Tommy does this (git push + Railway env vars)
+2. **Extend APScheduler** — add PR + booking inbox poll to the 6h job (currently pitch-only)
+3. **Marcus tool_use** — wire /api/chat_stream so Marcus/Quinn/Avery/Riley can trigger service actions mid-conversation
+4. **Frontend screens** — curator list, PR contacts, booking contacts, social calendar, weekly report view
+5. **Real contact data** — Tommy provides real emails for curators, PR contacts, booking contacts
