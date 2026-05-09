@@ -88,6 +88,7 @@ AGENTS = [
     {"id": "schedule-keeper",  "name": "Cal",     "title": "Scheduling",           "skill": "maestro-schedule-keeper",  "voice": "af_sarah",     "color": "#27272A", "emoji": "📅", "specialty": "Calendar, release scheduling, deadline management"},
     {"id": "pr-agent",         "name": "Quinn",   "title": "PR Manager",           "skill": "maestro-pr-agent",         "voice": "af_nova",      "color": "#BE185D", "emoji": "📰", "specialty": "Press outreach, blogs, podcasts, magazines, editorial placement"},
     {"id": "booking-agent",    "name": "Avery",   "title": "Booking Agent",        "skill": "maestro-booking-agent",    "voice": "bm_fable",     "color": "#0F766E", "emoji": "🎤", "specialty": "Venue booking, festival pitching, promoter outreach, show deals"},
+    {"id": "social-manager",   "name": "Riley",   "title": "Social Media Manager", "skill": "maestro-social-manager",   "voice": "af_sky",       "color": "#0EA5E9", "emoji": "📲", "specialty": "Social post strategy, Buffer scheduling, platform-specific content, trend awareness"},
 ]
 
 AGENTS_BY_ID = {a["id"]: a for a in AGENTS}
@@ -328,6 +329,11 @@ _AGENT_GREETINGS: dict[str, list[str]] = {
         "Avery here — Booking at Playmaker. From local venues to major festivals, I handle the pitches, the negotiations, and the logistics of getting you on stage.",
         "I'm Avery, your Booking Agent at Playmaker. A strong live presence builds your fanbase faster than anything else. Let's map out where you should be performing.",
     ],
+    "social-manager": [
+        "I'm Riley, your Social Media Manager at Playmaker. I write platform-specific posts, schedule your content calendar, and make sure your online presence actually sounds like you — not a press release.",
+        "Riley here — Social at Playmaker. Twitter, Instagram, TikTok, Facebook — I write content that fits each platform's native voice and schedule it at the right times to maximise reach.",
+        "I'm Riley, your Social Media Manager at Playmaker. Your music deserves content that connects with real people. I handle the copy, the timing, and the strategy so you can focus on creating.",
+    ],
 }
 
 # Fallback for any agent not in the dict (shouldn't happen, but just in case)
@@ -364,7 +370,7 @@ Diego — Brand Designer | Cree — Creative Director | Reel — Music Video
 Sync — Sync Licensing | Scout — A&R | Beat — Production | Nova — International
 Collab — Networking | Prof — Education | Data — Analytics | Audio — Quality Control
 Neo — AI Tools | Maya — Wellness | Doc — Royalty Recovery | Cal — Scheduling
-Quinn — PR Manager | Avery — Booking Agent
+Quinn — PR Manager | Avery — Booking Agent | Riley — Social Media Manager
 """
 
 # Voice mode: 150-word hard cap, zero formatting, fast sharp answers
@@ -823,6 +829,10 @@ from booking_service import router as _booking_router, init_booking_db
 app.include_router(_pr_router)
 app.include_router(_booking_router)
 
+# ── Phase 3 — Social scheduling + weekly reports ───────────────────────────────
+from social_service import router as _social_router, init_social_db, init_report_scheduler
+app.include_router(_social_router)
+
 # Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
 _ID_TO_NAME = {a["id"]: a["name"].lower().replace(" ", "-") for a in AGENTS}
 
@@ -1003,7 +1013,9 @@ init_pitch_db()
 init_scheduler()
 init_pr_db()
 init_booking_db()
-print("[INIT] DB ready, Kokoro warmup thread started, pitch/PR/booking services initialised")
+init_social_db()
+init_report_scheduler()
+print("[INIT] DB ready, Kokoro warmup thread started, pitch/PR/booking/social services initialised")
 
 @app.get("/api/agents")
 async def list_agents():
