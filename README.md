@@ -56,6 +56,10 @@ tests/
 docs/
   API_REFERENCE.md        Complete endpoint inventory
   DEPLOYMENT_CHECKLIST.md Railway deploy checklist + smoke tests
+  openapi.json            OpenAPI 3.x spec (auto-generated)
+
+scripts/
+  export_openapi.py       Dump OpenAPI JSON to docs/openapi.json
 ```
 
 ## Local Development
@@ -76,6 +80,10 @@ python3 -m pytest tests/ -v
 
 # Run integration tests only
 python3 -m pytest tests/integration/ -v
+
+# Export OpenAPI spec (for frontend developers)
+python3 scripts/export_openapi.py
+# → writes docs/openapi.json (76 endpoints)
 ```
 
 ## Deploy to Railway
