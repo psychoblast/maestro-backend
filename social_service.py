@@ -253,12 +253,12 @@ class SocialPostPatch(BaseModel):
     engagement_stats: Optional[dict] = None
 
 
-@router.get("/api/social/posts")
+@router.get("/api/social/posts", tags=["social"])
 def list_posts(artist_id: str, platform: str = "", status: str = ""):
     return {"posts": _db_list_posts(artist_id, platform=platform, status=status)}
 
 
-@router.get("/api/social/posts/{post_id}")
+@router.get("/api/social/posts/{post_id}", tags=["social"])
 def get_post(post_id: str):
     p = _db_get_post(post_id)
     if not p:
@@ -266,7 +266,7 @@ def get_post(post_id: str):
     return p
 
 
-@router.post("/api/social/posts", status_code=201)
+@router.post("/api/social/posts", status_code=201, tags=["social"])
 def create_post(p: SocialPostIn):
     new_id = str(uuid.uuid4())
     row    = {**p.model_dump(), "id": new_id}
@@ -274,7 +274,7 @@ def create_post(p: SocialPostIn):
     return row
 
 
-@router.patch("/api/social/posts/{post_id}")
+@router.patch("/api/social/posts/{post_id}", tags=["social"])
 def patch_post(post_id: str, patch: SocialPostPatch):
     existing = _db_get_post(post_id)
     if not existing:
@@ -285,7 +285,7 @@ def patch_post(post_id: str, patch: SocialPostPatch):
     return {**existing, **updates}
 
 
-@router.delete("/api/social/posts/{post_id}", status_code=204)
+@router.delete("/api/social/posts/{post_id}", status_code=204, tags=["social"])
 def delete_post(post_id: str):
     p = _db_get_post(post_id)
     if not p:
@@ -312,7 +312,7 @@ class BufferNotConnected(Exception):
     pass
 
 
-@router.get("/api/buffer/auth")
+@router.get("/api/buffer/auth", tags=["buffer"])
 def buffer_auth(artist_id: str):
     """Redirect artist to Buffer OAuth consent screen."""
     if not _BUFFER_CLIENT_ID:
@@ -326,7 +326,7 @@ def buffer_auth(artist_id: str):
     return RedirectResponse(url=f"{_BUFFER_AUTH_URL}?{params}")
 
 
-@router.get("/api/buffer/callback")
+@router.get("/api/buffer/callback", tags=["buffer"])
 async def buffer_callback(code: str, state: str):
     """Handle Buffer OAuth callback — exchange code for access token and store it."""
     if not _BUFFER_CLIENT_SECRET:
@@ -356,7 +356,7 @@ async def buffer_callback(code: str, state: str):
     return {"status": "connected", "artist_id": artist_id}
 
 
-@router.get("/api/buffer/status")
+@router.get("/api/buffer/status", tags=["buffer"])
 def buffer_status(artist_id: str):
     tokens = _load_buffer_tokens(artist_id)
     return {"connected": bool(tokens.get("access_token")), "artist_id": artist_id}
@@ -501,7 +501,7 @@ class GeneratePostRequest(BaseModel):
     tone: str = "authentic"
 
 
-@router.post("/api/social/posts/generate")
+@router.post("/api/social/posts/generate", tags=["social"])
 async def api_generate_post(req: GeneratePostRequest):
     artist = _load_artist_data(req.artist_id)
     try:
@@ -526,7 +526,7 @@ class BatchPostRequest(BaseModel):
     start_date: Optional[str] = None    # ISO date string — first post date, defaults to tomorrow
 
 
-@router.post("/api/social/posts/batch")
+@router.post("/api/social/posts/batch", tags=["social"])
 async def schedule_posts(req: BatchPostRequest):
     """
     Generate req.posts_per_platform posts for each platform.
@@ -662,12 +662,12 @@ def _db_save_report(r: dict):
     conn.close()
 
 
-@router.get("/api/reports/weekly")
+@router.get("/api/reports/weekly", tags=["reports"])
 def list_weekly_reports(artist_id: str, limit: int = 12):
     return {"reports": _db_list_reports(artist_id, limit=limit)}
 
 
-@router.get("/api/reports/weekly/{report_id}")
+@router.get("/api/reports/weekly/{report_id}", tags=["reports"])
 def get_weekly_report(report_id: str):
     r = _db_get_report(report_id)
     if not r:
@@ -681,7 +681,7 @@ class GenerateReportRequest(BaseModel):
     week_end: Optional[str] = None    # ISO date string, defaults to last Sunday
 
 
-@router.post("/api/reports/weekly/generate")
+@router.post("/api/reports/weekly/generate", tags=["reports"])
 async def api_generate_weekly_report(req: GenerateReportRequest):
     try:
         report = await generate_weekly_report(req.artist_id, req.week_start, req.week_end)

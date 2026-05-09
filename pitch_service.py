@@ -184,7 +184,7 @@ def _build_flow():
     )
 
 
-@router.get("/api/gmail/auth")
+@router.get("/api/gmail/auth", tags=["gmail"])
 def gmail_auth(artist_id: str):
     """Redirect artist to Google OAuth consent screen."""
     if not (_GMAIL_CLIENT_ID and _GMAIL_CLIENT_SECRET and _GMAIL_REDIRECT_URI):
@@ -206,7 +206,7 @@ def gmail_auth(artist_id: str):
         raise HTTPException(status_code=503, detail="google-auth-oauthlib not installed")
 
 
-@router.get("/api/gmail/callback")
+@router.get("/api/gmail/callback", tags=["gmail"])
 def gmail_callback(code: str, state: str):
     """Exchange OAuth code for tokens and persist in artist profile."""
     artist_id = state
@@ -235,7 +235,7 @@ def gmail_callback(code: str, state: str):
         raise HTTPException(status_code=500, detail=f"OAuth callback failed: {e}")
 
 
-@router.get("/api/gmail/status")
+@router.get("/api/gmail/status", tags=["gmail"])
 def gmail_status(artist_id: str):
     """Return whether artist has active Gmail tokens."""
     tokens = _load_gmail_tokens(artist_id)
@@ -316,7 +316,7 @@ class SendEmailRequest(BaseModel):
     body: str
 
 
-@router.post("/api/gmail/send")
+@router.post("/api/gmail/send", tags=["gmail"])
 async def api_send_email(req: SendEmailRequest):
     """Send a one-off email via artist's connected Gmail account."""
     try:
@@ -490,12 +490,12 @@ class CuratorPatch(BaseModel):
     response_rate: Optional[float] = None
 
 
-@router.get("/api/curators")
+@router.get("/api/curators", tags=["curators"])
 def list_curators(genre: str = "", tier: str = ""):
     return {"curators": _db_list_curators(genre=genre, tier=tier)}
 
 
-@router.get("/api/curators/{curator_id}")
+@router.get("/api/curators/{curator_id}", tags=["curators"])
 def get_curator(curator_id: str):
     c = _db_get_curator(curator_id)
     if not c:
@@ -503,7 +503,7 @@ def get_curator(curator_id: str):
     return c
 
 
-@router.post("/api/curators", status_code=201)
+@router.post("/api/curators", status_code=201, tags=["curators"])
 def create_curator(c: CuratorIn):
     new_id = str(uuid.uuid4())
     row    = {**c.model_dump(), "id": new_id}
@@ -511,7 +511,7 @@ def create_curator(c: CuratorIn):
     return row
 
 
-@router.patch("/api/curators/{curator_id}")
+@router.patch("/api/curators/{curator_id}", tags=["curators"])
 def patch_curator(curator_id: str, patch: CuratorPatch):
     existing = _db_get_curator(curator_id)
     if not existing:
@@ -528,12 +528,12 @@ class PitchPatch(BaseModel):
     status: Optional[str] = None
 
 
-@router.get("/api/pitches")
+@router.get("/api/pitches", tags=["pitches"])
 def list_pitches(artist_id: str):
     return {"pitches": _db_list_pitches(artist_id)}
 
 
-@router.get("/api/pitches/{pitch_id}")
+@router.get("/api/pitches/{pitch_id}", tags=["pitches"])
 def get_pitch(pitch_id: str):
     p = _db_get_pitch(pitch_id)
     if not p:
@@ -542,7 +542,7 @@ def get_pitch(pitch_id: str):
     return p
 
 
-@router.patch("/api/pitches/{pitch_id}")
+@router.patch("/api/pitches/{pitch_id}", tags=["pitches"])
 def patch_pitch(pitch_id: str, patch: PitchPatch):
     p = _db_get_pitch(pitch_id)
     if not p:
@@ -555,7 +555,7 @@ def patch_pitch(pitch_id: str, patch: PitchPatch):
 
 # ── Seed endpoint (admin, one-time) ──────────────────────────────────────────
 
-@router.post("/api/curators/seed")
+@router.post("/api/curators/seed", tags=["curators"])
 def seed_curators_endpoint():
     """Load curators from data/curators_seed.json. Idempotent."""
     seed_path = Path(__file__).parent / "data" / "curators_seed.json"
@@ -646,7 +646,7 @@ class GeneratePitchRequest(BaseModel):
     track_metadata: dict = {}
 
 
-@router.post("/api/pitches/generate")
+@router.post("/api/pitches/generate", tags=["pitches"])
 async def api_generate_pitch(req: GeneratePitchRequest):
     """Generate (but do not send) a pitch draft for one curator."""
     artist  = _load_artist_data(req.artist_id)
@@ -670,7 +670,7 @@ class BatchPitchRequest(BaseModel):
     track_metadata: dict = {}
 
 
-@router.post("/api/pitches/batch")
+@router.post("/api/pitches/batch", tags=["pitches"])
 async def send_pitch_emails(req: BatchPitchRequest):
     """
     For each curator_id:
@@ -875,7 +875,7 @@ async def detect_replies(artist_id: str) -> dict:
     return results
 
 
-@router.post("/api/inbox/scan")
+@router.post("/api/inbox/scan", tags=["pitches"])
 async def api_scan_inbox(artist_id: str):
     """Manually trigger inbox scan for one artist."""
     try:
@@ -997,7 +997,7 @@ async def _generate_followup(original: dict, curator: dict, artist: dict) -> dic
     return _parse_json_response(resp.content[0].text)
 
 
-@router.post("/api/pitches/followups/queue")
+@router.post("/api/pitches/followups/queue", tags=["pitches"])
 async def queue_followups(artist_id: str = ""):
     """
     Find sent pitches that hit a follow-up threshold today,
