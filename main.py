@@ -812,10 +812,38 @@ def _check_env():
 _check_env()
 
 # ── App ────────────────────────────────────────────────────────────────────────
-app = FastAPI(title="Playmaker", version="2.2.1")
+app = FastAPI(
+    title="PLMKR — Playmaker API",
+    version="3.0.0",
+    description=(
+        "AI-powered artist management platform. "
+        "Agents handle curator pitching, PR outreach, venue booking, "
+        "social scheduling, and weekly reporting — no human copy-paste required.\n\n"
+        "**Phases:**\n"
+        "- Phase 1: Gmail OAuth + Curator pitch lifecycle\n"
+        "- Phase 2: PR contacts + Booking inquiries\n"
+        "- Phase 3: Social post scheduling + Weekly reports\n\n"
+        "All endpoints require an `artist_id` (the artist's unique identifier in the system)."
+    ),
+    contact={"name": "PLMKR Support", "email": "getnexusai@gmail.com"},
+    license_info={"name": "Proprietary"},
+    openapi_tags=[
+        {"name": "health",   "description": "Liveness check"},
+        {"name": "gmail",    "description": "Gmail OAuth 2.0 connect/disconnect"},
+        {"name": "curators", "description": "Curator contact management"},
+        {"name": "pitches",  "description": "Curator pitch lifecycle — generate, send, scan, follow-up"},
+        {"name": "pr",       "description": "PR contact management and outreach lifecycle"},
+        {"name": "booking",  "description": "Booking contact management and inquiry lifecycle"},
+        {"name": "social",   "description": "Social post generation, scheduling, and Buffer integration"},
+        {"name": "reports",  "description": "Weekly activity reports with AI-generated insights"},
+        {"name": "buffer",   "description": "Buffer OAuth 2.0 connect/disconnect"},
+        {"name": "agents",   "description": "Agent roster, TTS, conversation, and billing"},
+    ],
+)
 
-@app.get("/health")
+@app.get("/health", tags=["health"], summary="Liveness check")
 def health_check():
+    """Returns 200 OK when the service is running."""
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 

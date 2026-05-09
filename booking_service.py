@@ -317,7 +317,7 @@ class BookingContactPatch(BaseModel):
     response_rate: Optional[float] = None
 
 
-@router.get("/api/booking-contacts")
+@router.get("/api/booking-contacts", tags=["booking"])
 def list_booking_contacts(
     genre: str = "", tier: str = "", type: str = "", city: str = ""
 ):
@@ -326,7 +326,7 @@ def list_booking_contacts(
     )}
 
 
-@router.get("/api/booking-contacts/{contact_id}")
+@router.get("/api/booking-contacts/{contact_id}", tags=["booking"])
 def get_booking_contact(contact_id: str):
     c = _db_get_booking_contact(contact_id)
     if not c:
@@ -334,7 +334,7 @@ def get_booking_contact(contact_id: str):
     return c
 
 
-@router.post("/api/booking-contacts", status_code=201)
+@router.post("/api/booking-contacts", status_code=201, tags=["booking"])
 def create_booking_contact(c: BookingContactIn):
     new_id = str(uuid.uuid4())
     row    = {**c.model_dump(), "id": new_id}
@@ -342,7 +342,7 @@ def create_booking_contact(c: BookingContactIn):
     return row
 
 
-@router.patch("/api/booking-contacts/{contact_id}")
+@router.patch("/api/booking-contacts/{contact_id}", tags=["booking"])
 def patch_booking_contact(contact_id: str, patch: BookingContactPatch):
     existing = _db_get_booking_contact(contact_id)
     if not existing:
@@ -361,12 +361,12 @@ class BookingInquiryPatch(BaseModel):
     booking_fee: Optional[float] = None
 
 
-@router.get("/api/booking-inquiries")
+@router.get("/api/booking-inquiries", tags=["booking"])
 def list_booking_inquiries(artist_id: str):
     return {"booking_inquiries": _db_list_booking_inquiries(artist_id)}
 
 
-@router.get("/api/booking-inquiries/{inquiry_id}")
+@router.get("/api/booking-inquiries/{inquiry_id}", tags=["booking"])
 def get_booking_inquiry(inquiry_id: str):
     o = _db_get_booking_inquiry(inquiry_id)
     if not o:
@@ -375,7 +375,7 @@ def get_booking_inquiry(inquiry_id: str):
     return o
 
 
-@router.patch("/api/booking-inquiries/{inquiry_id}")
+@router.patch("/api/booking-inquiries/{inquiry_id}", tags=["booking"])
 def patch_booking_inquiry(inquiry_id: str, patch: BookingInquiryPatch):
     o = _db_get_booking_inquiry(inquiry_id)
     if not o:
@@ -388,7 +388,7 @@ def patch_booking_inquiry(inquiry_id: str, patch: BookingInquiryPatch):
 
 # ── Seed endpoint ─────────────────────────────────────────────────────────────
 
-@router.post("/api/booking-contacts/seed")
+@router.post("/api/booking-contacts/seed", tags=["booking"])
 def seed_booking_contacts_endpoint():
     seed_path = Path(__file__).parent / "data" / "booking_contacts_seed.json"
     if not seed_path.exists():
@@ -472,7 +472,7 @@ class GenerateBookingRequest(BaseModel):
     show_context: dict = {}
 
 
-@router.post("/api/booking-inquiries/generate")
+@router.post("/api/booking-inquiries/generate", tags=["booking"])
 async def api_generate_booking(req: GenerateBookingRequest):
     artist  = _load_artist_data(req.artist_id)
     contact = _db_get_booking_contact(req.contact_id)
@@ -495,7 +495,7 @@ class BatchBookingRequest(BaseModel):
     show_context: dict = {}
 
 
-@router.post("/api/booking-inquiries/batch")
+@router.post("/api/booking-inquiries/batch", tags=["booking"])
 async def send_booking_emails(req: BatchBookingRequest):
     """
     For each contact: generate booking email, save inquiry record (draft),
@@ -693,7 +693,7 @@ async def detect_booking_replies(artist_id: str, gmail_service=None) -> dict:
     return results
 
 
-@router.post("/api/booking-inquiries/scan")
+@router.post("/api/booking-inquiries/scan", tags=["booking"])
 async def api_scan_booking_inbox(artist_id: str):
     """Manually trigger booking inbox scan for one artist."""
     try:
@@ -711,7 +711,7 @@ async def api_scan_booking_inbox(artist_id: str):
 
 # ── Unified scan-all endpoint ─────────────────────────────────────────────────
 
-@router.post("/api/inbox/scan-all")
+@router.post("/api/inbox/scan-all", tags=["booking"])
 async def api_scan_all_inbox(artist_id: str):
     """
     Single Gmail auth, then run pitch + PR + booking reply detection in sequence.
@@ -823,7 +823,7 @@ async def _generate_booking_followup(original: dict, contact: dict, artist: dict
     return _parse_json(resp.content[0].text)
 
 
-@router.post("/api/booking-inquiries/followups/queue")
+@router.post("/api/booking-inquiries/followups/queue", tags=["booking"])
 async def queue_booking_followups(artist_id: str = ""):
     """
     Find sent booking inquiries on day 5 or 14, generate follow-ups, send them.

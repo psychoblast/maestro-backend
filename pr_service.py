@@ -300,12 +300,12 @@ class PRContactPatch(BaseModel):
     response_rate: Optional[float] = None
 
 
-@router.get("/api/pr-contacts")
+@router.get("/api/pr-contacts", tags=["pr"])
 def list_pr_contacts(genre: str = "", tier: str = "", outlet_type: str = ""):
     return {"pr_contacts": _db_list_pr_contacts(genre=genre, tier=tier, outlet_type=outlet_type)}
 
 
-@router.get("/api/pr-contacts/{contact_id}")
+@router.get("/api/pr-contacts/{contact_id}", tags=["pr"])
 def get_pr_contact(contact_id: str):
     c = _db_get_pr_contact(contact_id)
     if not c:
@@ -313,7 +313,7 @@ def get_pr_contact(contact_id: str):
     return c
 
 
-@router.post("/api/pr-contacts", status_code=201)
+@router.post("/api/pr-contacts", status_code=201, tags=["pr"])
 def create_pr_contact(c: PRContactIn):
     new_id = str(uuid.uuid4())
     row    = {**c.model_dump(), "id": new_id}
@@ -321,7 +321,7 @@ def create_pr_contact(c: PRContactIn):
     return row
 
 
-@router.patch("/api/pr-contacts/{contact_id}")
+@router.patch("/api/pr-contacts/{contact_id}", tags=["pr"])
 def patch_pr_contact(contact_id: str, patch: PRContactPatch):
     existing = _db_get_pr_contact(contact_id)
     if not existing:
@@ -339,12 +339,12 @@ class PROutreachPatch(BaseModel):
     feature_url: Optional[str] = None
 
 
-@router.get("/api/pr-outreach")
+@router.get("/api/pr-outreach", tags=["pr"])
 def list_pr_outreach(artist_id: str):
     return {"pr_outreach": _db_list_pr_outreach(artist_id)}
 
 
-@router.get("/api/pr-outreach/{outreach_id}")
+@router.get("/api/pr-outreach/{outreach_id}", tags=["pr"])
 def get_pr_outreach(outreach_id: str):
     o = _db_get_pr_outreach(outreach_id)
     if not o:
@@ -353,7 +353,7 @@ def get_pr_outreach(outreach_id: str):
     return o
 
 
-@router.patch("/api/pr-outreach/{outreach_id}")
+@router.patch("/api/pr-outreach/{outreach_id}", tags=["pr"])
 def patch_pr_outreach(outreach_id: str, patch: PROutreachPatch):
     o = _db_get_pr_outreach(outreach_id)
     if not o:
@@ -366,7 +366,7 @@ def patch_pr_outreach(outreach_id: str, patch: PROutreachPatch):
 
 # ── Seed endpoint ─────────────────────────────────────────────────────────────
 
-@router.post("/api/pr-contacts/seed")
+@router.post("/api/pr-contacts/seed", tags=["pr"])
 def seed_pr_contacts_endpoint():
     seed_path = Path(__file__).parent / "data" / "pr_contacts_seed.json"
     if not seed_path.exists():
@@ -449,7 +449,7 @@ class GeneratePRRequest(BaseModel):
     release_context: dict = {}
 
 
-@router.post("/api/pr-outreach/generate")
+@router.post("/api/pr-outreach/generate", tags=["pr"])
 async def api_generate_pr(req: GeneratePRRequest):
     artist  = _load_artist_data(req.artist_id)
     contact = _db_get_pr_contact(req.contact_id)
@@ -472,7 +472,7 @@ class BatchPRRequest(BaseModel):
     release_context: dict = {}
 
 
-@router.post("/api/pr-outreach/batch")
+@router.post("/api/pr-outreach/batch", tags=["pr"])
 async def send_pr_emails(req: BatchPRRequest):
     """
     For each contact: generate PR email, save outreach record (draft),
@@ -671,7 +671,7 @@ async def detect_pr_replies(artist_id: str, gmail_service=None) -> dict:
     return results
 
 
-@router.post("/api/pr-outreach/scan")
+@router.post("/api/pr-outreach/scan", tags=["pr"])
 async def api_scan_pr_inbox(artist_id: str):
     """Manually trigger PR inbox scan for one artist."""
     try:
@@ -758,7 +758,7 @@ async def _generate_pr_followup(original: dict, contact: dict, artist: dict) -> 
     return _parse_json(resp.content[0].text)
 
 
-@router.post("/api/pr-outreach/followups/queue")
+@router.post("/api/pr-outreach/followups/queue", tags=["pr"])
 async def queue_pr_followups(artist_id: str = ""):
     """
     Find sent PR outreach on day 3 or 7, generate follow-ups, send them.
