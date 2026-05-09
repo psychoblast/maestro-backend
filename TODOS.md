@@ -56,6 +56,35 @@ All units in `pitch_service.py`. Router wired into `main.py`. See `SESSION_NOTES
 
 ---
 
+## PHASE 2 — PR & Booking Outreach Layer (IMPLEMENTED LOCALLY — needs Tommy deploy)
+
+All units split between `pr_service.py` and `booking_service.py`. Routers wired into `main.py`.
+
+| # | Task | Status | Commit | Notes |
+|---|------|--------|--------|-------|
+| 2.1 | PR contacts + outreach + interactions DB + CRUD | ✅ LOCAL | `f1cefa6` | GET/POST/PATCH /api/pr-contacts, /api/pr-outreach |
+| 2.2 | Booking contacts + inquiries + interactions DB + CRUD | ✅ LOCAL | `f1cefa6` | GET/POST/PATCH /api/booking-contacts, /api/booking-inquiries |
+| 2.3 | Seed data — 40 PR contacts + 30 booking contacts | ✅ LOCAL | `f1cefa6` | seed_pr_contacts.py + seed_booking_contacts.py |
+| 2.4 | Quinn (PR Manager) + Avery (Booking Agent) added | ✅ LOCAL | `5fb05bc` | AGENTS list, greetings, AGENT ROSTER, skill files |
+| 2.5 | generatePREmail() Quinn persona + generateBookingEmail() Avery persona | ✅ LOCAL | `f1cefa6` | Claude Haiku, JSON output |
+| 2.6 | sendPREmails() + sendBookingEmails() batch orchestration | ✅ LOCAL | `f1cefa6` | POST /api/pr-outreach/batch + /api/booking-inquiries/batch |
+| 2.7 | detectPRReplies() + detectBookingReplies() + unified scan-all | ✅ LOCAL | `f1cefa6` | POST /api/pr-outreach/scan + /api/booking-inquiries/scan + /api/inbox/scan-all |
+| 2.8 | PR follow-ups day 3+7 + booking follow-ups day 5+14 | ✅ LOCAL | `f1cefa6` | POST /api/pr-outreach/followups/queue + /api/booking-inquiries/followups/queue |
+| 2.9 | Unit tests — 21 tests, all mocked | ✅ LOCAL | `f1cefa6` | tests/test_pr_service.py + tests/test_booking_service.py, 21/21 passing |
+
+### Phase 2 Deploy Checklist (Tommy does this)
+1. `git push origin main` — push local commits (f1cefa6, 5fb05bc) to origin
+2. Railway auto-deploys on push
+3. New DB tables created automatically at startup
+4. `python3 seed_pr_contacts.py` — seed 40 PR contacts (replace placeholder emails first)
+5. `python3 seed_booking_contacts.py` — seed 30 booking contacts (replace placeholder emails first)
+6. Artist connects Gmail (if not already): GET /api/gmail/auth?artist_id=ARTIST_ID
+7. Test PR batch: POST /api/pr-outreach/batch
+8. Test booking batch: POST /api/booking-inquiries/batch
+9. Test unified scan: POST /api/inbox/scan-all?artist_id=ARTIST_ID
+
+---
+
 ## STANDING ITEMS
 
 - [ ] Tommy to test 0.D (Twilio OTP) on real device
@@ -69,5 +98,5 @@ All units in `pitch_service.py`. Router wired into `main.py`. See `SESSION_NOTES
 ## NOTES
 
 - `ARTISTS_DIR` env var (line 33 main.py) is defined but unused — persistence now uses SQLite/Postgres directly. Harmless, but can be removed.
-- 40 total agents in AGENTS list; 16 have distinct EL voices in _EL_VOICE_MAP; rest use prefix fallback.
+- 42 total agents in AGENTS list (added Quinn + Avery); 16 have distinct EL voices in _EL_VOICE_MAP; rest use prefix fallback.
 - `PLMKR_Master_PRD_v3.docx` added to .gitignore (binary working doc, not versioned).

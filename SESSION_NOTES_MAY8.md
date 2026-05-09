@@ -200,3 +200,101 @@ b46ff4c  [1.4] Seed 50 placeholder curators — A/B/C tier across 10 genres
   - Press contacts DB (same pattern as curators)
   - Venue DB (same pattern as curators)
   - Frontend screens for curator list, pitch status, inbox view
+
+---
+
+## Phase 2 Build Session — 2026-05-09 (autonomous, Tommy away)
+
+### Units Completed
+
+| Unit | Description | Commit | Status |
+|------|-------------|--------|--------|
+| 2.1 | PR contacts + outreach + interactions DB + CRUD | `f1cefa6` | ✅ committed locally |
+| 2.2 | Booking contacts + inquiries + interactions DB + CRUD | `f1cefa6` | ✅ committed locally |
+| 2.3 | Seed data — 40 PR contacts (A/B/C) + 30 booking contacts | `f1cefa6` | ✅ committed locally |
+| 2.4 | Quinn + Avery agents wired into main.py | `5fb05bc` | ✅ committed locally |
+| 2.5 | generatePREmail() Quinn persona + generateBookingEmail() Avery persona | `f1cefa6` | ✅ committed locally |
+| 2.6 | sendPREmails() + sendBookingEmails() batch orchestration | `f1cefa6` | ✅ committed locally |
+| 2.7 | detectPRReplies() + detectBookingReplies() + unified /api/inbox/scan-all | `f1cefa6` | ✅ committed locally |
+| 2.8 | PR follow-ups day 3+7 + booking follow-ups day 5+14 | `f1cefa6` | ✅ committed locally |
+| 2.9 | 21 unit tests (10 PR + 10 booking + 1 city filter), all mocked, 21/21 passing | `f1cefa6` | ✅ committed locally |
+
+### Architecture Decisions Made
+
+| Decision | Reason |
+|----------|--------|
+| PR tables always SQLite (not Postgres) | Same pattern as pitches table — Postgres only for artist profiles |
+| Booking tables always SQLite | Same pattern |
+| Lazy imports for pitch_service.send_email | Avoids circular imports between pr_service → pitch_service → main |
+| Unified /api/inbox/scan-all endpoint | Single Gmail auth call scans pitch + PR + booking inboxes in sequence |
+| Quinn voice: af_nova, Avery voice: bm_fable | Not in _EL_VOICE_MAP → use ElevenLabs prefix fallback; Tommy assigns specific EL voices later |
+| PR follow-up cadence: A=day3+7, B=day7, C=day7 | Press contacts move faster than booking; journalists' attention windows are shorter |
+| Booking follow-up cadence: A=day5+14, B=day14, C=day14 | Booking negotiations take longer; day5 for A-tier venues, day14 for smaller |
+
+### Files Changed This Session
+
+| File | Action |
+|------|--------|
+| `pr_service.py` | Created (825 lines — all PR units) |
+| `booking_service.py` | Created (620 lines — all booking units + unified scan-all) |
+| `data/pr_contacts_seed.json` | Created (40 contacts: 10A + 15B + 15C) |
+| `data/booking_contacts_seed.json` | Created (30 contacts: 10A + 10B + 10C) |
+| `seed_pr_contacts.py` | Created (standalone seed script) |
+| `seed_booking_contacts.py` | Created (standalone seed script) |
+| `skills/maestro-pr-agent/SKILL.md` | Created (Quinn skill file) |
+| `skills/maestro-booking-agent/SKILL.md` | Created (Avery skill file) |
+| `tests/test_pr_service.py` | Created (10 unit tests) |
+| `tests/test_booking_service.py` | Created (11 unit tests) |
+| `main.py` | Modified (Quinn + Avery agents, greetings, roster, routers, DB init) |
+| `TODOS.md` | Modified (Phase 2 units marked ✅ LOCAL) |
+| `SESSION_NOTES_MAY8.md` | Modified (this section) |
+
+### Commits (local — Tommy must push)
+
+```
+5fb05bc  [2.4] Wire Phase 2 into main.py — Quinn + Avery agents + PR/Booking routers + DB init
+f1cefa6  [2.1-2.9] Phase 2 — PR & Booking outreach backend
+```
+
+### Phase 2 Readiness
+
+- **Backend code**: 100% implemented locally ✅
+- **Tests**: 21 unit tests written, all mocked, 21/21 passing ✅
+- **Ready to deploy**: ✅ once Tommy pushes (same git auth fix as Phase 1)
+- **Blockers to going live**: Real PR contact emails (Tommy provides), real booking contact emails (Tommy provides)
+
+### New Endpoints Added
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/pr-contacts | List PR contacts (filter: genre, tier, outlet_type) |
+| POST | /api/pr-contacts | Create PR contact |
+| PATCH | /api/pr-contacts/{id} | Update PR contact |
+| POST | /api/pr-contacts/seed | Seed from data/pr_contacts_seed.json |
+| GET | /api/pr-outreach | List PR outreach for artist |
+| GET | /api/pr-outreach/{id} | Get PR outreach + interactions |
+| PATCH | /api/pr-outreach/{id} | Update PR outreach status |
+| POST | /api/pr-outreach/generate | Generate one PR email (Quinn) |
+| POST | /api/pr-outreach/batch | Generate + send batch of PR emails |
+| POST | /api/pr-outreach/scan | Scan Gmail inbox for PR replies |
+| POST | /api/pr-outreach/followups/queue | Queue + send PR follow-ups |
+| GET | /api/booking-contacts | List booking contacts (filter: genre, tier, type, city) |
+| POST | /api/booking-contacts | Create booking contact |
+| PATCH | /api/booking-contacts/{id} | Update booking contact |
+| POST | /api/booking-contacts/seed | Seed from data/booking_contacts_seed.json |
+| GET | /api/booking-inquiries | List booking inquiries for artist |
+| GET | /api/booking-inquiries/{id} | Get booking inquiry + interactions |
+| PATCH | /api/booking-inquiries/{id} | Update inquiry status/booking_date/fee |
+| POST | /api/booking-inquiries/generate | Generate one booking email (Avery) |
+| POST | /api/booking-inquiries/batch | Generate + send batch of booking emails |
+| POST | /api/booking-inquiries/scan | Scan Gmail inbox for booking replies |
+| POST | /api/booking-inquiries/followups/queue | Queue + send booking follow-ups |
+| POST | /api/inbox/scan-all | Unified scan: pitch + PR + booking (single Gmail auth) |
+
+### What Still Needs Building (Phase 2.5 / Phase 3)
+
+- Frontend screens: PR contact list, booking contact list, outreach status views, inbox feed
+- Marcus tool_use: function calling in /api/chat_stream so agents can trigger batch sends mid-conversation
+- Real contact data: Tommy replaces all @example.com emails in seed files before seeding
+- Quinn and Avery specific ElevenLabs voice IDs: Tommy picks by ear (currently using prefix fallbacks)
+- APScheduler extension: add PR + booking inbox polling to the 6h schedule (currently pitch-only)
