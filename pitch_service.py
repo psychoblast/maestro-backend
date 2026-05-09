@@ -80,6 +80,7 @@ def init_pitch_db():
             replied_at      TEXT,
             gmail_msg_id    TEXT,
             gmail_thread_id TEXT,
+            idempotency_key TEXT UNIQUE,
             created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -99,6 +100,12 @@ def init_pitch_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_interactions_pitch ON pitch_interactions (pitch_id)"
     )
+    existing_pitch_cols = {r[1] for r in conn.execute("PRAGMA table_info(pitches)").fetchall()}
+    if "idempotency_key" not in existing_pitch_cols:
+        try:
+            conn.execute("ALTER TABLE pitches ADD COLUMN idempotency_key TEXT UNIQUE")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print("[PITCH] SQLite pitch tables ready")
@@ -405,17 +412,20 @@ def _db_upsert_curator(c: dict):
 # ── Pitch helpers ─────────────────────────────────────────────────────────────
 
 _PITCH_COLS = ["id","artist_id","curator_id","status","subject","body",
-               "sent_at","replied_at","gmail_msg_id","gmail_thread_id","created_at"]
+               "sent_at","replied_at","gmail_msg_id","gmail_thread_id",
+               "idempotency_key","created_at"]
 
 
 def _db_create_pitch(p: dict) -> dict:
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT INTO pitches
-           (id, artist_id, curator_id, status, subject, body, gmail_msg_id, gmail_thread_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           (id, artist_id, curator_id, status, subject, body,
+            gmail_msg_id, gmail_thread_id, idempotency_key)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (p["id"], p["artist_id"], p["curator_id"], p.get("status","draft"),
-         p["subject"], p["body"], p.get("gmail_msg_id"), p.get("gmail_thread_id")),
+         p["subject"], p["body"], p.get("gmail_msg_id"), p.get("gmail_thread_id"),
+         p.get("idempotency_key", str(uuid.uuid4()))),
     )
     conn.commit()
     conn.close()

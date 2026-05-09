@@ -71,6 +71,7 @@ def init_booking_db():
             booking_fee      REAL,
             gmail_msg_id     TEXT,
             gmail_thread_id  TEXT,
+            idempotency_key  TEXT UNIQUE,
             created_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -92,6 +93,12 @@ def init_booking_db():
         "CREATE INDEX IF NOT EXISTS idx_booking_interactions "
         "ON booking_interactions (inquiry_id)"
     )
+    existing_bk_cols = {r[1] for r in conn.execute("PRAGMA table_info(booking_inquiries)").fetchall()}
+    if "idempotency_key" not in existing_bk_cols:
+        try:
+            conn.execute("ALTER TABLE booking_inquiries ADD COLUMN idempotency_key TEXT UNIQUE")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print("[Booking] SQLite booking tables ready")
@@ -208,7 +215,7 @@ def _db_upsert_booking_contact(c: dict):
 _BI_COLS = [
     "id", "artist_id", "contact_id", "status", "subject", "body",
     "sent_at", "replied_at", "booking_date", "booking_fee",
-    "gmail_msg_id", "gmail_thread_id", "created_at",
+    "gmail_msg_id", "gmail_thread_id", "idempotency_key", "created_at",
 ]
 
 
@@ -216,11 +223,13 @@ def _db_create_booking_inquiry(o: dict) -> dict:
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT INTO booking_inquiries
-           (id,artist_id,contact_id,status,subject,body,gmail_msg_id,gmail_thread_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           (id,artist_id,contact_id,status,subject,body,
+            gmail_msg_id,gmail_thread_id,idempotency_key)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (
             o["id"], o["artist_id"], o["contact_id"], o.get("status", "draft"),
             o["subject"], o["body"], o.get("gmail_msg_id"), o.get("gmail_thread_id"),
+            o.get("idempotency_key", str(uuid.uuid4())),
         ),
     )
     conn.commit()
