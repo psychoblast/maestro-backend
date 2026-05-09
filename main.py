@@ -86,6 +86,8 @@ AGENTS = [
     {"id": "label-services",   "name": "Tommy",   "title": "Label Services",       "skill": "maestro-label-services",   "voice": "bm_george",    "color": "#0F172A", "emoji": "🏷️", "specialty": "Distribution, release planning, label setup, delivery to DSPs"},
     {"id": "content-forge",    "name": "Pen",     "title": "Content Creation",     "skill": "maestro-content-forge",    "voice": "if_sara",      "color": "#1C1917", "emoji": "✍️", "specialty": "Captions, bios, press releases, content strategy"},
     {"id": "schedule-keeper",  "name": "Cal",     "title": "Scheduling",           "skill": "maestro-schedule-keeper",  "voice": "af_sarah",     "color": "#27272A", "emoji": "📅", "specialty": "Calendar, release scheduling, deadline management"},
+    {"id": "pr-agent",         "name": "Quinn",   "title": "PR Manager",           "skill": "maestro-pr-agent",         "voice": "af_nova",      "color": "#BE185D", "emoji": "📰", "specialty": "Press outreach, blogs, podcasts, magazines, editorial placement"},
+    {"id": "booking-agent",    "name": "Avery",   "title": "Booking Agent",        "skill": "maestro-booking-agent",    "voice": "bm_fable",     "color": "#0F766E", "emoji": "🎤", "specialty": "Venue booking, festival pitching, promoter outreach, show deals"},
 ]
 
 AGENTS_BY_ID = {a["id"]: a for a in AGENTS}
@@ -316,6 +318,16 @@ _AGENT_GREETINGS: dict[str, list[str]] = {
         "I'm Tommy, your Label Services Manager at Playmaker. From DistroKid to proper label distribution, I handle the infrastructure that gets your music on every platform.",
         "Tommy, Label Services at Playmaker. A great song needs a great release strategy behind it. Let's talk about your next drop and make sure everything is set up right.",
     ],
+    "pr-agent": [
+        "I'm Quinn, your PR Manager at Playmaker. I write and send personalised outreach emails to press, blogs, podcasts, and magazines — and track every reply so nothing falls through the cracks.",
+        "Quinn here — PR at Playmaker. Editorial coverage, interview placements, podcast bookings — I find the right outlets for your music and make the pitch on your behalf.",
+        "I'm Quinn, your PR Manager at Playmaker. From Pitchfork to indie blogs, I know who covers your genre and how to reach them. What release are we pushing?",
+    ],
+    "booking-agent": [
+        "I'm Avery, your Booking Agent at Playmaker. I pitch your act to venues, festivals, and promoters — and follow every inquiry through to a confirmed show date.",
+        "Avery here — Booking at Playmaker. From local venues to major festivals, I handle the pitches, the negotiations, and the logistics of getting you on stage.",
+        "I'm Avery, your Booking Agent at Playmaker. A strong live presence builds your fanbase faster than anything else. Let's map out where you should be performing.",
+    ],
 }
 
 # Fallback for any agent not in the dict (shouldn't happen, but just in case)
@@ -352,6 +364,7 @@ Diego — Brand Designer | Cree — Creative Director | Reel — Music Video
 Sync — Sync Licensing | Scout — A&R | Beat — Production | Nova — International
 Collab — Networking | Prof — Education | Data — Analytics | Audio — Quality Control
 Neo — AI Tools | Maya — Wellness | Doc — Royalty Recovery | Cal — Scheduling
+Quinn — PR Manager | Avery — Booking Agent
 """
 
 # Voice mode: 150-word hard cap, zero formatting, fast sharp answers
@@ -804,6 +817,12 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
 
+# ── Phase 2 — PR & Booking outreach services ───────────────────────────────────
+from pr_service import router as _pr_router, init_pr_db
+from booking_service import router as _booking_router, init_booking_db
+app.include_router(_pr_router)
+app.include_router(_booking_router)
+
 # Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
 _ID_TO_NAME = {a["id"]: a["name"].lower().replace(" ", "-") for a in AGENTS}
 
@@ -982,7 +1001,9 @@ else:
 _threading.Thread(target=get_kokoro, daemon=True, name="kokoro-warmup").start()
 init_pitch_db()
 init_scheduler()
-print("[INIT] DB ready, Kokoro warmup thread started, pitch service initialised")
+init_pr_db()
+init_booking_db()
+print("[INIT] DB ready, Kokoro warmup thread started, pitch/PR/booking services initialised")
 
 @app.get("/api/agents")
 async def list_agents():
