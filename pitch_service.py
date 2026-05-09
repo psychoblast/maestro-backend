@@ -45,9 +45,15 @@ router = APIRouter()
 # ── DB: pitch tables (always SQLite) ─────────────────────────────────────────
 
 def init_pitch_db():
-    """Create curators / pitches / pitch_interactions tables. Idempotent."""
+    """Create artists / curators / pitches / pitch_interactions tables. Idempotent."""
     Path(_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(_DB_PATH))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS artists (
+            artist_id TEXT PRIMARY KEY,
+            data      TEXT NOT NULL DEFAULT '{}'
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS curators (
             id              TEXT PRIMARY KEY,
