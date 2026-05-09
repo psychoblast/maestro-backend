@@ -300,20 +300,38 @@ def _get_gmail_service(artist_id: str):
     return build("gmail", "v1", credentials=creds)
 
 
+def _gmail_execute_with_retry(request, max_retries: int = 3):
+    """Execute a Gmail API request, retrying on HTTP 429 with exponential backoff."""
+    import time
+    delays = [1, 2, 4]
+    for attempt in range(max_retries):
+        try:
+            return request.execute()
+        except Exception as exc:
+            status = getattr(getattr(exc, "resp", None), "status", None)
+            if str(status) == "429" and attempt < max_retries - 1:
+                wait = delays[attempt]
+                print(f"[GMAIL] 429 rate-limit — retrying in {wait}s (attempt {attempt+1})")
+                time.sleep(wait)
+                continue
+            raise
+
+
 async def send_email(artist_id: str, to: str, subject: str, body: str) -> dict:
     """
     Send a plain-text email via Gmail API on behalf of the artist.
     Returns {"message_id": ..., "thread_id": ..., "status": "sent"}.
     Raises GmailNotConnected or GmailAuthExpired on auth failure.
+    Retries up to 3 times on HTTP 429 with 1s/2s/4s backoff.
     """
     service = _get_gmail_service(artist_id)
     msg = email.mime.text.MIMEText(body, "plain", "utf-8")
     msg["to"]      = to
     msg["subject"] = subject
     raw    = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    result = service.users().messages().send(
-        userId="me", body={"raw": raw}
-    ).execute()
+    result = _gmail_execute_with_retry(
+        service.users().messages().send(userId="me", body={"raw": raw})
+    )
     print(f"[GMAIL] Sent to {to} | msg_id={result.get('id')}")
     return {
         "message_id": result.get("id"),
