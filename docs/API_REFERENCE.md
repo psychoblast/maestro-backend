@@ -307,6 +307,114 @@ Returns:
 
 ---
 
+---
+
+## Phase 4 — Release Campaign Orchestration
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/releases` | Create a release |
+| GET | `/api/releases` | List releases (`?artist_id=`) |
+| GET | `/api/releases/{id}` | Get one release |
+| PATCH | `/api/releases/{id}` | Update release fields |
+| POST | `/api/releases/{id}/generate-campaign` | Generate campaign actions from release date |
+| GET | `/api/releases/{id}/campaign` | List campaign actions with status |
+| POST | `/api/releases/{id}/campaign/execute-due` | Execute all actions due now |
+
+### POST /api/releases
+```json
+{
+  "artist_id":    "string",
+  "title":        "Album Title",
+  "release_date": "2026-06-01",
+  "genre":        "indie",
+  "mood":         "melancholic"
+}
+```
+
+### POST /api/releases/{id}/generate-campaign — Response
+```json
+{
+  "release_id":       "uuid",
+  "actions_created":  21,
+  "status":           "active"
+}
+```
+
+### GET /api/releases/{id}/campaign — Response
+```json
+{
+  "release_id": "uuid",
+  "actions": [
+    {
+      "id":            "uuid",
+      "action_type":   "pitch_curators",
+      "scheduled_for": "2026-05-18T00:00:00+00:00",
+      "status":        "pending",
+      "payload":       { "artist_id": "...", "tier_filter": ["A","B"] }
+    }
+  ],
+  "counts": { "total": 21, "pending": 21, "done": 0, "failed": 0 }
+}
+```
+
+**Action types:**
+- `pitch_curators` — sends curator pitch batch (Phase 1)
+- `pr_outreach` — sends PR outreach batch (Phase 2)
+- `booking_inquiry` — sends venue booking batch (Phase 2)
+- `social_post_schedule` — generates social posts (Phase 3)
+
+**Campaign schedule relative to release_date:**
+- `-21d` booking_inquiry (venue advance booking)
+- `-14d` pitch_curators wave 1
+- `-10d` pr_outreach wave 1
+- `-7d` pitch_curators wave 2 + social ramp begins
+- `-3d` pr_outreach wave 2
+- `0d` pitch_curators release day + social release day post
+- `+1d` through `+7d` social posts daily
+
+---
+
+## Admin
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/admin/stats` | Activity stats for an artist (`?artist_id=`, `?since=ISO_DATE`) |
+| GET | `/api/admin/health/deep` | DB, scheduler, OAuth token counts, disk usage |
+
+### GET /api/admin/stats — Response
+```json
+{
+  "artist_id":              "string",
+  "since":                  "1970-01-01T00:00:00",
+  "pitches_sent":           12,
+  "pitches_replied":        3,
+  "reply_rate":             0.25,
+  "pr_sent":                8,
+  "pr_replied":             2,
+  "pr_reply_rate":          0.25,
+  "booking_sent":           5,
+  "booking_replied":        1,
+  "booking_reply_rate":     0.20,
+  "social_posts_published": 14,
+  "last_report_date":       "2026-05-10T18:00:00"
+}
+```
+
+### GET /api/admin/health/deep — Response
+```json
+{
+  "timestamp":                     "2026-05-09T21:00:00+00:00",
+  "db_connected":                  true,
+  "scheduler_running":             true,
+  "gmail_token_valid_for_artists": 3,
+  "buffer_token_valid_for_artists": 1,
+  "disk_usage_pct":                34.2
+}
+```
+
+---
+
 ## Error Codes
 
 | Code | Meaning |
@@ -315,6 +423,11 @@ Returns:
 | 404 | Resource not found |
 | 503 | Gmail or Buffer OAuth not configured (env vars missing) |
 | 500 | Generation failed (Claude error) or internal error |
+
+All errors return a structured envelope:
+```json
+{ "error": "ExceptionType", "detail": "human readable message", "request_id": "uuid" }
+```
 
 Gmail-specific errors returned in batch `errors[]` array:
 - `GmailNotConnected` — artist has not completed Gmail OAuth
@@ -325,3 +438,7 @@ Gmail-specific errors returned in batch `errors[]` array:
 ## Interactive Docs
 
 FastAPI auto-generates Swagger UI at `/docs` and ReDoc at `/redoc`.
+
+## For Frontend Developers
+
+OpenAPI spec is exported to `docs/openapi.json`. Run `python3 scripts/export_openapi.py` to regenerate after adding endpoints.
