@@ -12,6 +12,7 @@ import re
 import json
 import uuid
 import sqlite3
+import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -21,6 +22,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import anthropic
+
+log = logging.getLogger("social_service")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _DB_PATH       = Path(os.environ.get("DB_PATH", "/data/memory.db"))
@@ -873,6 +876,9 @@ async def generate_weekly_report(
         "momentum_score":  analysis.get("momentum_score", 5),
     }
     _db_save_report(report)
+    log.info("weekly_report_generated", extra={"artist_id": artist_id,
+             "action": "weekly_report", "result": "ok",
+             "momentum_score": report["momentum_score"]})
     return report
 
 

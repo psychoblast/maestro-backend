@@ -14,6 +14,7 @@ import uuid
 import base64
 import sqlite3
 import email.mime.text
+import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -22,6 +23,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import anthropic
+
+log = logging.getLogger("pitch_service")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _DB_PATH        = Path(os.environ.get("DB_PATH", "/data/memory.db"))
@@ -329,10 +332,17 @@ async def send_email(artist_id: str, to: str, subject: str, body: str) -> dict:
     msg["to"]      = to
     msg["subject"] = subject
     raw    = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    t0 = datetime.now(timezone.utc)
     result = _gmail_execute_with_retry(
         service.users().messages().send(userId="me", body={"raw": raw})
     )
-    print(f"[GMAIL] Sent to {to} | msg_id={result.get('id')}")
+    latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+    log.info(
+        "email_sent",
+        extra={"artist_id": artist_id, "to": to, "action": "send",
+               "result": "ok", "latency_ms": latency_ms,
+               "msg_id": result.get("id")},
+    )
     return {
         "message_id": result.get("id"),
         "thread_id":  result.get("threadId"),
@@ -762,11 +772,16 @@ async def send_pitch_emails(req: BatchPitchRequest):
             })
             results["sent"]      += 1
             results["pitch_ids"].append(pitch_id)
+            log.info("pitch_sent", extra={"artist_id": req.artist_id,
+                     "contact_id": curator_id, "action": "pitch_batch_send", "result": "ok"})
 
         except (GmailNotConnected, GmailAuthExpired) as e:
             _db_update_pitch(pitch_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Gmail auth error for {curator_id}: {e}")
+            log.warning("pitch_send_auth_error", extra={"artist_id": req.artist_id,
+                        "contact_id": curator_id, "action": "pitch_batch_send",
+                        "result": "auth_error", "error": str(e)})
         except Exception as e:
             _db_update_pitch(pitch_id, {"status": "failed"})
             results["failed"] += 1
@@ -899,6 +914,9 @@ async def detect_replies(artist_id: str) -> dict:
         })
 
         results["matched"] += 1
+        log.info("reply_matched", extra={"artist_id": artist_id,
+                 "contact_id": pitch.get("curator_id"), "action": "inbox_scan",
+                 "result": new_status, "sentiment": sentiment})
         results["classified"].append({
             "pitch_id":  pitch["id"],
             "from":      from_addr,

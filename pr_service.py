@@ -13,11 +13,14 @@ import json
 import uuid
 import base64
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+
+log = logging.getLogger("pr_service")
 from pydantic import BaseModel
 import anthropic
 
@@ -541,15 +544,23 @@ async def send_pr_emails(req: BatchPRRequest):
             })
             results["sent"] += 1
             results["outreach_ids"].append(outreach_id)
+            log.info("pr_sent", extra={"artist_id": req.artist_id,
+                     "contact_id": contact_id, "action": "pr_batch_send", "result": "ok"})
 
         except (GmailNotConnected, GmailAuthExpired) as e:
             _db_update_pr_outreach(outreach_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Gmail auth error for {contact_id}: {e}")
+            log.warning("pr_send_auth_error", extra={"artist_id": req.artist_id,
+                        "contact_id": contact_id, "action": "pr_batch_send",
+                        "result": "auth_error", "error": str(e)})
         except Exception as e:
             _db_update_pr_outreach(outreach_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Send failed for {contact_id}: {e}")
+            log.error("pr_send_error", extra={"artist_id": req.artist_id,
+                      "contact_id": contact_id, "action": "pr_batch_send",
+                      "result": "error", "error": str(e)})
 
     return results
 
@@ -671,6 +682,9 @@ async def detect_pr_replies(artist_id: str, gmail_service=None) -> dict:
         })
 
         results["matched"] += 1
+        log.info("pr_reply_matched", extra={"artist_id": artist_id,
+                 "contact_id": outreach.get("contact_id"), "action": "pr_scan",
+                 "result": sentiment})
         results["classified"].append({
             "outreach_id": outreach["id"],
             "from":        from_addr,
