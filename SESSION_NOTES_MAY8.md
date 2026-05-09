@@ -62,10 +62,16 @@ See `PHASE1_PLAN.md` for full detail. Key decisions:
 
 | File | Action | Commit |
 |------|--------|--------|
-| TODOS.md | Created | TBD |
-| SESSION_NOTES_MAY8.md | Created | TBD |
-| PHASE1_PLAN.md | Created | TBD |
-| .gitignore | Updated (added docx) | TBD |
+| TODOS.md | Created | 11659b4 |
+| SESSION_NOTES_MAY8.md | Created | 11659b4 |
+| PHASE1_PLAN.md | Created | 11659b4 |
+| .gitignore | Updated (added *.docx) | 7daa27b |
+
+### Push Status — BLOCKED
+- Commits are local on branch `main`
+- Push to `psychoblast/maestro-backend.git` failed: 403 HTTPS, SSH key (`mindvisionllc`) lacks write access
+- **Tommy action required:** `git push origin main` after authenticating as `psychoblast`
+- Alternative: add `mindvisionllc` SSH key to `psychoblast` GitHub account as collaborator
 
 ---
 
