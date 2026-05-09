@@ -14,9 +14,12 @@ import json
 import uuid
 import base64
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+log = logging.getLogger("booking_service")
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -71,6 +74,7 @@ def init_booking_db():
             booking_fee      REAL,
             gmail_msg_id     TEXT,
             gmail_thread_id  TEXT,
+            idempotency_key  TEXT UNIQUE,
             created_at       TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -92,6 +96,12 @@ def init_booking_db():
         "CREATE INDEX IF NOT EXISTS idx_booking_interactions "
         "ON booking_interactions (inquiry_id)"
     )
+    existing_bk_cols = {r[1] for r in conn.execute("PRAGMA table_info(booking_inquiries)").fetchall()}
+    if "idempotency_key" not in existing_bk_cols:
+        try:
+            conn.execute("ALTER TABLE booking_inquiries ADD COLUMN idempotency_key TEXT UNIQUE")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print("[Booking] SQLite booking tables ready")
@@ -208,7 +218,7 @@ def _db_upsert_booking_contact(c: dict):
 _BI_COLS = [
     "id", "artist_id", "contact_id", "status", "subject", "body",
     "sent_at", "replied_at", "booking_date", "booking_fee",
-    "gmail_msg_id", "gmail_thread_id", "created_at",
+    "gmail_msg_id", "gmail_thread_id", "idempotency_key", "created_at",
 ]
 
 
@@ -216,11 +226,13 @@ def _db_create_booking_inquiry(o: dict) -> dict:
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT INTO booking_inquiries
-           (id,artist_id,contact_id,status,subject,body,gmail_msg_id,gmail_thread_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           (id,artist_id,contact_id,status,subject,body,
+            gmail_msg_id,gmail_thread_id,idempotency_key)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (
             o["id"], o["artist_id"], o["contact_id"], o.get("status", "draft"),
             o["subject"], o["body"], o.get("gmail_msg_id"), o.get("gmail_thread_id"),
+            o.get("idempotency_key", str(uuid.uuid4())),
         ),
     )
     conn.commit()
@@ -553,15 +565,23 @@ async def send_booking_emails(req: BatchBookingRequest):
             })
             results["sent"] += 1
             results["inquiry_ids"].append(inquiry_id)
+            log.info("booking_sent", extra={"artist_id": req.artist_id,
+                     "contact_id": contact_id, "action": "booking_batch_send", "result": "ok"})
 
         except (GmailNotConnected, GmailAuthExpired) as e:
             _db_update_booking_inquiry(inquiry_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Gmail auth error for {contact_id}: {e}")
+            log.warning("booking_send_auth_error", extra={"artist_id": req.artist_id,
+                        "contact_id": contact_id, "action": "booking_batch_send",
+                        "result": "auth_error", "error": str(e)})
         except Exception as e:
             _db_update_booking_inquiry(inquiry_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Send failed for {contact_id}: {e}")
+            log.error("booking_send_error", extra={"artist_id": req.artist_id,
+                      "contact_id": contact_id, "action": "booking_batch_send",
+                      "result": "error", "error": str(e)})
 
     return results
 
@@ -683,6 +703,9 @@ async def detect_booking_replies(artist_id: str, gmail_service=None) -> dict:
         })
 
         results["matched"] += 1
+        log.info("booking_reply_matched", extra={"artist_id": artist_id,
+                 "contact_id": inquiry.get("contact_id"), "action": "booking_scan",
+                 "result": sentiment})
         results["classified"].append({
             "inquiry_id": inquiry["id"],
             "from":       from_addr,

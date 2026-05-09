@@ -14,6 +14,7 @@ import uuid
 import base64
 import sqlite3
 import email.mime.text
+import logging
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
@@ -22,6 +23,8 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import anthropic
+
+log = logging.getLogger("pitch_service")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _DB_PATH        = Path(os.environ.get("DB_PATH", "/data/memory.db"))
@@ -45,9 +48,15 @@ router = APIRouter()
 # ── DB: pitch tables (always SQLite) ─────────────────────────────────────────
 
 def init_pitch_db():
-    """Create curators / pitches / pitch_interactions tables. Idempotent."""
+    """Create artists / curators / pitches / pitch_interactions tables. Idempotent."""
     Path(_DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(_DB_PATH))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS artists (
+            artist_id TEXT PRIMARY KEY,
+            data      TEXT NOT NULL DEFAULT '{}'
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS curators (
             id              TEXT PRIMARY KEY,
@@ -74,6 +83,7 @@ def init_pitch_db():
             replied_at      TEXT,
             gmail_msg_id    TEXT,
             gmail_thread_id TEXT,
+            idempotency_key TEXT UNIQUE,
             created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -93,6 +103,12 @@ def init_pitch_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_interactions_pitch ON pitch_interactions (pitch_id)"
     )
+    existing_pitch_cols = {r[1] for r in conn.execute("PRAGMA table_info(pitches)").fetchall()}
+    if "idempotency_key" not in existing_pitch_cols:
+        try:
+            conn.execute("ALTER TABLE pitches ADD COLUMN idempotency_key TEXT UNIQUE")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print("[PITCH] SQLite pitch tables ready")
@@ -287,21 +303,46 @@ def _get_gmail_service(artist_id: str):
     return build("gmail", "v1", credentials=creds)
 
 
+def _gmail_execute_with_retry(request, max_retries: int = 3):
+    """Execute a Gmail API request, retrying on HTTP 429 with exponential backoff."""
+    import time
+    delays = [1, 2, 4]
+    for attempt in range(max_retries):
+        try:
+            return request.execute()
+        except Exception as exc:
+            status = getattr(getattr(exc, "resp", None), "status", None)
+            if str(status) == "429" and attempt < max_retries - 1:
+                wait = delays[attempt]
+                print(f"[GMAIL] 429 rate-limit — retrying in {wait}s (attempt {attempt+1})")
+                time.sleep(wait)
+                continue
+            raise
+
+
 async def send_email(artist_id: str, to: str, subject: str, body: str) -> dict:
     """
     Send a plain-text email via Gmail API on behalf of the artist.
     Returns {"message_id": ..., "thread_id": ..., "status": "sent"}.
     Raises GmailNotConnected or GmailAuthExpired on auth failure.
+    Retries up to 3 times on HTTP 429 with 1s/2s/4s backoff.
     """
     service = _get_gmail_service(artist_id)
     msg = email.mime.text.MIMEText(body, "plain", "utf-8")
     msg["to"]      = to
     msg["subject"] = subject
     raw    = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-    result = service.users().messages().send(
-        userId="me", body={"raw": raw}
-    ).execute()
-    print(f"[GMAIL] Sent to {to} | msg_id={result.get('id')}")
+    t0 = datetime.now(timezone.utc)
+    result = _gmail_execute_with_retry(
+        service.users().messages().send(userId="me", body={"raw": raw})
+    )
+    latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+    log.info(
+        "email_sent",
+        extra={"artist_id": artist_id, "to": to, "action": "send",
+               "result": "ok", "latency_ms": latency_ms,
+               "msg_id": result.get("id")},
+    )
     return {
         "message_id": result.get("id"),
         "thread_id":  result.get("threadId"),
@@ -399,17 +440,20 @@ def _db_upsert_curator(c: dict):
 # ── Pitch helpers ─────────────────────────────────────────────────────────────
 
 _PITCH_COLS = ["id","artist_id","curator_id","status","subject","body",
-               "sent_at","replied_at","gmail_msg_id","gmail_thread_id","created_at"]
+               "sent_at","replied_at","gmail_msg_id","gmail_thread_id",
+               "idempotency_key","created_at"]
 
 
 def _db_create_pitch(p: dict) -> dict:
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT INTO pitches
-           (id, artist_id, curator_id, status, subject, body, gmail_msg_id, gmail_thread_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           (id, artist_id, curator_id, status, subject, body,
+            gmail_msg_id, gmail_thread_id, idempotency_key)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (p["id"], p["artist_id"], p["curator_id"], p.get("status","draft"),
-         p["subject"], p["body"], p.get("gmail_msg_id"), p.get("gmail_thread_id")),
+         p["subject"], p["body"], p.get("gmail_msg_id"), p.get("gmail_thread_id"),
+         p.get("idempotency_key", str(uuid.uuid4()))),
     )
     conn.commit()
     conn.close()
@@ -728,11 +772,16 @@ async def send_pitch_emails(req: BatchPitchRequest):
             })
             results["sent"]      += 1
             results["pitch_ids"].append(pitch_id)
+            log.info("pitch_sent", extra={"artist_id": req.artist_id,
+                     "contact_id": curator_id, "action": "pitch_batch_send", "result": "ok"})
 
         except (GmailNotConnected, GmailAuthExpired) as e:
             _db_update_pitch(pitch_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Gmail auth error for {curator_id}: {e}")
+            log.warning("pitch_send_auth_error", extra={"artist_id": req.artist_id,
+                        "contact_id": curator_id, "action": "pitch_batch_send",
+                        "result": "auth_error", "error": str(e)})
         except Exception as e:
             _db_update_pitch(pitch_id, {"status": "failed"})
             results["failed"] += 1
@@ -865,6 +914,9 @@ async def detect_replies(artist_id: str) -> dict:
         })
 
         results["matched"] += 1
+        log.info("reply_matched", extra={"artist_id": artist_id,
+                 "contact_id": pitch.get("curator_id"), "action": "inbox_scan",
+                 "result": new_status, "sentiment": sentiment})
         results["classified"].append({
             "pitch_id":  pitch["id"],
             "from":      from_addr,

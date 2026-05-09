@@ -13,11 +13,14 @@ import json
 import uuid
 import base64
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+
+log = logging.getLogger("pr_service")
 from pydantic import BaseModel
 import anthropic
 
@@ -67,6 +70,7 @@ def init_pr_db():
             feature_url     TEXT,
             gmail_msg_id    TEXT,
             gmail_thread_id TEXT,
+            idempotency_key TEXT UNIQUE,
             created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -86,6 +90,12 @@ def init_pr_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_pr_interactions ON pr_interactions (outreach_id)"
     )
+    existing_pr_cols = {r[1] for r in conn.execute("PRAGMA table_info(pr_outreach)").fetchall()}
+    if "idempotency_key" not in existing_pr_cols:
+        try:
+            conn.execute("ALTER TABLE pr_outreach ADD COLUMN idempotency_key TEXT UNIQUE")
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print("[PR] SQLite PR tables ready")
@@ -196,7 +206,8 @@ def _db_upsert_pr_contact(c: dict):
 
 _PR_OUTREACH_COLS = [
     "id","artist_id","contact_id","status","subject","body",
-    "sent_at","replied_at","feature_url","gmail_msg_id","gmail_thread_id","created_at",
+    "sent_at","replied_at","feature_url","gmail_msg_id","gmail_thread_id",
+    "idempotency_key","created_at",
 ]
 
 
@@ -204,11 +215,13 @@ def _db_create_pr_outreach(o: dict) -> dict:
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT INTO pr_outreach
-           (id,artist_id,contact_id,status,subject,body,gmail_msg_id,gmail_thread_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
+           (id,artist_id,contact_id,status,subject,body,
+            gmail_msg_id,gmail_thread_id,idempotency_key)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
         (
             o["id"], o["artist_id"], o["contact_id"], o.get("status","draft"),
             o["subject"], o["body"], o.get("gmail_msg_id"), o.get("gmail_thread_id"),
+            o.get("idempotency_key", str(uuid.uuid4())),
         ),
     )
     conn.commit()
@@ -531,15 +544,23 @@ async def send_pr_emails(req: BatchPRRequest):
             })
             results["sent"] += 1
             results["outreach_ids"].append(outreach_id)
+            log.info("pr_sent", extra={"artist_id": req.artist_id,
+                     "contact_id": contact_id, "action": "pr_batch_send", "result": "ok"})
 
         except (GmailNotConnected, GmailAuthExpired) as e:
             _db_update_pr_outreach(outreach_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Gmail auth error for {contact_id}: {e}")
+            log.warning("pr_send_auth_error", extra={"artist_id": req.artist_id,
+                        "contact_id": contact_id, "action": "pr_batch_send",
+                        "result": "auth_error", "error": str(e)})
         except Exception as e:
             _db_update_pr_outreach(outreach_id, {"status": "failed"})
             results["failed"] += 1
             results["errors"].append(f"Send failed for {contact_id}: {e}")
+            log.error("pr_send_error", extra={"artist_id": req.artist_id,
+                      "contact_id": contact_id, "action": "pr_batch_send",
+                      "result": "error", "error": str(e)})
 
     return results
 
@@ -661,6 +682,9 @@ async def detect_pr_replies(artist_id: str, gmail_service=None) -> dict:
         })
 
         results["matched"] += 1
+        log.info("pr_reply_matched", extra={"artist_id": artist_id,
+                 "contact_id": outreach.get("contact_id"), "action": "pr_scan",
+                 "result": sentiment})
         results["classified"].append({
             "outreach_id": outreach["id"],
             "from":        from_addr,

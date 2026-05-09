@@ -4,6 +4,7 @@ Unit tests for pitch_service.py — mock Gmail client, no real credentials neede
 Run with:  python3 -m pytest tests/ -v
 """
 
+import asyncio
 import json
 import sqlite3
 import tempfile
@@ -88,14 +89,12 @@ def test_save_and_load_gmail_tokens(ps):
 
 # ── 1.2 sendEmail() ───────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_send_email_no_tokens_raises(ps):
+def test_send_email_no_tokens_raises(ps):
     with pytest.raises(ps.GmailNotConnected):
-        await ps.send_email("no-artist", "to@example.com", "Subject", "Body")
+        asyncio.run(ps.send_email("no-artist", "to@example.com", "Subject", "Body"))
 
 
-@pytest.mark.asyncio
-async def test_send_email_calls_gmail_api(ps):
+def test_send_email_calls_gmail_api(ps):
     """
     Mock _get_gmail_service() so no real credentials are needed.
     Confirms send_email() calls users().messages().send() and returns message_id.
@@ -106,7 +105,7 @@ async def test_send_email_calls_gmail_api(ps):
     mock_service.users.return_value.messages.return_value.send.return_value = mock_send
 
     with patch.object(ps, "_get_gmail_service", return_value=mock_service):
-        result = await ps.send_email("artist-1", "to@example.com", "Hello", "World")
+        result = asyncio.run(ps.send_email("artist-1", "to@example.com", "Hello", "World"))
 
     assert result["message_id"] == "msg-abc"
     assert result["thread_id"]  == "thr-xyz"
@@ -205,8 +204,7 @@ def test_add_and_list_interactions(ps):
 
 # ── 1.5 generatePitchEmail() ─────────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_generate_pitch_email_returns_valid_shape(ps):
+def test_generate_pitch_email_returns_valid_shape(ps):
     mock_resp = MagicMock()
     mock_resp.content = [MagicMock(
         text='{"subject":"Check out Test Artist","body":"Hi, please listen.","suggested_followup_days":5}'
@@ -215,7 +213,7 @@ async def test_generate_pitch_email_returns_valid_shape(ps):
         MockClient.return_value.messages.create.return_value = mock_resp
         artist  = {"artist_name": "Test Artist", "genre": "indie"}
         curator = _seed_curator(ps)
-        result  = await ps.generate_pitch_email(artist, {"name": "New Single"}, curator)
+        result  = asyncio.run(ps.generate_pitch_email(artist, {"name": "New Single"}, curator))
 
     assert "subject" in result
     assert "body"    in result
@@ -224,8 +222,7 @@ async def test_generate_pitch_email_returns_valid_shape(ps):
 
 # ── 1.6 sendPitchEmails() batch ──────────────────────────────────────────────
 
-@pytest.mark.asyncio
-async def test_batch_pitch_gmail_not_connected(ps):
+def test_batch_pitch_gmail_not_connected(ps):
     """When Gmail is not connected, all sends fail gracefully."""
     _seed_curator(ps)
     _seed_artist(ps)
