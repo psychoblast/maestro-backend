@@ -800,6 +800,10 @@ def health_check():
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# ── Phase 1 — Pitch service (Gmail, curators, pitch tracking) ─────────────────
+from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
+app.include_router(_pitch_router)
+
 # Maps agent ID (e.g. "puppet-master") → lowercase first name slug (e.g. "marcus")
 _ID_TO_NAME = {a["id"]: a["name"].lower().replace(" ", "-") for a in AGENTS}
 
@@ -976,7 +980,9 @@ if DATABASE_URL:
 else:
     print("[DB] No DATABASE_URL — using file-based artist storage")
 _threading.Thread(target=get_kokoro, daemon=True, name="kokoro-warmup").start()
-print("[INIT] DB ready, Kokoro warmup thread started")
+init_pitch_db()
+init_scheduler()
+print("[INIT] DB ready, Kokoro warmup thread started, pitch service initialised")
 
 @app.get("/api/agents")
 async def list_agents():
