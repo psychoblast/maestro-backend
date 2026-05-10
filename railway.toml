@@ -1,0 +1,16 @@
+# Railway configuration — mount path declaration for persistent volume.
+# The volume itself must be created via Railway dashboard (see docs/RUNBOOK_RAILWAY_VOLUME.md).
+# Once created, Railway attaches it here automatically on each deploy.
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+[[mounts]]
+mountPath = "/data"
