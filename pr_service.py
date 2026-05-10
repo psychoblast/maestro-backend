@@ -94,8 +94,9 @@ def init_pr_db():
     if "idempotency_key" not in existing_pr_cols:
         try:
             conn.execute("ALTER TABLE pr_outreach ADD COLUMN idempotency_key TEXT UNIQUE")
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise RuntimeError(f"Migration failure on table pr_outreach: {e}") from e
     conn.commit()
     conn.close()
     print("[PR] SQLite PR tables ready")

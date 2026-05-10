@@ -100,8 +100,9 @@ def init_booking_db():
     if "idempotency_key" not in existing_bk_cols:
         try:
             conn.execute("ALTER TABLE booking_inquiries ADD COLUMN idempotency_key TEXT UNIQUE")
-        except sqlite3.OperationalError:
-            pass
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise RuntimeError(f"Migration failure on table booking_inquiries: {e}") from e
     conn.commit()
     conn.close()
     print("[Booking] SQLite booking tables ready")
