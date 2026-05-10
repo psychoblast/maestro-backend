@@ -272,3 +272,53 @@ def test_followup_recent_pitch_not_triggered(ps):
     ps._db_update_pitch("fu-p1", {"sent_at": now_str})
     results = ps._get_pitches_needing_followup()
     assert all(r["id"] != "fu-p1" for r in results)
+
+
+# ── Deterministic idempotency key ─────────────────────────────────────────────
+
+def test_idempotency_key_blocks_duplicate_pitch(ps):
+    """Inserting two pitches with the same idempotency_key raises IntegrityError."""
+    import hashlib, sqlite3
+    from datetime import datetime, timezone
+    send_window = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = hashlib.sha256(f"a1:cur-test-001:{send_window}".encode()).hexdigest()
+
+    ps._db_create_pitch({
+        "id": "idem-1", "artist_id": "a1", "curator_id": "cur-test-001",
+        "status": "sent", "subject": "S", "body": "B",
+        "idempotency_key": key,
+    })
+    with pytest.raises(sqlite3.IntegrityError):
+        ps._db_create_pitch({
+            "id": "idem-2", "artist_id": "a1", "curator_id": "cur-test-001",
+            "status": "sent", "subject": "S", "body": "B",
+            "idempotency_key": key,  # same key → UNIQUE violation
+        })
+
+
+def test_different_day_key_allows_second_pitch(ps):
+    """Same artist+curator on a different calendar date produces a distinct
+    idempotency key, so a day-N+1 retry is not blocked by the UNIQUE constraint.
+
+    Uses the exact key formula from pitch_service (_build_idempotency_key is
+    inline — sha256(artist_id:curator_id:YYYY-MM-DD)) and exercises the real
+    DB schema, not just hash arithmetic.
+    """
+    import hashlib, sqlite3
+    _seed_curator(ps)
+    key_day1 = hashlib.sha256(b"a1:cur-test-001:2026-05-10").hexdigest()
+    key_day2 = hashlib.sha256(b"a1:cur-test-001:2026-05-11").hexdigest()
+
+    ps._db_create_pitch({
+        "id": "idem-day1", "artist_id": "a1", "curator_id": "cur-test-001",
+        "status": "sent", "subject": "S", "body": "B",
+        "idempotency_key": key_day1,
+    })
+    # Day 2 key must not collide with day 1 — should not raise IntegrityError
+    ps._db_create_pitch({
+        "id": "idem-day2", "artist_id": "a1", "curator_id": "cur-test-001",
+        "status": "sent", "subject": "S", "body": "B",
+        "idempotency_key": key_day2,
+    })
+    assert ps._db_get_pitch("idem-day1") is not None
+    assert ps._db_get_pitch("idem-day2") is not None

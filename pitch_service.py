@@ -11,6 +11,7 @@ import os
 import re
 import json
 import uuid
+import hashlib
 import base64
 import sqlite3
 import email.mime.text
@@ -742,16 +743,26 @@ async def send_pitch_emails(req: BatchPitchRequest):
             results["errors"].append(f"Generation failed for {curator_id}: {e}")
             continue
 
+        send_window = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        idem_key    = hashlib.sha256(
+            f"{req.artist_id}:{curator_id}:{send_window}".encode()
+        ).hexdigest()
+
         pitch_id = str(uuid.uuid4())
         pitch    = {
-            "id":         pitch_id,
-            "artist_id":  req.artist_id,
-            "curator_id": curator_id,
-            "status":     "draft",
-            "subject":    draft["subject"],
-            "body":       draft["body"],
+            "id":              pitch_id,
+            "artist_id":       req.artist_id,
+            "curator_id":      curator_id,
+            "status":          "draft",
+            "subject":         draft["subject"],
+            "body":            draft["body"],
+            "idempotency_key": idem_key,
         }
-        _db_create_pitch(pitch)
+        try:
+            _db_create_pitch(pitch)
+        except sqlite3.IntegrityError:
+            results["errors"].append(f"Already pitched curator {curator_id} today — skipped")
+            continue
 
         try:
             sent = await send_email(

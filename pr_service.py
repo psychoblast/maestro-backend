@@ -11,6 +11,7 @@ import os
 import re
 import json
 import uuid
+import hashlib
 import base64
 import sqlite3
 import logging
@@ -514,16 +515,26 @@ async def send_pr_emails(req: BatchPRRequest):
             results["errors"].append(f"Generation failed for {contact_id}: {e}")
             continue
 
+        send_window = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        idem_key    = hashlib.sha256(
+            f"{req.artist_id}:{contact_id}:{send_window}".encode()
+        ).hexdigest()
+
         outreach_id = str(uuid.uuid4())
         outreach    = {
-            "id":         outreach_id,
-            "artist_id":  req.artist_id,
-            "contact_id": contact_id,
-            "status":     "draft",
-            "subject":    draft["subject"],
-            "body":       draft["body"],
+            "id":              outreach_id,
+            "artist_id":       req.artist_id,
+            "contact_id":      contact_id,
+            "status":          "draft",
+            "subject":         draft["subject"],
+            "body":            draft["body"],
+            "idempotency_key": idem_key,
         }
-        _db_create_pr_outreach(outreach)
+        try:
+            _db_create_pr_outreach(outreach)
+        except sqlite3.IntegrityError:
+            results["errors"].append(f"Already sent PR outreach to {contact_id} today — skipped")
+            continue
 
         try:
             sent = await send_email(
