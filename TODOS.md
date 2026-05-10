@@ -1,5 +1,5 @@
 # PLMKR — TODOS
-Last updated: 2026-05-10 (Unit 3 reconciliation — audit + May 9 ship)
+Last updated: 2026-05-10 (Tier 3 risk mitigations added — R-06/R-07/R-21/R-22/R-23)
 
 ---
 
@@ -184,6 +184,24 @@ Review and decide disposition before next build session.
 
 Note: `ANTHROPIC_API_KEY` uses `os.environ[...]` (main.py:26) — hard crash at boot if absent.
 This is correct behavior (intentional guard), not a bug. Just make sure it's always set on Railway.
+
+---
+
+## TIER 3 RISK MITIGATIONS — May 10 (pending merge)
+
+5 branches pushed, tests red-on-main / green-on-branch verified. DO NOT merge individually —
+wait for cumulative V7 pytest run to confirm 0 regressions first.
+
+| Risk | Branch | Commit | Tests | Description |
+|------|--------|--------|-------|-------------|
+| R-21 | `fix/r21-loud-migration-failures` | `56540c5` | 12 | Silent SQLite migration errors now re-raise (non-duplicate-column) |
+| R-06 | `fix/r06-postgres-failover-loud` | `b35498c` | 6 | Postgres init failure → sys.exit(1) unless DB_FAILOVER_TO_SQLITE=true |
+| R-22 | `fix/r22-422-passthrough` | `358f8ab` | 5 | 422 + HTTPException responses now include request_id |
+| R-07 | `fix/r07-broader-crash-recovery` | `b40f666` | 4 | campaign_actions 'running' rows reset to 'pending' at startup |
+| R-23 | `fix/r23-prompt-injection-v1-sanitization` | `90aa094` | 11 | sanitize_for_prompt() applied to 3 prompt construction sites |
+
+Next step: run cumulative V7 pytest (all 17 Tier 1+2 + 5 Tier 3 branches merged to throwaway),
+then merge-to-main after sign-off.
 
 ---
 
