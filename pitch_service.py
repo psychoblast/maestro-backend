@@ -39,6 +39,7 @@ _GMAIL_SCOPES   = [
 _SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
 _REPLY_POLL_HOURS  = int(os.environ.get("REPLY_POLL_HOURS", "6"))
 _ANTHROPIC_KEY     = os.environ.get("ANTHROPIC_API_KEY", "")
+DAILY_PITCH_QUOTA  = int(os.environ.get("DAILY_PITCH_QUOTA", "50"))
 
 _MODEL_HAIKU  = "claude-haiku-4-5-20251001"
 
@@ -103,6 +104,14 @@ def init_pitch_db():
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_interactions_pitch ON pitch_interactions (pitch_id)"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS daily_send_quota (
+            artist_id TEXT NOT NULL,
+            date      TEXT NOT NULL,
+            count     INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (artist_id, date)
+        )
+    """)
     existing_pitch_cols = {r[1] for r in conn.execute("PRAGMA table_info(pitches)").fetchall()}
     if "idempotency_key" not in existing_pitch_cols:
         try:
@@ -704,6 +713,43 @@ async def api_generate_pitch(req: GeneratePitchRequest):
     return {**draft, "artist_id": req.artist_id, "curator_id": req.curator_id}
 
 
+# ── Daily send quota ──────────────────────────────────────────────────────────
+
+def _check_and_increment_quota(artist_id: str, increment: int) -> None:
+    """Raise HTTP 429 if artist would exceed DAILY_PITCH_QUOTA outbound emails today."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    midnight_utc = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) + timedelta(days=1)
+    retry_after = int((midnight_utc - datetime.now(timezone.utc)).total_seconds())
+
+    conn = sqlite3.connect(str(_DB_PATH))
+    try:
+        row = conn.execute(
+            "SELECT count FROM daily_send_quota WHERE artist_id=? AND date=?",
+            (artist_id, today),
+        ).fetchone()
+        current = row[0] if row else 0
+        if current + increment > DAILY_PITCH_QUOTA:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily send quota ({DAILY_PITCH_QUOTA}) would be exceeded. "
+                       f"Used {current}, requested {increment}.",
+                headers={"Retry-After": str(retry_after)},
+            )
+        conn.execute(
+            """
+            INSERT INTO daily_send_quota (artist_id, date, count)
+            VALUES (?, ?, ?)
+            ON CONFLICT(artist_id, date) DO UPDATE SET count = count + excluded.count
+            """,
+            (artist_id, today, increment),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Unit 1.6 — sendPitchEmails() orchestration
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -723,6 +769,7 @@ async def send_pitch_emails(req: BatchPitchRequest):
       3. send_email()            → status=sent
     Returns {"sent": N, "failed": M, "errors": [...], "pitch_ids": [...]}.
     """
+    _check_and_increment_quota(req.artist_id, len(req.curator_ids))
     artist  = _load_artist_data(req.artist_id)
     results: dict = {"sent": 0, "failed": 0, "errors": [], "pitch_ids": []}
 

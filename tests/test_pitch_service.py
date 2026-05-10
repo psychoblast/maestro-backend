@@ -272,3 +272,53 @@ def test_followup_recent_pitch_not_triggered(ps):
     ps._db_update_pitch("fu-p1", {"sent_at": now_str})
     results = ps._get_pitches_needing_followup()
     assert all(r["id"] != "fu-p1" for r in results)
+
+
+# ── 1.10 Daily send quota ─────────────────────────────────────────────────────
+
+def test_quota_allows_first_batch(ps, monkeypatch):
+    """First batch within quota passes."""
+    monkeypatch.setattr(ps, "DAILY_PITCH_QUOTA", 5)
+    ps._check_and_increment_quota("artist-q", 3)  # 3 <= 5 — should not raise
+
+
+def test_quota_raises_when_exceeded(ps, monkeypatch):
+    """Requesting more than quota raises 429."""
+    monkeypatch.setattr(ps, "DAILY_PITCH_QUOTA", 5)
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as exc_info:
+        ps._check_and_increment_quota("artist-q", 6)
+    assert exc_info.value.status_code == 429
+    assert "Retry-After" in exc_info.value.headers
+
+
+def test_quota_accumulates_across_calls(ps, monkeypatch):
+    """Two batch calls that together exceed quota: second call raises 429."""
+    monkeypatch.setattr(ps, "DAILY_PITCH_QUOTA", 5)
+    from fastapi import HTTPException
+    ps._check_and_increment_quota("artist-q2", 3)   # 3 sent, 2 remaining
+    with pytest.raises(HTTPException) as exc_info:
+        ps._check_and_increment_quota("artist-q2", 3)  # 3 more would exceed 5
+    assert exc_info.value.status_code == 429
+
+
+def test_quota_separate_per_artist(ps, monkeypatch):
+    """Two different artists have independent quotas."""
+    monkeypatch.setattr(ps, "DAILY_PITCH_QUOTA", 3)
+    ps._check_and_increment_quota("artist-x", 3)
+    ps._check_and_increment_quota("artist-y", 3)  # should not raise — different artist
+
+
+def test_quota_env_override(monkeypatch, tmp_path):
+    """DAILY_PITCH_QUOTA env var controls the limit."""
+    monkeypatch.setenv("DAILY_PITCH_QUOTA", "2")
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "q.db"))
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    import importlib, pitch_service
+    importlib.reload(pitch_service)
+    pitch_service.init_pitch_db()
+    assert pitch_service.DAILY_PITCH_QUOTA == 2
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException):
+        pitch_service._check_and_increment_quota("artist-z", 3)

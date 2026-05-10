@@ -514,8 +514,9 @@ async def send_booking_emails(req: BatchBookingRequest):
     send via Gmail, update status to sent.
     Returns {"sent": N, "failed": M, "errors": [...], "inquiry_ids": [...]}.
     """
-    from pitch_service import send_email, GmailNotConnected, GmailAuthExpired
+    from pitch_service import send_email, GmailNotConnected, GmailAuthExpired, _check_and_increment_quota
 
+    _check_and_increment_quota(req.artist_id, len(req.contact_ids))
     artist  = _load_artist_data(req.artist_id)
     results: dict = {"sent": 0, "failed": 0, "errors": [], "inquiry_ids": []}
 
