@@ -193,3 +193,40 @@ def test_execute_due_endpoint_returns_summary(client, rs):
     data = resp.json()
     assert "executed" in data
     assert data["executed"] >= 0
+
+
+def test_init_release_db_resets_stuck_running_actions(tmp_path, monkeypatch):
+    """Startup reset: rows stuck in status='running' are returned to 'pending'."""
+    import importlib, sqlite3, uuid
+    db = tmp_path / "stuck.db"
+    monkeypatch.setenv("DB_PATH", str(db))
+
+    import release_service
+    importlib.reload(release_service)
+    release_service.init_release_db()
+
+    # Manually insert a release and two actions stuck in 'running'
+    conn = sqlite3.connect(str(db))
+    release_id = str(uuid.uuid4())
+    conn.execute(
+        "INSERT INTO releases (id, artist_id, title, release_date) VALUES (?,?,?,?)",
+        (release_id, "artist-x", "Stuck Album", "2026-06-01"),
+    )
+    for _ in range(2):
+        conn.execute(
+            "INSERT INTO campaign_actions (id, release_id, action_type, scheduled_for, status) "
+            "VALUES (?,?,?,?,?)",
+            (str(uuid.uuid4()), release_id, "pitch", "2026-05-01T00:00:00", "running"),
+        )
+    conn.commit()
+    conn.close()
+
+    # Re-run init (simulates a restart) — should reset the stuck rows
+    importlib.reload(release_service)
+    release_service.init_release_db()
+
+    conn = sqlite3.connect(str(db))
+    rows = conn.execute("SELECT status FROM campaign_actions").fetchall()
+    conn.close()
+
+    assert all(r[0] == "pending" for r in rows), f"Expected all pending, got: {rows}"
