@@ -41,6 +41,7 @@ def test_writable_dir_logs_ok(tmp_path, monkeypatch, capsys):
     """When DATA_DIR is writable, startup check prints success and no WARNING."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     fn = _get_check_fn(monkeypatch, tmp_path)
+    capsys.readouterr()   # flush startup prints from module reload
 
     fn()
 
