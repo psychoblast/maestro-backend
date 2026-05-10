@@ -860,6 +860,8 @@ class _APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         if not _PLMKR_API_KEY:
             return await call_next(request)
+        if request.method == "OPTIONS":  # CORS preflight must reach CORSMiddleware unblocked
+            return await call_next(request)
         if request.url.path in _SKIP_AUTH_PATHS:
             return await call_next(request)
         key = request.headers.get("X-API-Key", "")
