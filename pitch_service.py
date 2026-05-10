@@ -23,6 +23,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import anthropic
+from anthropic_utils import _anthropic_call_with_retry
 
 log = logging.getLogger("pitch_service")
 
@@ -674,7 +675,8 @@ async def generate_pitch_email(
     )
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp = _client.messages.create(
+    resp = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=512,
         system=_PITCH_SYSTEM,
@@ -805,7 +807,8 @@ _CLASSIFY_SYSTEM = (
 
 async def _classify_reply(text: str) -> dict:
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp = _client.messages.create(
+    resp = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=100,
         system=_CLASSIFY_SYSTEM,
@@ -1040,7 +1043,8 @@ async def _generate_followup(original: dict, curator: dict, artist: dict) -> dic
         "Write the follow-up. Return JSON only."
     )
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp = _client.messages.create(
+    resp = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=256,
         system=_FOLLOWUP_SYSTEM,
