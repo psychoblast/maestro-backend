@@ -1,18 +1,22 @@
 """
 Unit tests for anthropic_utils._anthropic_call_with_retry().
 
+R-33 update: function is now async, uses asyncio.sleep instead of time.sleep.
+All tests updated to use asyncio.run() and patch asyncio.sleep accordingly.
+
 Verifies:
   - Success on first attempt returns result immediately
-  - RateLimitError triggers retry with sleep
-  - InternalServerError triggers retry with sleep
-  - APITimeoutError triggers retry with sleep
+  - RateLimitError triggers retry with asyncio.sleep
+  - InternalServerError triggers retry with asyncio.sleep
+  - APITimeoutError triggers retry with asyncio.sleep
   - Non-retryable error (AuthenticationError) raised immediately
   - Three consecutive retries then success on 4th attempt (max retries used)
   - Four consecutive failures raises the last exception
-  - sleep() is called with correct backoff values (1, 2, 4)
+  - asyncio.sleep() is called with correct backoff values (1, 2, 4)
 """
 
-from unittest.mock import MagicMock, patch, call
+import asyncio
+from unittest.mock import MagicMock, patch, call, AsyncMock
 
 import pytest
 import anthropic
@@ -31,7 +35,7 @@ def _mock_client(side_effects):
 
 def _make_status_exc(cls, status=429):
     """Build an anthropic APIStatusError subclass with minimal httpx mocks."""
-    mock_resp         = MagicMock()
+    mock_resp             = MagicMock()
     mock_resp.status_code = status
     mock_resp.headers     = {}
     mock_resp.text        = "error"
@@ -43,6 +47,11 @@ def _make_timeout_exc():
     return anthropic.APITimeoutError(request=mock_req)
 
 
+def _run(coro):
+    """Run a coroutine in a fresh event loop (matches codebase asyncio.run() pattern)."""
+    return asyncio.run(coro)
+
+
 FAKE_RESPONSE = MagicMock(name="AnthropicMessage")
 
 
@@ -50,9 +59,8 @@ FAKE_RESPONSE = MagicMock(name="AnthropicMessage")
 
 def test_success_on_first_attempt():
     client = _mock_client([FAKE_RESPONSE])
-    with patch("anthropic_utils.time.sleep") as mock_sleep:
-        result = _anthropic_call_with_retry(client, model="m", max_tokens=10,
-                                            messages=[])
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result = _run(_anthropic_call_with_retry(client, model="m", max_tokens=10, messages=[]))
     assert result is FAKE_RESPONSE
     client.messages.create.assert_called_once()
     mock_sleep.assert_not_called()
@@ -67,11 +75,9 @@ def test_success_on_first_attempt():
 ], ids=["RateLimitError", "InternalServerError", "APITimeoutError"])
 def test_retries_on_transient_error_then_succeeds(exc_factory):
     exc = exc_factory()
-
     client = _mock_client([exc, FAKE_RESPONSE])
-    with patch("anthropic_utils.time.sleep") as mock_sleep:
-        result = _anthropic_call_with_retry(client, model="m", max_tokens=10,
-                                            messages=[])
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result = _run(_anthropic_call_with_retry(client, model="m", max_tokens=10, messages=[]))
 
     assert result is FAKE_RESPONSE
     assert client.messages.create.call_count == 2
@@ -81,9 +87,8 @@ def test_retries_on_transient_error_then_succeeds(exc_factory):
 def test_uses_all_three_retries_then_succeeds():
     exc = _make_status_exc(anthropic.RateLimitError, 429)
     client = _mock_client([exc, exc, exc, FAKE_RESPONSE])
-    with patch("anthropic_utils.time.sleep") as mock_sleep:
-        result = _anthropic_call_with_retry(client, model="m", max_tokens=10,
-                                            messages=[])
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result = _run(_anthropic_call_with_retry(client, model="m", max_tokens=10, messages=[]))
 
     assert result is FAKE_RESPONSE
     assert client.messages.create.call_count == 4
@@ -93,10 +98,9 @@ def test_uses_all_three_retries_then_succeeds():
 def test_raises_after_all_retries_exhausted():
     exc = _make_status_exc(anthropic.RateLimitError, 429)
     client = _mock_client([exc] * _MAX_ATTEMPTS)
-    with patch("anthropic_utils.time.sleep"):
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock):
         with pytest.raises(anthropic.RateLimitError):
-            _anthropic_call_with_retry(client, model="m", max_tokens=10,
-                                       messages=[])
+            _run(_anthropic_call_with_retry(client, model="m", max_tokens=10, messages=[]))
 
     assert client.messages.create.call_count == _MAX_ATTEMPTS
 
@@ -106,10 +110,9 @@ def test_raises_after_all_retries_exhausted():
 def test_auth_error_not_retried():
     exc = _make_status_exc(anthropic.AuthenticationError, 401)
     client = _mock_client([exc])
-    with patch("anthropic_utils.time.sleep") as mock_sleep:
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         with pytest.raises(anthropic.AuthenticationError):
-            _anthropic_call_with_retry(client, model="m", max_tokens=10,
-                                       messages=[])
+            _run(_anthropic_call_with_retry(client, model="m", max_tokens=10, messages=[]))
 
     client.messages.create.assert_called_once()
     mock_sleep.assert_not_called()
@@ -118,10 +121,9 @@ def test_auth_error_not_retried():
 def test_bad_request_error_not_retried():
     exc = _make_status_exc(anthropic.BadRequestError, 400)
     client = _mock_client([exc])
-    with patch("anthropic_utils.time.sleep") as mock_sleep:
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         with pytest.raises(anthropic.BadRequestError):
-            _anthropic_call_with_retry(client, model="m", max_tokens=10,
-                                       messages=[])
+            _run(_anthropic_call_with_retry(client, model="m", max_tokens=10, messages=[]))
 
     client.messages.create.assert_called_once()
     mock_sleep.assert_not_called()
@@ -134,6 +136,6 @@ def test_kwargs_passed_through_to_create():
     kwargs = dict(model="claude-haiku-4-5-20251001", max_tokens=512,
                   system="sys", messages=[{"role": "user", "content": "hi"}],
                   extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"})
-    with patch("anthropic_utils.time.sleep"):
-        _anthropic_call_with_retry(client, **kwargs)
+    with patch("anthropic_utils.asyncio.sleep", new_callable=AsyncMock):
+        _run(_anthropic_call_with_retry(client, **kwargs))
     client.messages.create.assert_called_once_with(**kwargs)
