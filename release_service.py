@@ -23,6 +23,13 @@ router = APIRouter()
 
 _DB_PATH = Path(os.environ.get("DB_PATH", "/data/memory.db"))
 
+# Max actions processed per scheduler tick. Conservative default prevents a
+# flood of past-due actions (e.g. after downtime) from all firing at once.
+# If aggressive catchup is later wanted (e.g. post-downtime), a separate
+# /api/admin/scheduler/catchup endpoint should be added; default scheduler
+# behavior is conservative.
+SCHEDULER_BATCH_LIMIT = int(os.environ.get("SCHEDULER_BATCH_LIMIT", "5"))
+
 # ── Action types ──────────────────────────────────────────────────────────────
 
 ACTION_PITCH          = "pitch_curators"
@@ -535,11 +542,22 @@ async def execute_due_actions(release_id: str):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def execute_all_due_campaign_actions():
-    """Sweep all pending campaign actions across all releases. Called by scheduler."""
-    due_actions = _db_list_due_actions()
-    log.info("scheduler_sweep", extra={"due_count": len(due_actions)})
+    """Sweep pending campaign actions, processing at most SCHEDULER_BATCH_LIMIT per tick.
 
-    for action in due_actions:
+    Conservative cap prevents a flood of past-due actions (e.g. after downtime) from
+    all firing in a single tick. Remaining actions are picked up on the next tick.
+    """
+    due_actions = _db_list_due_actions()
+    batch = due_actions[:SCHEDULER_BATCH_LIMIT]
+    log.info("scheduler_sweep", extra={"due_count": len(due_actions), "batch": len(batch)})
+    if len(due_actions) > SCHEDULER_BATCH_LIMIT:
+        log.warning(
+            "scheduler_backfill_cap",
+            extra={"skipped": len(due_actions) - SCHEDULER_BATCH_LIMIT,
+                   "limit": SCHEDULER_BATCH_LIMIT},
+        )
+
+    for action in batch:
         _db_update_action(action["id"], {"status": "running"})
         result = await _execute_action(action)
         final_status = "done" if result.get("status") in ("ok", "skipped") else "failed"
