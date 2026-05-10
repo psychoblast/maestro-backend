@@ -23,7 +23,8 @@ from pydantic import BaseModel
 import anthropic
 import httpx
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -41,8 +42,15 @@ ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
 DATABASE_URL: str     = os.environ.get("DATABASE_URL", "")  # Railway PostgreSQL — persists artist profiles
 
 # Sync client for non-streaming endpoints, async client for streaming
-client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY or "placeholder")
+async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY or "placeholder")
+
+if not ANTHROPIC_AVAILABLE:
+    print("=" * 60)
+    print("WARNING: ANTHROPIC_API_KEY is not set.")
+    print("  AI agent chat and handoff routes will return HTTP 503.")
+    print("  Set ANTHROPIC_API_KEY to enable AI features.")
+    print("=" * 60)
 
 # ── Agent roster ───────────────────────────────────────────────────────────────
 AGENTS = [
@@ -1166,6 +1174,8 @@ async def handoff(
     reference something specific from the recent conversation. This fixes the
     generic "I'm routing you to X" wording from the previous version.
     """
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503, detail="AI unavailable: ANTHROPIC_API_KEY not configured")
     agent = AGENTS_BY_ID.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
@@ -1265,6 +1275,8 @@ async def chat_stream(req: ChatStreamRequest):
     History is trimmed before each call to prevent unbounded token growth.
     Voice sessions use a tighter cap than text sessions.
     """
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503, detail="AI unavailable: ANTHROPIC_API_KEY not configured")
     agent = AGENTS_BY_ID.get(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")

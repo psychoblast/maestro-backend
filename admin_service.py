@@ -171,13 +171,16 @@ def _disk_usage_pct() -> float:
 @router.get("/api/admin/health/deep", tags=["admin"])
 def admin_health_deep():
     """
-    Deep health check: DB, scheduler, OAuth token counts, disk usage.
+    Deep health check: DB, scheduler, OAuth token counts, disk usage, and
+    security posture of the running deploy.
     """
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     return {
-        "timestamp":                    datetime.now(timezone.utc).isoformat(),
-        "db_connected":                 _check_db_connected(),
-        "scheduler_running":            _check_scheduler_running(),
+        "timestamp":                     datetime.now(timezone.utc).isoformat(),
+        "db_connected":                  _check_db_connected(),
+        "scheduler_running":             _check_scheduler_running(),
         "gmail_token_valid_for_artists": _count_gmail_connected(),
         "buffer_token_valid_for_artists": _count_buffer_connected(),
-        "disk_usage_pct":               _disk_usage_pct(),
+        "disk_usage_pct":                _disk_usage_pct(),
+        "anthropic_available":           bool(anthropic_key),
     }
