@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from prompt_safety import sanitize_for_prompt  # R-23
+
 log = logging.getLogger("booking_service")
 
 from fastapi import APIRouter, HTTPException
@@ -443,12 +445,16 @@ async def generate_booking_email(
     Draft a booking inquiry for Avery. Returns {subject, body, suggested_followup_days}.
     Does not send — batch orchestration handles that.
     """
-    artist_name     = artist_profile.get("artist_name", "The artist")
-    genre           = artist_profile.get("genre", "")
-    bio             = (artist_profile.get("bio", "") or "")[:300]
+    artist_name     = sanitize_for_prompt(artist_profile.get("artist_name", "The artist"))  # R-23
+    genre           = sanitize_for_prompt(artist_profile.get("genre", ""))
+    bio             = sanitize_for_prompt((artist_profile.get("bio", "") or "")[:300])
     available_dates = show_context.get("available_dates", [])
-    highlight       = show_context.get("highlight", "")  # e.g. "100k monthly Spotify listeners"
-    tour_region     = show_context.get("tour_region", "")
+    highlight       = sanitize_for_prompt(show_context.get("highlight", ""))
+    tour_region     = sanitize_for_prompt(show_context.get("tour_region", ""))
+    contact_name    = sanitize_for_prompt(contact.get("name", ""))
+    venue           = sanitize_for_prompt(contact.get("venue_or_festival", ""))
+    city            = sanitize_for_prompt(contact.get("city", ""))
+    country         = sanitize_for_prompt(contact.get("country", ""))
 
     prompt = (
         f"Artist: {artist_name}\n"
@@ -457,10 +463,10 @@ async def generate_booking_email(
         + (f"Monthly listeners / highlight: {highlight}\n" if highlight else "")
         + (f"Tour region: {tour_region}\n" if tour_region else "")
         + (f"Available dates: {', '.join(available_dates)}\n" if available_dates else "")
-        + f"\nContact: {contact['name']}\n"
-        f"Venue/Festival: {contact.get('venue_or_festival', '')}\n"
+        + f"\nContact: {contact_name}\n"
+        f"Venue/Festival: {venue}\n"
         f"Type: {contact.get('type', 'venue')}\n"
-        f"City: {contact.get('city', '')}, {contact.get('country', '')}\n"
+        f"City: {city}, {country}\n"
         f"Capacity: {contact.get('capacity', 0)}\n"
         f"Genres booked: {', '.join(contact.get('genres', []))}\n"
         f"Tier: {contact.get('tier', 'C')}\n\n"
