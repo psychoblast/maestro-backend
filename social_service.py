@@ -103,7 +103,8 @@ def init_social_db():
             try:
                 conn.execute(f"ALTER TABLE weekly_reports ADD COLUMN {col} {ddl}")
             except sqlite3.OperationalError as e:
-                if "duplicate column name" not in str(e).lower():
+                msg = str(e).lower()
+                if "duplicate column name" not in msg and "no such table" not in msg:
                     raise RuntimeError(f"Migration failure on table weekly_reports ({col}): {e}") from e
     # Schema migration — artists table: per-artist timezone support
     existing_artist_cols = {row[1] for row in conn.execute("PRAGMA table_info(artists)").fetchall()}
@@ -111,7 +112,8 @@ def init_social_db():
         try:
             conn.execute("ALTER TABLE artists ADD COLUMN timezone TEXT DEFAULT 'UTC'")
         except sqlite3.OperationalError as e:
-            if "duplicate column name" not in str(e).lower():
+            msg = str(e).lower()
+            if "duplicate column name" not in msg and "no such table" not in msg:
                 raise RuntimeError(f"Migration failure on table artists (timezone): {e}") from e
     conn.commit()
     conn.close()
