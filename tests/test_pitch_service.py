@@ -296,9 +296,29 @@ def test_idempotency_key_blocks_duplicate_pitch(ps):
         })
 
 
-def test_different_day_allows_new_pitch(ps):
-    """Keys from different days are distinct — no collision."""
-    import hashlib
-    key_a = hashlib.sha256(b"a1:cur-test-001:2026-05-10").hexdigest()
-    key_b = hashlib.sha256(b"a1:cur-test-001:2026-05-11").hexdigest()
-    assert key_a != key_b  # distinct keys → no collision possible
+def test_different_day_key_allows_second_pitch(ps):
+    """Same artist+curator on a different calendar date produces a distinct
+    idempotency key, so a day-N+1 retry is not blocked by the UNIQUE constraint.
+
+    Uses the exact key formula from pitch_service (_build_idempotency_key is
+    inline — sha256(artist_id:curator_id:YYYY-MM-DD)) and exercises the real
+    DB schema, not just hash arithmetic.
+    """
+    import hashlib, sqlite3
+    _seed_curator(ps)
+    key_day1 = hashlib.sha256(b"a1:cur-test-001:2026-05-10").hexdigest()
+    key_day2 = hashlib.sha256(b"a1:cur-test-001:2026-05-11").hexdigest()
+
+    ps._db_create_pitch({
+        "id": "idem-day1", "artist_id": "a1", "curator_id": "cur-test-001",
+        "status": "sent", "subject": "S", "body": "B",
+        "idempotency_key": key_day1,
+    })
+    # Day 2 key must not collide with day 1 — should not raise IntegrityError
+    ps._db_create_pitch({
+        "id": "idem-day2", "artist_id": "a1", "curator_id": "cur-test-001",
+        "status": "sent", "subject": "S", "body": "B",
+        "idempotency_key": key_day2,
+    })
+    assert ps._db_get_pitch("idem-day1") is not None
+    assert ps._db_get_pitch("idem-day2") is not None
