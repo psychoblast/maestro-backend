@@ -168,16 +168,37 @@ def _disk_usage_pct() -> float:
         return -1.0
 
 
+def _security_posture() -> dict:
+    """Snapshot of security-relevant env-var state at request time."""
+    plmkr_key      = os.environ.get("PLMKR_API_KEY", "")
+    anthropic_key  = os.environ.get("ANTHROPIC_API_KEY", "")
+    webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    dev_unsigned   = os.environ.get("STRIPE_DEV_ALLOW_UNSIGNED", "").lower() == "true"
+    allowed_origins = os.environ.get("ALLOWED_ORIGINS", "")
+
+    auth_enabled = bool(plmkr_key)
+    return {
+        "auth_enabled":                  auth_enabled,
+        "auth_mode":                     "enforced" if auth_enabled else "dev-permissive",
+        "anthropic_available":           bool(anthropic_key),
+        "stripe_signed_webhooks_required": bool(webhook_secret) or not dev_unsigned,
+        "stripe_dev_allow_unsigned":     dev_unsigned,
+        "cors_origins":                  allowed_origins or "*",
+    }
+
+
 @router.get("/api/admin/health/deep", tags=["admin"])
 def admin_health_deep():
     """
-    Deep health check: DB, scheduler, OAuth token counts, disk usage.
+    Deep health check: DB, scheduler, OAuth token counts, disk usage, and
+    security posture of the running deploy.
     """
     return {
-        "timestamp":                    datetime.now(timezone.utc).isoformat(),
-        "db_connected":                 _check_db_connected(),
-        "scheduler_running":            _check_scheduler_running(),
+        "timestamp":                     datetime.now(timezone.utc).isoformat(),
+        "db_connected":                  _check_db_connected(),
+        "scheduler_running":             _check_scheduler_running(),
         "gmail_token_valid_for_artists": _count_gmail_connected(),
         "buffer_token_valid_for_artists": _count_buffer_connected(),
-        "disk_usage_pct":               _disk_usage_pct(),
+        "disk_usage_pct":                _disk_usage_pct(),
+        **_security_posture(),
     }
