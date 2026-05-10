@@ -3,19 +3,22 @@
 **Reviewer:** Claude (senior-engineer simulation)
 **Branch reviewed against:** `main` @ `f1f567b`
 **Branches verified:** 10 (9 fix branches + 1 docs branch)
-**Test suite:** 129 tests
+**Test suite:** 132 tests (after corrective commits — see below)
 **Date:** 2026-05-10
 
 ---
 
 ## Final Verdict
 
-> **YELLOW** — Merge with the specific caveats in this report.
+> **GREEN** — All corrective fixes applied and verified. Cumulative test run: **132/132 pass**.
 >
-> - 9 of 10 branches: merge as planned
-> - `fix/r04-api-key-auth` + `fix/b07-cors-lockdown`: merge **only after** applying the
->   OPTIONS preflight patch described in V5-B07 below. Merging both without the patch will
->   silently break cross-origin API access in production when `PLMKR_API_KEY` is set.
+> All issues from the YELLOW verdict have been resolved:
+> - BLOCKING V5-B07: OPTIONS preflight bypass added to `fix/r04-api-key-auth` (commit `0d11f62`)
+> - YELLOW V2-B05: Stripe webhook tests rewritten to hit actual `/api/billing/webhook` route (commit `4a08cda`)
+> - LOW V2-B02: Tautological idempotency test replaced with real two-day insert test (commit `b56babc`)
+> - LOW V2-R04 / C4: CORS preflight test added targeting `/api/curators` (commit `f5c292c` on `fix/b07-cors-lockdown`)
+>
+> All 10 branches are clear to merge.
 
 ---
 
@@ -478,6 +481,108 @@ def test_options_preflight_bypasses_api_key_auth(client_with_key):
 
 ---
 
+## Corrective Fixes Applied (2026-05-10)
+
+Following the YELLOW verdict, four corrective commits were applied to the existing fix branches
+and verified via a second cumulative test run on `verify/cumulative-test-2` (deleted after run).
+
+### C1 — BLOCKING: OPTIONS preflight bypass (applied to `fix/r04-api-key-auth`)
+
+**Commit:** `0d11f62`
+**Problem:** `_APIKeyMiddleware` was registered after `CORSMiddleware` in Starlette. Because
+Starlette applies middleware in reverse registration order (last = outermost = runs first),
+`_APIKeyMiddleware` intercepted browser OPTIONS preflight requests before `CORSMiddleware` could
+respond. Any cross-origin request from the frontend would silently fail once `PLMKR_API_KEY` was
+set on Railway.
+
+**Fix added to `main.py` `_APIKeyMiddleware.dispatch()`:**
+```python
+if request.method == "OPTIONS":  # CORS preflight must reach CORSMiddleware unblocked
+    return await call_next(request)
+```
+
+**New test added to `tests/test_api_key_auth.py`:**
+`test_options_preflight_bypasses_auth` — sends OPTIONS to `/api/curators` with
+`PLMKR_API_KEY` enforced, asserts `status_code != 401` and `access-control-allow-origin` header
+present. Red-green verified: stashing only `main.py` caused the test to fail with 401; restoring
+the fix returned GREEN.
+
+**Test count:** `tests/test_api_key_auth.py` 8 → 9
+
+---
+
+### C2 — RECOMMENDED: Stripe webhook route test (applied to `fix/b05-stripe-webhook-signature`)
+
+**Commit:** `4a08cda`
+**Problem:** Original `tests/test_stripe_webhook.py` defined its own inline `_verify_stripe_event`
+and tested that copy — not the production route. The core security test (`unsigned webhook → 400`)
+would PASS on `main` (where the handler accepts unsigned events) because the test never touched the
+handler.
+
+**Fix:** Rewrote `tests/test_stripe_webhook.py` to use `TestClient` against the actual
+`/api/billing/webhook` route. Uses `importlib.reload(main)` per test to inject different env vars.
+Key security regression test: no `STRIPE_WEBHOOK_SECRET` + no `STRIPE_DEV_ALLOW_UNSIGNED` →
+returns HTTP 400 with `"STRIPE_WEBHOOK_SECRET"` in error detail.
+
+Confirmed: `test_no_secret_no_dev_flag_returns_400` fails on `main` (main returns 200 for unsigned
+events) and passes on `b05`. 
+
+**Test count:** `tests/test_stripe_webhook.py` 5 → 6
+
+---
+
+### C3 — CLEANUP: Real idempotency insert test (applied to `fix/b02-deterministic-idempotency`)
+
+**Commit:** `b56babc`
+**Problem:** `test_different_day_allows_new_pitch` only called `hashlib.sha256()` directly and
+asserted the two hashes were different — no service code touched, would pass regardless of whether
+the DB schema had the UNIQUE constraint.
+
+**Fix:** Replaced with `test_different_day_key_allows_second_pitch` — calls `_db_create_pitch()`
+twice with keys for 2026-05-10 and 2026-05-11, verifies both records land in the DB without
+`IntegrityError`. This test would catch a regression where the `idempotency_key UNIQUE` constraint
+was dropped or the key formula collapsed all dates to the same value.
+
+**Test count:** `tests/test_pitch_service.py` unchanged (1 replaced for 1)
+
+---
+
+### C4 — CLEANUP: CORS preflight test via `/api/*` path (applied to `fix/b07-cors-lockdown`)
+
+**Commit:** `f5c292c`
+**Problem:** Existing CORS tests only tested `Origin` header reflection on GET `/health` — not
+preflight behavior on an actual API path. A regression (like the one from C1) would not be caught.
+
+**Fix:** Added `test_api_preflight_gets_cors_header` to `tests/test_cors.py` — sends OPTIONS to
+`/api/curators` with `PLMKR_API_KEY` set (to enforce auth when merged with r04), asserts
+`status_code != 401` and `access-control-allow-origin` header present. Documents the middleware
+ordering requirement in the test docstring.
+
+**Test count:** `tests/test_cors.py` 8 → 9
+
+---
+
+### Cumulative test run 2 — post-corrective
+
+Branch: `verify/cumulative-test-2` (deleted after run)
+Merge order: r01, b01, b02, b03, r04, b05, b06, b07, b08, docs/risk-register
+Conflicts resolved identically to the first cumulative run (see Conflict Resolution Reference).
+
+```
+======================== 132 passed in 73.18s (0:01:13) ========================
+```
+
+| Suite | Count |
+|-------|-------|
+| test_api_key_auth.py | 9 (+1 from C1) |
+| test_cors.py | 9 (+1 from C4) |
+| test_stripe_webhook.py | 6 (+1 from C2) |
+| test_pitch_service.py | 26 (unchanged — 1 replaced for 1 in C3) |
+| All other suites | 82 (unchanged) |
+| **Total** | **132** |
+
+---
+
 ## Summary
 
 | Unit | Finding |
@@ -485,5 +590,6 @@ def test_options_preflight_bypasses_api_key_auth(client_with_key):
 | V1 — Isolation | 3 expected conflicts (Dockerfile, test_pitch_service.py, main.py). docs/risk-register has minor scope creep, harmless. All 10 branches cleanly scoped to their risk ID otherwise. |
 | V2 — Test quality | 1 tautological suite (stripe webhook tests inline copy not production code). 1 tautological individual test (SHA256 hash comparison). 7 other suites are legitimate and would go red on `main`. |
 | V3 — Merge dry run | 3 conflicts, all straightforward. Service file merges (b01+b02+b03) auto-resolve cleanly. |
-| V4 — Cumulative run | **129/129 pass** on fully merged branch. No regressions. |
+| V4 — Cumulative run (initial) | **129/129 pass** on fully merged branch. No regressions. |
+| V4 — Cumulative run (post-corrective) | **132/132 pass** after C1–C4 applied. 3 net new tests added. |
 | V5 — Gap analysis | **1 BLOCKING issue**: OPTIONS preflight blocked by API key middleware (r04 + b07 combination). 2 yellow observability gaps (Stripe dev flag, auth mode in health). 3 low-priority polish items. |
