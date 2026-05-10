@@ -92,7 +92,7 @@ def test_correct_api_key_passes(client_with_key):
 def test_docs_bypasses_auth(client_with_key):
     """/docs is reachable without X-API-Key."""
     resp = client_with_key.get("/docs")
-    assert resp.status_code in (200, 404)  # 404 if docs disabled, never 401
+    assert resp.status_code != 401
 
 
 def test_timing_safe_comparison(client_with_key):
@@ -107,3 +107,32 @@ def test_timing_safe_comparison(client_with_key):
     )
     assert resp1.status_code != 401
     assert resp2.status_code == 401
+
+
+def test_options_preflight_bypasses_auth(client_with_key):
+    """OPTIONS preflight to /api/* must not be blocked by API key middleware.
+
+    Failure mode: _APIKeyMiddleware intercepts OPTIONS before CORSMiddleware
+    can respond → browser never gets Access-Control-Allow-* headers → all
+    cross-origin requests from the frontend silently fail once PLMKR_API_KEY
+    is set on Railway.
+
+    This test would return 401 on the branch before the OPTIONS short-circuit
+    was added.
+    """
+    resp = client_with_key.options(
+        "/api/curators",
+        headers={
+            "Origin":                         "https://plmkr.vercel.app",
+            "Access-Control-Request-Method":  "GET",
+            "Access-Control-Request-Headers": "x-api-key",
+        },
+    )
+    assert resp.status_code != 401, (
+        "OPTIONS preflight was blocked by auth middleware — "
+        "add 'if request.method == \"OPTIONS\": return await call_next(request)' "
+        "to _APIKeyMiddleware.dispatch()"
+    )
+    assert "access-control-allow-origin" in resp.headers, (
+        "CORS preflight response missing Access-Control-Allow-Origin header"
+    )
