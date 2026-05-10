@@ -1170,6 +1170,8 @@ if _SCHEDULER_ENABLED_FLAG:
                 hours=1,
                 id="campaign_executor",
                 replace_existing=True,
+                coalesce=True,
+                misfire_grace_time=120,
             )
             print("[Release] Campaign executor scheduled — every 1h")
     except Exception as _sched_err:
