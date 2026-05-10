@@ -1956,7 +1956,7 @@ if _on_railway and STRIPE_DEV_ALLOW_UNSIGNED:
     print("=" * 60)
     import sys
     sys.exit(1)
-STRIPE_AVAILABLE:
+if STRIPE_AVAILABLE:
     stripe_lib.api_key = STRIPE_SECRET_KEY
 
 if not STRIPE_WEBHOOK_SECRET and not STRIPE_DEV_ALLOW_UNSIGNED:

@@ -201,5 +201,6 @@ def admin_health_deep():
         "gmail_token_valid_for_artists": _count_gmail_connected(),
         "buffer_token_valid_for_artists": _count_buffer_connected(),
         "disk_usage_pct":                _disk_usage_pct(),
+        **_security_posture(),
 
     }
