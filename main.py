@@ -812,6 +812,27 @@ def _check_env():
 
 _check_env()
 
+
+def _check_data_writable() -> None:
+    """Warn loudly if /data is not writable — means no Railway volume is mounted."""
+    data_dir = Path(os.environ.get("DATA_DIR", "/data"))
+    probe = data_dir / ".writable_probe"
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+        probe.write_text("ok")
+        probe.unlink()
+        print(f"✓  {data_dir} is writable — volume mount OK")
+    except OSError as exc:
+        print("=" * 60)
+        print(f"WARNING: {data_dir} is NOT writable: {exc}")
+        print("  All SQLite DBs and OAuth tokens will be lost on redeploy.")
+        print("  Action required: Railway dashboard → Service → Volumes → Add")
+        print(f"  Volume name: plmkr-data   Mount path: {data_dir}   Size: 1 GB")
+        print("=" * 60)
+
+
+_check_data_writable()
+
 # ── App ────────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="PLMKR — Playmaker API",
