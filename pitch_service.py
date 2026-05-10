@@ -19,6 +19,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
+from prompt_safety import sanitize_for_prompt  # R-23
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -653,12 +655,14 @@ async def generate_pitch_email(
     Returns {"subject": str, "body": str, "suggested_followup_days": int}.
     Does NOT send — calling code handles send.
     """
-    artist_name  = artist_profile.get("artist_name", "The artist")
-    genre        = artist_profile.get("genre", "")
-    bio          = (artist_profile.get("bio", "") or "")[:300]
-    track_name   = track_metadata.get("name", "new release")
-    track_link   = track_metadata.get("link", "")
-    track_genre  = track_metadata.get("genre", genre)
+    artist_name  = sanitize_for_prompt(artist_profile.get("artist_name", "The artist"))  # R-23
+    genre        = sanitize_for_prompt(artist_profile.get("genre", ""))
+    bio          = sanitize_for_prompt((artist_profile.get("bio", "") or "")[:300])
+    track_name   = sanitize_for_prompt(track_metadata.get("name", "new release"))
+    track_link   = sanitize_for_prompt(track_metadata.get("link", ""))
+    track_genre  = sanitize_for_prompt(track_metadata.get("genre", genre))
+    curator_name = sanitize_for_prompt(curator.get("name", ""))
+    outlet       = sanitize_for_prompt(curator.get("outlet", ""))
 
     prompt = (
         f"Artist: {artist_name}\n"
@@ -666,8 +670,8 @@ async def generate_pitch_email(
         f"Bio: {bio}\n"
         f"Track: {track_name}"
         + (f"\nLink: {track_link}" if track_link else "")
-        + f"\n\nCurator: {curator['name']}\n"
-        f"Outlet: {curator.get('outlet','')}\n"
+        + f"\n\nCurator: {curator_name}\n"
+        f"Outlet: {outlet}\n"
         f"Covers: {', '.join(curator.get('genres',[]))}\n"
         f"Tier: {curator.get('tier','C')}\n\n"
         "Write the pitch. Return JSON only."

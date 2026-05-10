@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from prompt_safety import sanitize_for_prompt  # R-23
+
 from fastapi import APIRouter, HTTPException
 
 log = logging.getLogger("pr_service")
@@ -422,13 +424,17 @@ async def generate_pr_email(
     Draft a PR outreach email for Quinn. Returns {subject, body, suggested_followup_days}.
     Does not send — batch send orchestration handles that.
     """
-    artist_name  = artist_profile.get("artist_name", "The artist")
-    genre        = artist_profile.get("genre", "")
-    bio          = (artist_profile.get("bio", "") or "")[:300]
-    release_name = release_context.get("name", "new release")
-    release_type = release_context.get("type", "single")  # single/EP/album
-    release_link = release_context.get("link", "")
-    story_angle  = release_context.get("story_angle", "")
+    artist_name   = sanitize_for_prompt(artist_profile.get("artist_name", "The artist"))  # R-23
+    genre         = sanitize_for_prompt(artist_profile.get("genre", ""))
+    bio           = sanitize_for_prompt((artist_profile.get("bio", "") or "")[:300])
+    release_name  = sanitize_for_prompt(release_context.get("name", "new release"))
+    release_type  = sanitize_for_prompt(release_context.get("type", "single"))
+    release_link  = sanitize_for_prompt(release_context.get("link", ""))
+    story_angle   = sanitize_for_prompt(release_context.get("story_angle", ""))
+    contact_name  = sanitize_for_prompt(contact.get("name", ""))
+    outlet_name   = sanitize_for_prompt(contact.get("outlet_name", ""))
+    outlet_type   = sanitize_for_prompt(contact.get("outlet_type", ""))
+    beat          = sanitize_for_prompt(contact.get("beat", ""))
 
     prompt = (
         f"Artist: {artist_name}\n"
@@ -437,9 +443,9 @@ async def generate_pr_email(
         f"Release: {release_name} ({release_type})"
         + (f"\nLink: {release_link}" if release_link else "")
         + (f"\nStory angle: {story_angle}" if story_angle else "")
-        + f"\n\nContact: {contact['name']}\n"
-        f"Outlet: {contact.get('outlet_name','')} ({contact.get('outlet_type','')})\n"
-        f"Beat: {contact.get('beat','')}\n"
+        + f"\n\nContact: {contact_name}\n"
+        f"Outlet: {outlet_name} ({outlet_type})\n"
+        f"Beat: {beat}\n"
         f"Covers: {', '.join(contact.get('genres',[]))}\n"
         f"Tier: {contact.get('tier','C')}\n\n"
         "Write the PR email. Return JSON only."
