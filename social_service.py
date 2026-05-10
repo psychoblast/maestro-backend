@@ -102,17 +102,17 @@ def init_social_db():
         if col not in existing_cols:
             try:
                 conn.execute(f"ALTER TABLE weekly_reports ADD COLUMN {col} {ddl}")
-            except sqlite3.OperationalError:
-                pass
-
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise RuntimeError(f"Migration failure on table weekly_reports ({col}): {e}") from e
     # Schema migration — artists table: per-artist timezone support
     existing_artist_cols = {row[1] for row in conn.execute("PRAGMA table_info(artists)").fetchall()}
     if "timezone" not in existing_artist_cols:
         try:
             conn.execute("ALTER TABLE artists ADD COLUMN timezone TEXT DEFAULT 'UTC'")
-        except sqlite3.OperationalError:
-            pass  # table may not exist yet; main.py creates it at boot
-
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise RuntimeError(f"Migration failure on table artists (timezone): {e}") from e
     conn.commit()
     conn.close()
     print("[Social] SQLite social + report tables ready")
