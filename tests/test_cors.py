@@ -96,3 +96,38 @@ def test_disallowed_origin_no_cors_header(_base_env, monkeypatch):
         },
     )
     assert resp.headers.get("access-control-allow-origin") != "https://evil.example.com"
+
+
+def test_api_preflight_gets_cors_header(_base_env, monkeypatch):
+    """OPTIONS preflight to /api/* must receive CORS headers — not a 401.
+
+    The previous test suite only exercised /health (in the auth skip-list).
+    This test catches the middleware-ordering bug where _APIKeyMiddleware
+    is registered after CORSMiddleware, making it outermost: OPTIONS preflight
+    to /api/* reaches auth before CORS and is rejected with 401 when
+    PLMKR_API_KEY is set.
+
+    On this branch alone (no _APIKeyMiddleware): passes.
+    With fix/r04-api-key-auth merged but without the OPTIONS bypass: returns
+    401 (no CORS header) → FAILS — bug detected.
+    With fix/r04-api-key-auth + OPTIONS bypass (C1 fix): passes.
+    """
+    monkeypatch.setenv("PLMKR_API_KEY", "secret-key")  # enforce auth when merged with r04
+    m = _load_app(monkeypatch, "https://plmkr.vercel.app")
+    client = TestClient(m.app)
+    resp = client.options(
+        "/api/curators",
+        headers={
+            "Origin":                         "https://plmkr.vercel.app",
+            "Access-Control-Request-Method":  "GET",
+            "Access-Control-Request-Headers": "x-api-key",
+        },
+    )
+    assert resp.status_code != 401, (
+        "OPTIONS preflight to /api/* was blocked by auth middleware (401). "
+        "Apply the OPTIONS short-circuit fix to _APIKeyMiddleware.dispatch()."
+    )
+    assert "access-control-allow-origin" in resp.headers, (
+        "CORS preflight response to /api/* is missing Access-Control-Allow-Origin. "
+        "CORSMiddleware must be outermost, or OPTIONS must bypass auth middleware."
+    )
