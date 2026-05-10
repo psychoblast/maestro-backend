@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code and static assets
 COPY main.py .
+COPY pitch_service.py pr_service.py booking_service.py \
+     social_service.py release_service.py admin_service.py \
+     seed_curators.py seed_pr_contacts.py seed_booking_contacts.py ./
 COPY static/ ./static/
 COPY skills/ ./skills/
 COPY data/ ./data/
