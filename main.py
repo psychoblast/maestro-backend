@@ -40,6 +40,22 @@ CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
 DATABASE_URL: str     = os.environ.get("DATABASE_URL", "")  # Railway PostgreSQL — persists artist profiles
 
+# CORS — defaults cover Railway backend + Vercel frontend + local dev.
+# Override by setting ALLOWED_ORIGINS as a comma-separated list in Railway env vars.
+_DEFAULT_CORS_ORIGINS = [
+    "https://maestro-backend-production.up.railway.app",
+    "https://plmkr.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:8080",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8080",
+]
+_raw_origins   = os.environ.get("ALLOWED_ORIGINS", "")
+ALLOWED_ORIGINS = (
+    [o.strip() for o in _raw_origins.split(",") if o.strip()]
+    if _raw_origins else _DEFAULT_CORS_ORIGINS
+)
+
 # Sync client for non-streaming endpoints, async client for streaming
 client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
@@ -846,7 +862,12 @@ app = FastAPI(
 def health_check():
     """Returns 200 OK when the service is running."""
     return {"status": "ok"}
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.exception_handler(Exception)
