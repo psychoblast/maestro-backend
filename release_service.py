@@ -107,9 +107,11 @@ def init_release_db():
         "CREATE INDEX IF NOT EXISTS idx_campaign_due "
         "ON campaign_actions (status, scheduled_for)"
     )
+
     # Reset any actions stuck in "running" from a prior crash/restart.
     # "running" is set just before execution; a process kill leaves it there
     # permanently since the due-action query only picks up status='pending'.
+
     result = conn.execute(
         "UPDATE campaign_actions SET status='pending' WHERE status='running'"
     )
