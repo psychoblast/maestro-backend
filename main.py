@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -849,9 +850,29 @@ def health_check():
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
+@app.exception_handler(RequestValidationError)
+async def _validation_error_handler(request: Request, exc: RequestValidationError):
+    """Preserve FastAPI's native 422 format; attach request_id for tracing."""
+    import uuid as _uuid
+    return JSONResponse(
+        status_code=422,
+        content={"detail": exc.errors(), "request_id": str(_uuid.uuid4())},
+    )
+
+
+@app.exception_handler(HTTPException)
+async def _http_exception_handler(request: Request, exc: HTTPException):
+    """Preserve HTTPException status code and detail; attach request_id for tracing."""
+    import uuid as _uuid
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "request_id": str(_uuid.uuid4())},
+    )
+
+
 @app.exception_handler(Exception)
 async def _generic_error_handler(request: Request, exc: Exception):
-    """Return a structured error envelope on any unhandled exception."""
+    """Return a structured error envelope for genuinely unhandled (500-level) exceptions."""
     import uuid as _uuid
     import logging
     request_id = str(_uuid.uuid4())
@@ -861,11 +882,9 @@ async def _generic_error_handler(request: Request, exc: Exception):
                "error": str(exc)},
         exc_info=exc,
     )
-    status = exc.status_code if hasattr(exc, "status_code") else 500
-    detail = exc.detail if hasattr(exc, "detail") else str(exc)
     return JSONResponse(
-        status_code=status,
-        content={"error": type(exc).__name__, "detail": detail, "request_id": request_id},
+        status_code=500,
+        content={"error": type(exc).__name__, "detail": str(exc), "request_id": request_id},
     )
 
 # ── Phase 1 — Pitch service (Gmail, curators, pitch tracking) ─────────────────
