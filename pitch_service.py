@@ -690,7 +690,7 @@ async def generate_pitch_email(
     )
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp = _anthropic_call_with_retry(
+    resp = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=512,
@@ -870,7 +870,7 @@ _CLASSIFY_SYSTEM = (
 
 async def _classify_reply(text: str) -> dict:
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp = _anthropic_call_with_retry(
+    resp = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=100,
@@ -1109,7 +1109,7 @@ async def _generate_followup(original: dict, curator: dict, artist: dict) -> dic
         "Write the follow-up. Return JSON only."
     )
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp = _anthropic_call_with_retry(
+    resp = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=256,
