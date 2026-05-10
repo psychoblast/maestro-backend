@@ -438,6 +438,8 @@ async def generate_pr_email(
     outlet_name   = sanitize_for_prompt(contact.get("outlet_name", ""))
     outlet_type   = sanitize_for_prompt(contact.get("outlet_type", ""))
     beat          = sanitize_for_prompt(contact.get("beat", ""))
+    genres        = [sanitize_for_prompt(g) for g in contact.get("genres", [])]  # R-32
+    tier          = sanitize_for_prompt(str(contact.get("tier", "C")))            # R-32
 
     prompt = (
         f"Artist: {artist_name}\n"
@@ -449,8 +451,8 @@ async def generate_pr_email(
         + f"\n\nContact: {contact_name}\n"
         f"Outlet: {outlet_name} ({outlet_type})\n"
         f"Beat: {beat}\n"
-        f"Covers: {', '.join(contact.get('genres',[]))}\n"
-        f"Tier: {contact.get('tier','C')}\n\n"
+        f"Covers: {', '.join(genres)}\n"
+        f"Tier: {tier}\n\n"
         "Write the PR email. Return JSON only."
     )
 
