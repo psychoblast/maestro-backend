@@ -91,7 +91,7 @@ def init_social_db():
         "CREATE INDEX IF NOT EXISTS idx_weekly_reports_artist "
         "ON weekly_reports (artist_id)"
     )
-    # Schema migration for existing DBs
+    # Schema migration for existing DBs — weekly_reports table
     existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(weekly_reports)").fetchall()}
     for col, ddl in [
         ("momentum_score", "INTEGER DEFAULT 5"),
@@ -103,9 +103,60 @@ def init_social_db():
                 conn.execute(f"ALTER TABLE weekly_reports ADD COLUMN {col} {ddl}")
             except sqlite3.OperationalError:
                 pass
+
+    # Schema migration — artists table: per-artist timezone support
+    existing_artist_cols = {row[1] for row in conn.execute("PRAGMA table_info(artists)").fetchall()}
+    if "timezone" not in existing_artist_cols:
+        try:
+            conn.execute("ALTER TABLE artists ADD COLUMN timezone TEXT DEFAULT 'UTC'")
+        except sqlite3.OperationalError:
+            pass  # table may not exist yet; main.py creates it at boot
+
     conn.commit()
     conn.close()
     print("[Social] SQLite social + report tables ready")
+
+
+# ── Artist timezone helper ────────────────────────────────────────────────────
+
+def _get_artist_timezone(artist_id: str) -> str:
+    """Return the artist's stored IANA timezone string, defaulting to 'UTC'."""
+    conn = sqlite3.connect(str(_DB_PATH))
+    cur  = conn.cursor()
+    try:
+        cur.execute("SELECT timezone FROM artists WHERE artist_id=?", (artist_id,))
+        row = cur.fetchone()
+        return (row[0] or "UTC") if row else "UTC"
+    except sqlite3.OperationalError:
+        return "UTC"  # timezone column not yet migrated
+    finally:
+        conn.close()
+
+
+def _week_boundaries_in_tz(tz_name: str) -> tuple[str, str]:
+    """Return (week_start, week_end) ISO strings for the most recent Sunday week
+    in the given IANA timezone.  Falls back to UTC on invalid tz.
+
+    The global scheduler fires at Sunday 18:00 UTC; this function computes the
+    correct week boundary using the artist's local timezone so the 'week' covers
+    the right 7-day span for them.
+    """
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+    try:
+        tz = ZoneInfo(tz_name)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("UTC")
+
+    now_local = datetime.now(tz)
+    # Walk back to most recent Sunday (weekday 6)
+    days_since_sunday = (now_local.weekday() + 1) % 7
+    last_sunday = now_local - timedelta(days=days_since_sunday)
+
+    week_end   = last_sunday.replace(hour=23, minute=59, second=59, microsecond=0)
+    week_start = (week_end - timedelta(days=6)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    return (week_start.strftime("%Y-%m-%dT%H:%M:%S"),
+            week_end.strftime("%Y-%m-%dT%H:%M:%S"))
 
 
 # ── Artist data helpers (same Postgres/SQLite routing pattern) ────────────────
@@ -830,14 +881,16 @@ async def generate_weekly_report(
     Saves report to DB. Returns the full report dict.
     """
     now = datetime.now(timezone.utc)
-    if not week_end:
-        # Default to last Sunday
-        days_since_sunday = (now.weekday() + 1) % 7
-        week_end   = (now - timedelta(days=days_since_sunday)).strftime("%Y-%m-%dT23:59:59")
-    if not week_start:
-        # 7 days before week_end
-        we_dt      = datetime.fromisoformat(week_end.replace("Z", "+00:00"))
-        week_start = (we_dt - timedelta(days=6)).strftime("%Y-%m-%dT00:00:00")
+    if not week_start or not week_end:
+        # Use artist's timezone for week boundary so the 'week' covers the right
+        # 7-day span. Scheduler fires globally at Sunday 18:00 UTC; each artist
+        # gets their own local week.
+        tz_name = _get_artist_timezone(artist_id)
+        _ws, _we = _week_boundaries_in_tz(tz_name)
+        if not week_end:
+            week_end = _we
+        if not week_start:
+            week_start = _ws
 
     artist  = _load_artist_data(artist_id)
     metrics = _aggregate_week_data(artist_id, week_start, week_end)
