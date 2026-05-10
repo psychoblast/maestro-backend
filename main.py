@@ -40,6 +40,9 @@ CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
 DATABASE_URL: str     = os.environ.get("DATABASE_URL", "")  # Railway PostgreSQL — persists artist profiles
 
+# API key auth — set PLMKR_API_KEY in Railway env; unset = dev-permissive mode
+_PLMKR_API_KEY        = os.environ.get("PLMKR_API_KEY", "")
+
 # Sync client for non-streaming endpoints, async client for streaming
 client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
@@ -847,6 +850,32 @@ def health_check():
     """Returns 200 OK when the service is running."""
     return {"status": "ok"}
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+# ── API key auth middleware ────────────────────────────────────────────────────
+
+_SKIP_AUTH_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
+
+class _APIKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if not _PLMKR_API_KEY:
+            return await call_next(request)
+        if request.method == "OPTIONS":  # CORS preflight must reach CORSMiddleware unblocked
+            return await call_next(request)
+        if request.url.path in _SKIP_AUTH_PATHS:
+            return await call_next(request)
+        key = request.headers.get("X-API-Key", "")
+        if not secrets.compare_digest(key, _PLMKR_API_KEY):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing X-API-Key header"},
+            )
+        return await call_next(request)
+
+app.add_middleware(_APIKeyMiddleware)
+
+if not _PLMKR_API_KEY:
+    print("[AUTH] WARNING: PLMKR_API_KEY is not set — all routes are unauthenticated (dev mode)")
 
 
 @app.exception_handler(Exception)
