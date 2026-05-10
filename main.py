@@ -1,6 +1,7 @@
 import os
 import re
 import io
+import sys
 import json
 import time
 import secrets
@@ -1052,19 +1053,36 @@ def _pg_all() -> list[dict]:
             rows = cur.fetchall()
     return [dict(r[0]) for r in rows]
 
+def _init_pg_connection(database_url: str) -> str:
+    """Initialise Postgres. Returns effective database_url ('' when absent or on fallback).
+
+    Failure behaviour:
+      - DATABASE_URL set + Postgres fails + DB_FAILOVER_TO_SQLITE unset → sys.exit(1)
+      - DATABASE_URL set + Postgres fails + DB_FAILOVER_TO_SQLITE=true  → warn + return ""
+      - DATABASE_URL unset → SQLite intentional, return "" silently
+    """
+    if not database_url:
+        print("[DB] No DATABASE_URL — using file-based artist storage")
+        return ""
+    _failover = os.environ.get("DB_FAILOVER_TO_SQLITE", "").lower() == "true"
+    print(f"[DB] DATABASE_URL detected (prefix: {database_url[:20]}...) — initialising PostgreSQL")
+    try:
+        _pg_init()
+        return database_url
+    except Exception as pg_err:
+        if _failover:
+            print(f"[DB] WARNING: PostgreSQL init FAILED — DB_FAILOVER_TO_SQLITE=true, using SQLite: {pg_err}")
+            return ""
+        print(f"[DB] FATAL: PostgreSQL init FAILED: {pg_err}")
+        print("[DB] Set DB_FAILOVER_TO_SQLITE=true to allow emergency SQLite fallback.")
+        sys.exit(1)
+
+
 # ── Module-level init ──────────────────────────────────────────────────────────
 # Run synchronously at import time so the DB and Kokoro are ready before the
 # first request arrives (avoids the 20-35s first-call warmup delay).
 _ensure_db()
-if DATABASE_URL:
-    print(f"[DB] DATABASE_URL detected (prefix: {DATABASE_URL[:20]}...) — initialising PostgreSQL")
-    try:
-        _pg_init()
-    except Exception as _pg_err:
-        print(f"[DB] PostgreSQL init FAILED — falling back to file storage: {_pg_err}")
-        DATABASE_URL = ""  # disable PG so all branches use file fallback
-else:
-    print("[DB] No DATABASE_URL — using file-based artist storage")
+DATABASE_URL = _init_pg_connection(DATABASE_URL)
 _threading.Thread(target=get_kokoro, daemon=True, name="kokoro-warmup").start()
 init_pitch_db()
 init_scheduler()
