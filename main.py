@@ -1820,10 +1820,26 @@ async def get_notifications(artist_id: str):
 # ── Stripe billing ─────────────────────────────────────────────────────────────
 import stripe as stripe_lib
 
-STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_AVAILABLE      = bool(STRIPE_SECRET_KEY)
-APP_BASE_URL          = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
+STRIPE_SECRET_KEY       = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET   = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_DEV_ALLOW_UNSIGNED = os.environ.get("STRIPE_DEV_ALLOW_UNSIGNED", "").lower() == "true"
+STRIPE_AVAILABLE        = bool(STRIPE_SECRET_KEY)
+APP_BASE_URL            = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
+_RAILWAY_ENVIRONMENT    = os.environ.get("RAILWAY_ENVIRONMENT", "")
+
+# Refuse to start if the dev bypass is active in a Railway production environment.
+# STRIPE_DEV_ALLOW_UNSIGNED skips webhook signature verification — safe in local dev,
+# catastrophic if left on in production (accepts forged events from anyone).
+_on_railway = bool(_RAILWAY_ENVIRONMENT)
+if _on_railway and STRIPE_DEV_ALLOW_UNSIGNED:
+    print("=" * 60)
+    print("FATAL: STRIPE_DEV_ALLOW_UNSIGNED=true detected on Railway.")
+    print(f"  RAILWAY_ENVIRONMENT={_RAILWAY_ENVIRONMENT!r}")
+    print("  This bypasses webhook signature verification in production.")
+    print("  Unset STRIPE_DEV_ALLOW_UNSIGNED before deploying.")
+    print("=" * 60)
+    import sys
+    sys.exit(1)
 
 if STRIPE_AVAILABLE:
     stripe_lib.api_key = STRIPE_SECRET_KEY
@@ -1890,8 +1906,15 @@ async def billing_webhook(request: Request):
     try:
         if STRIPE_WEBHOOK_SECRET:
             event = stripe_lib.Webhook.construct_event(body, sig_header, STRIPE_WEBHOOK_SECRET)
-        else:
+        elif STRIPE_DEV_ALLOW_UNSIGNED:
             event = stripe_lib.Event.construct_from(json.loads(body), stripe_lib.api_key)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="STRIPE_WEBHOOK_SECRET not configured — set it or enable STRIPE_DEV_ALLOW_UNSIGNED for local dev only",
+            )
+    except HTTPException:
+        raise
     except stripe_lib.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid Stripe signature")
     except Exception as e:
