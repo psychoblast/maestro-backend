@@ -930,7 +930,8 @@ def _ensure_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS artists (
             artist_id TEXT PRIMARY KEY,
-            data      TEXT NOT NULL DEFAULT '{}'
+            data      TEXT NOT NULL DEFAULT '{}',
+            timezone  TEXT NOT NULL DEFAULT 'UTC'
         )
     """)
     conn.commit()
