@@ -22,6 +22,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 import anthropic
+from anthropic_utils import _anthropic_call_with_retry
 
 log = logging.getLogger("social_service")
 
@@ -497,7 +498,8 @@ async def generate_social_post(
     prompt += "\nWrite the post. Return JSON only."
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _client.messages.create(
+    resp    = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=512,
         system=_RILEY_SYSTEM,
@@ -853,7 +855,8 @@ async def generate_weekly_report(
     )
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _client.messages.create(
+    resp    = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_SONNET,
         max_tokens=1200,
         system=_REPORT_SYSTEM,

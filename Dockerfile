@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code and static assets
-COPY main.py .
+COPY main.py anthropic_utils.py .
 COPY static/ ./static/
 COPY skills/ ./skills/
 COPY data/ ./data/

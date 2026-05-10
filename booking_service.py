@@ -24,6 +24,7 @@ log = logging.getLogger("booking_service")
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import anthropic
+from anthropic_utils import _anthropic_call_with_retry
 
 # ── Config ────────────────────────────────────────────────────────────────────
 _DB_PATH       = Path(os.environ.get("DB_PATH", "/data/memory.db"))
@@ -468,7 +469,8 @@ async def generate_booking_email(
     )
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _client.messages.create(
+    resp    = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=600,
         system=_AVERY_SYSTEM,
@@ -601,7 +603,8 @@ _BOOKING_CLASSIFY_SYSTEM = (
 
 async def _classify_booking_reply(text: str) -> dict:
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _client.messages.create(
+    resp    = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=100,
         system=_BOOKING_CLASSIFY_SYSTEM,
@@ -837,7 +840,8 @@ async def _generate_booking_followup(original: dict, contact: dict, artist: dict
         "Write the booking follow-up. Return JSON only."
     )
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _client.messages.create(
+    resp    = _anthropic_call_with_retry(
+        _client,
         model=_MODEL_HAIKU,
         max_tokens=256,
         system=_AVERY_FOLLOWUP_SYSTEM,
