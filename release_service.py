@@ -100,6 +100,11 @@ def init_release_db():
         "CREATE INDEX IF NOT EXISTS idx_campaign_due "
         "ON campaign_actions (status, scheduled_for)"
     )
+    result = conn.execute(
+        "UPDATE campaign_actions SET status='pending' WHERE status='running'"
+    )
+    if result.rowcount:
+        print(f"[Release] Reset {result.rowcount} stuck 'running' action(s) to 'pending' at startup")
     conn.commit()
     conn.close()
     print("[Release] SQLite release + campaign tables ready")
