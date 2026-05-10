@@ -936,6 +936,8 @@ def init_report_scheduler():
             minute=0,
             id="weekly_reports",
             replace_existing=True,
+            coalesce=True,
+            misfire_grace_time=120,
         )
         print("[REPORT_SCHEDULER] Weekly reports scheduled — Sundays 18:00 UTC")
     except ImportError:

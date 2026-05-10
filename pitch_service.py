@@ -971,7 +971,10 @@ def init_scheduler():
             except Exception as e:
                 print(f"[SCHEDULER] Error polling {aid}: {e}")
 
-    _scheduler.add_job(_poll_all, "interval", hours=_REPLY_POLL_HOURS, id="inbox_poll")
+    _scheduler.add_job(
+        _poll_all, "interval", hours=_REPLY_POLL_HOURS, id="inbox_poll",
+        coalesce=True, misfire_grace_time=300,
+    )
     _scheduler.start()
     print(f"[SCHEDULER] Inbox polling active — every {_REPLY_POLL_HOURS}h")
 
