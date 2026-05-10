@@ -1820,13 +1820,35 @@ async def get_notifications(artist_id: str):
 # ── Stripe billing ─────────────────────────────────────────────────────────────
 import stripe as stripe_lib
 
-STRIPE_SECRET_KEY     = os.environ.get("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
-STRIPE_AVAILABLE      = bool(STRIPE_SECRET_KEY)
-APP_BASE_URL          = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
+STRIPE_SECRET_KEY        = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET    = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_DEV_ALLOW_UNSIGNED = os.environ.get("STRIPE_DEV_ALLOW_UNSIGNED", "").lower() == "true"
+STRIPE_AVAILABLE         = bool(STRIPE_SECRET_KEY)
+APP_BASE_URL             = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
 
 if STRIPE_AVAILABLE:
     stripe_lib.api_key = STRIPE_SECRET_KEY
+
+if not STRIPE_WEBHOOK_SECRET and not STRIPE_DEV_ALLOW_UNSIGNED:
+    print("[STRIPE] WARNING: STRIPE_WEBHOOK_SECRET not set and STRIPE_DEV_ALLOW_UNSIGNED not enabled — "
+          "webhook endpoint will reject all incoming events with HTTP 400")
+
+
+def _verify_stripe_event(body: bytes, sig_header: str, webhook_secret: str, dev_allow_unsigned: bool):
+    """Verify a Stripe webhook event. Raises HTTPException on failure.
+
+    Production: webhook_secret must be set — unsigned events are rejected.
+    Dev only:   set STRIPE_DEV_ALLOW_UNSIGNED=true to accept unsigned events.
+    """
+    if webhook_secret:
+        return stripe_lib.Webhook.construct_event(body, sig_header, webhook_secret)
+    if dev_allow_unsigned:
+        print("[STRIPE] WARNING: accepting unsigned webhook event — STRIPE_DEV_ALLOW_UNSIGNED=true")
+        return stripe_lib.Event.construct_from(json.loads(body), stripe_lib.api_key)
+    raise HTTPException(
+        status_code=400,
+        detail="Webhook signature verification required — set STRIPE_WEBHOOK_SECRET",
+    )
 
 TIER_PRICES = {
     "Starter":  2900,    # $29.00 in cents
@@ -1888,12 +1910,11 @@ async def billing_webhook(request: Request):
     body       = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     try:
-        if STRIPE_WEBHOOK_SECRET:
-            event = stripe_lib.Webhook.construct_event(body, sig_header, STRIPE_WEBHOOK_SECRET)
-        else:
-            event = stripe_lib.Event.construct_from(json.loads(body), stripe_lib.api_key)
+        event = _verify_stripe_event(body, sig_header, STRIPE_WEBHOOK_SECRET, STRIPE_DEV_ALLOW_UNSIGNED)
     except stripe_lib.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
