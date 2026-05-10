@@ -593,3 +593,97 @@ Conflicts resolved identically to the first cumulative run (see Conflict Resolut
 | V4 — Cumulative run (initial) | **129/129 pass** on fully merged branch. No regressions. |
 | V4 — Cumulative run (post-corrective) | **132/132 pass** after C1–C4 applied. 3 net new tests added. |
 | V5 — Gap analysis | **1 BLOCKING issue**: OPTIONS preflight blocked by API key middleware (r04 + b07 combination). 2 yellow observability gaps (Stripe dev flag, auth mode in health). 3 low-priority polish items. |
+| V6 — Tier 2 cumulative | **165/166 pass**. 1 cross-branch interaction failure in `test_r02_data_writable_check.py`. See §Tier 2 Cumulative Verification below. |
+
+---
+
+## Tier 2 Cumulative Verification
+
+**Date:** 2026-05-10
+**Branch:** `verify/cumulative-may10-final` (throwaway, deleted after run)
+**Merge order:** Tier 1 (10 branches) → Tier 2 (7 branches), all `--no-ff`
+
+### Merge sequence and conflicts
+
+#### Tier 1 (10 branches)
+
+| # | Branch | Result |
+|---|--------|--------|
+| 1 | `fix/r01-dockerfile-service-files` | Clean |
+| 2 | `fix/b01-anthropic-retry` | **Conflict: `Dockerfile`** — resolved: keep service-file COPY block from r01 + add `anthropic_utils.py` from b01 |
+| 3 | `fix/b02-deterministic-idempotency` | Clean (auto-merge on service files + added test suite) |
+| 4 | `fix/b03-daily-send-quota` | **Conflict: `tests/test_pitch_service.py`** — resolved: keep both sections (idempotency tests from b02/HEAD + quota tests from b03) |
+| 5 | `fix/r04-api-key-auth` | Clean |
+| 6 | `fix/b05-stripe-webhook-signature` | Clean |
+| 7 | `fix/b06-upload-size-limit` | Clean |
+| 8 | `fix/b07-cors-lockdown` | **Conflict: `main.py`** — resolved: keep `_PLMKR_API_KEY` line from HEAD + CORS origins block from b07 |
+| 9 | `fix/c03-startup-running-reset` | Clean |
+| 10 | `docs/risk-register` | Clean |
+
+#### Tier 2 (7 branches)
+
+| # | Branch | Result |
+|---|--------|--------|
+| 11 | `fix/r12-delete-send-test-email` | Clean |
+| 12 | `fix/r05-anthropic-graceful-degradation` | Clean |
+| 13 | `fix/r02-persistent-volume-staging` | Clean |
+| 14 | `fix/r10-scheduler-backfill-protection` | Clean |
+| 15 | `fix/b05-stripe-dev-flag-prod-guard` | **Conflict: `main.py` (2 hunks)** — resolved: (1) keep existing Stripe vars + add `_RAILWAY_ENVIRONMENT` and startup guard from b05; (2) keep `_verify_stripe_event()` helper call from HEAD rather than duplicating inline logic |
+| 16 | `fix/r04-health-reports-auth-status` | **Conflict: `admin_service.py`** — resolved: replace single `anthropic_available` line with `**_security_posture()` spread (superset that includes `anthropic_available` + auth/CORS posture) |
+| 17 | `fix/f01-per-artist-timezone` | Clean |
+
+**Total conflicts:** 5 (Dockerfile ×1, test_pitch_service.py ×1, main.py ×2 across 2 merges, admin_service.py ×1)
+
+### Test results
+
+```
+python3 -m pytest -v
+======================== 165 passed, 1 failed in 93.49s (0:01:33) ========================
+```
+
+| Suite | Count | Status |
+|-------|-------|--------|
+| Integration tests (7 suites) | 7 | ✅ All pass |
+| test_admin_service.py | 6 | ✅ |
+| test_anthropic_utils.py | 8 | ✅ |
+| test_api_key_auth.py | 9 | ✅ |
+| test_b05_stripe_dev_flag_prod_guard.py | 5 | ✅ |
+| test_booking_service.py | 11 | ✅ |
+| test_cors.py | 9 | ✅ |
+| test_f01_per_artist_timezone.py | (included) | ✅ |
+| test_pitch_service.py | 31 | ✅ (includes b02 idempotency + b03 quota tests) |
+| test_r02_data_writable_check.py | 3 | ⚠️ **1 FAIL** |
+| test_r05_anthropic_graceful_degradation.py | (included) | ✅ |
+| test_r10_scheduler_backfill.py | (included) | ✅ |
+| test_r12_send_test_email_removed.py | (included) | ✅ |
+| test_release_service.py | (included) | ✅ |
+| test_reports.py | 7 | ✅ |
+| test_social_service.py | 8 | ✅ |
+| test_stripe_webhook.py | 6 | ✅ |
+| test_transcribe.py | 8 | ✅ |
+| **Total** | **166** | **165 pass / 1 fail** |
+
+### Cross-branch interaction failure
+
+**Test:** `tests/test_r02_data_writable_check.py::test_writable_dir_logs_ok`
+
+**Failure:** The test asserts `"WARNING" not in captured.out` after calling `_check_data_writable()`. However, `_get_check_fn()` (the test helper) calls `importlib.reload(main)` to import the function under test. Under the cumulative merge, reloading `main.py` triggers startup validation from another merged branch (Twilio auth token format check) which prints `⚠️ TWILIO_AUTH_TOKEN invalid` to stdout. `capsys` captures all output since test start — including the module-level reload output — so the WARNING is found before `fn()` even runs.
+
+**Passes on individual branch?** Yes — `r02` alone does not have the Twilio startup validator. Only manifests under cumulative merge.
+
+**Fix required (low-risk, 1 line):** In `test_writable_dir_logs_ok`, call `capsys.readouterr()` after `_get_check_fn()` but before `fn()` to discard startup noise:
+
+```python
+fn = _get_check_fn(monkeypatch, tmp_path)
+capsys.readouterr()   # flush startup prints from module reload
+fn()
+captured = capsys.readouterr()
+```
+
+This is a test isolation issue, not a production code bug. The startup validator and the writable-dir check are both correct; the test just needs to scope its capture window.
+
+**Owner:** r02 branch author — small amendment commit needed before merge.
+
+### Verdict
+
+**YELLOW** — 165/166 pass. No structural issues blocking the merge. One test isolation bug (`test_writable_dir_logs_ok`) fails due to cross-branch interaction with Twilio startup validation; fix is a 1-line `capsys.readouterr()` flush. All production code paths integrate correctly under the full 17-branch cumulative state. Safe to merge to `main` once the r02 test is patched.
