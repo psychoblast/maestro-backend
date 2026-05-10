@@ -35,6 +35,9 @@ KNOWLEDGE_BASE= Path(os.environ.get("KNOWLEDGE_BASE", _BASE / "KNOWLEDGE.md"))
 AUDIO_CACHE   = Path(os.environ.get("AUDIO_CACHE_DIR", "/data/audio_cache"))
 AUDIO_CACHE.mkdir(parents=True, exist_ok=True)
 
+MAX_UPLOAD_BYTES    = int(os.environ.get("MAX_UPLOAD_SIZE", str(25 * 1024 * 1024)))  # 25 MB default
+_ALLOWED_AUDIO_EXTS = {".mp3", ".m4a", ".wav", ".ogg", ".webm"}
+
 # Cloud integrations (optional — graceful degradation when absent)
 CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
 ELEVENLABS_API_KEY    = os.environ.get("ELEVENLABS_API_KEY", "")
@@ -1130,14 +1133,33 @@ async def get_artist(artist_id: str = ""):
     return load_artist(artist_id)
 
 @app.post("/api/transcribe")
-async def transcribe(audio: UploadFile = File(...)):
+async def transcribe(audio: UploadFile = File(...), request: Request = None):
     try:
+        filename = audio.filename or "voice.m4a"
+        ext      = (os.path.splitext(filename)[1] or ".m4a").lower()
+
+        if ext not in _ALLOWED_AUDIO_EXTS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported audio format '{ext}'. Allowed: {sorted(_ALLOWED_AUDIO_EXTS)}",
+            )
+
+        # Reject oversized uploads before reading the body when Content-Length is present.
+        cl = audio.headers.get("content-length") if audio.headers else None
+        if cl is not None and int(cl) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds {MAX_UPLOAD_BYTES // (1024*1024)} MB limit",
+            )
+
+        data = await audio.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds {MAX_UPLOAD_BYTES // (1024*1024)} MB limit",
+            )
+
         model = get_whisper()
-        # Derive extension from filename so Whisper decodes correctly.
-        # Android expo-av records .m4a; iOS .m4a; web .webm — default .m4a.
-        filename  = audio.filename or "voice.m4a"
-        ext       = os.path.splitext(filename)[1] or ".m4a"
-        data      = await audio.read()
         print(f"[TRANSCRIBE] received {len(data)} bytes, filename={filename}, ext={ext}")
         with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as f:
             f.write(data)
@@ -1148,6 +1170,8 @@ async def transcribe(audio: UploadFile = File(...)):
         text = result["text"].strip()
         print(f"[TRANSCRIBE] result: {repr(text)}")
         return {"text": text}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[TRANSCRIBE] ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
