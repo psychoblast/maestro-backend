@@ -1931,13 +1931,31 @@ async def get_notifications(artist_id: str):
 # ── Stripe billing ─────────────────────────────────────────────────────────────
 import stripe as stripe_lib
 
+
 STRIPE_SECRET_KEY        = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET    = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_DEV_ALLOW_UNSIGNED = os.environ.get("STRIPE_DEV_ALLOW_UNSIGNED", "").lower() == "true"
 STRIPE_AVAILABLE         = bool(STRIPE_SECRET_KEY)
 APP_BASE_URL             = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
 
-if STRIPE_AVAILABLE:
+
+APP_BASE_URL            = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
+_RAILWAY_ENVIRONMENT    = os.environ.get("RAILWAY_ENVIRONMENT", "")
+
+# Refuse to start if the dev bypass is active in a Railway production environment.
+# STRIPE_DEV_ALLOW_UNSIGNED skips webhook signature verification — safe in local dev,
+# catastrophic if left on in production (accepts forged events from anyone).
+_on_railway = bool(_RAILWAY_ENVIRONMENT)
+if _on_railway and STRIPE_DEV_ALLOW_UNSIGNED:
+    print("=" * 60)
+    print("FATAL: STRIPE_DEV_ALLOW_UNSIGNED=true detected on Railway.")
+    print(f"  RAILWAY_ENVIRONMENT={_RAILWAY_ENVIRONMENT!r}")
+    print("  This bypasses webhook signature verification in production.")
+    print("  Unset STRIPE_DEV_ALLOW_UNSIGNED before deploying.")
+    print("=" * 60)
+    import sys
+    sys.exit(1)
+STRIPE_AVAILABLE:
     stripe_lib.api_key = STRIPE_SECRET_KEY
 
 if not STRIPE_WEBHOOK_SECRET and not STRIPE_DEV_ALLOW_UNSIGNED:
@@ -2021,7 +2039,10 @@ async def billing_webhook(request: Request):
     body       = await request.body()
     sig_header = request.headers.get("stripe-signature", "")
     try:
+
         event = _verify_stripe_event(body, sig_header, STRIPE_WEBHOOK_SECRET, STRIPE_DEV_ALLOW_UNSIGNED)
+
+
     except stripe_lib.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid Stripe signature")
     except HTTPException:
