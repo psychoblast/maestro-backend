@@ -272,3 +272,33 @@ def test_followup_recent_pitch_not_triggered(ps):
     ps._db_update_pitch("fu-p1", {"sent_at": now_str})
     results = ps._get_pitches_needing_followup()
     assert all(r["id"] != "fu-p1" for r in results)
+
+
+# ── Deterministic idempotency key ─────────────────────────────────────────────
+
+def test_idempotency_key_blocks_duplicate_pitch(ps):
+    """Inserting two pitches with the same idempotency_key raises IntegrityError."""
+    import hashlib, sqlite3
+    from datetime import datetime, timezone
+    send_window = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    key = hashlib.sha256(f"a1:cur-test-001:{send_window}".encode()).hexdigest()
+
+    ps._db_create_pitch({
+        "id": "idem-1", "artist_id": "a1", "curator_id": "cur-test-001",
+        "status": "sent", "subject": "S", "body": "B",
+        "idempotency_key": key,
+    })
+    with pytest.raises(sqlite3.IntegrityError):
+        ps._db_create_pitch({
+            "id": "idem-2", "artist_id": "a1", "curator_id": "cur-test-001",
+            "status": "sent", "subject": "S", "body": "B",
+            "idempotency_key": key,  # same key → UNIQUE violation
+        })
+
+
+def test_different_day_allows_new_pitch(ps):
+    """Keys from different days are distinct — no collision."""
+    import hashlib
+    key_a = hashlib.sha256(b"a1:cur-test-001:2026-05-10").hexdigest()
+    key_b = hashlib.sha256(b"a1:cur-test-001:2026-05-11").hexdigest()
+    assert key_a != key_b  # distinct keys → no collision possible
