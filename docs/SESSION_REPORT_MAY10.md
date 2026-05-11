@@ -79,7 +79,7 @@ No Railway deploys performed. No external API calls.
 
 ---
 
-## What Was NOT Done (Explicit Exclusions)
+## What Was NOT Done — Tier 1 (Explicit Exclusions)
 
 - R-02: `/data` ephemeral storage → requires infra decision (Railway volume vs. external DB)
 - R-05: `ANTHROPIC_API_KEY` hard-crash at boot → graceful degradation pattern
@@ -88,10 +88,49 @@ No Railway deploys performed. No external API calls.
 
 ---
 
-## Next Session
+## Tier 2 Addendum — Session May 10 (Second Pass)
 
-1. Merge all 9 `fix/` branches to main via PR review
-2. Railway redeploy — verify R-01 fix resolves the dark-service issue
-3. `curl /api/admin/health/deep` on live Railway — confirm all service modules loaded
-4. R-02 decision: persistent storage strategy
-5. R-05: startup degradation guard
+**Session type:** Autonomous (7 units).  
+**Branches created:** 7 fix branches + 1 docs branch.  
+**Cumulative test result (all 17 Tier 1 + Tier 2 branches stacked):** see cumulative run below.
+
+### Commits
+
+| Branch | Commit | Mitigates | Tests |
+|--------|--------|-----------|-------|
+| fix/r12-delete-send-test-email | c6d2e8d | R-12: /send-test-email removed | 2 |
+| fix/r05-anthropic-graceful-degradation | 94ce0ce | R-05: graceful 503 on missing key | 5 |
+| fix/r02-persistent-volume-staging | c0db593 | R-02: railway.toml + startup check | 3 |
+| fix/r10-scheduler-backfill-protection | 91b651c | R-10/R-29: coalesce + batch limit | 4 |
+| fix/b05-stripe-dev-flag-prod-guard | e22c635 | B-05 follow-up: prod guard | 5 |
+| fix/r04-health-reports-auth-status | bd80f9a | R-04/R-20: security posture in health | 8 |
+| fix/f01-per-artist-timezone | 57068df | F1/R-28: per-artist weekly report tz | 7 |
+
+**Tier 2 test total: 34 new tests**
+
+### Technical Decisions
+
+- **R-02**: Chose railway.toml `[[mounts]]` declaration (option b from spec) + runbook (option c). Volume creation is dashboard-only. `_check_data_writable()` fires at startup and warns loudly if /data is not mounted.
+- **B-05**: `STRIPE_DEV_ALLOW_UNSIGNED` introduced on this Tier 2 branch (it's on Tier 1 `fix/b05-stripe-webhook-signature` for the webhook logic; this branch adds the Railway prod guard). Both complement each other.
+- **F1**: Used global cron (Sunday 18:00 UTC) + per-artist timezone for week boundary computation (min viable fix approach from spec). Per-artist cron scheduling would require APScheduler `DateTrigger` per artist — deferred.
+- **R-10**: Conservative `SCHEDULER_BATCH_LIMIT=5` default. Post-downtime catchup endpoint documented as TODO in code.
+- **R-04**: `admin_service.py` `_security_posture()` helper reads env at request time (not cached at boot) so a Railway env-var redeploy reflects immediately.
+
+### What Was NOT Done — Tier 2
+
+- R-06: Postgres silent failover → data split — not addressed (requires architectural decision on failover strategy)
+- R-07: "running" campaign actions stuck after crash — not addressed (requires a crash recovery sweep at boot)
+- R-11: APP_BASE_URL defaults to local IP — env var fix, no code needed, deferred to Tommy
+- R-14: /api/transcribe memory limit — deferred
+- R-16: Gmail OAuth not configured on Railway — manual Railway step, deferred to Tommy
+- R-17: Twilio auth token invalid — manual Railway step, deferred to Tommy
+- R-23: Prompt injection — requires content sanitisation design, deferred
+
+### Next Session
+
+1. Merge Tier 1 (10 branches, 3 conflicts at Dockerfile / test_pitch_service.py / main.py)
+2. Merge Tier 2 (7 branches) — watch for conflict on main.py (multiple branches touch it)
+3. Railway redeploy + `curl /api/admin/health/deep` — confirm `anthropic_available`, `auth_enabled`, etc.
+4. Tommy: Railway volume creation (docs/RUNBOOK_RAILWAY_VOLUME.md § Manual Step)
+5. Tommy: `APP_BASE_URL` env var on Railway
+6. Address R-07 (crash recovery), R-14 (upload size), R-17 (Twilio) in next Tier 3 pass

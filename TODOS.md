@@ -1,34 +1,26 @@
 # PLMKR — TODOS
-Last updated: 2026-05-10 (May 10 session — Tier 1 risk mitigations complete)
+Last updated: 2026-05-10 (Tier 2 mitigations — 7 risk branches shipped)
 
 ---
 
 ## NEXT SESSION — TOP PRIORITY (do these before anything else)
 
-1. **Merge 9 fix branches to main** — all Tier 1 mitigations from May 10 are on
-   separate branches, none merged. See "RISK MITIGATIONS" section below. Suggested merge order:
-   Dockerfile first (R-01), then service-code branches, then auth/CORS last.
-
-2. **Railway redeploy + verify R-01 fix** — after merging fix/r01-dockerfile-service-files,
-   trigger a Railway rebuild and `curl /api/admin/health/deep`. Must return service module
-   status — not a 404 or "Application not found". This proves the dark-service issue is resolved.
-
-3. **Set `APP_BASE_URL` on Railway** — currently defaults to `http://192.168.18.59:8765`
+1. **Set `APP_BASE_URL` on Railway** — currently defaults to `http://192.168.18.59:8765`
    (local dev IP, main.py:1826). Stripe success/cancel URLs and agent photo fallback
    URLs are broken in production until this is set to the Railway HTTPS URL.
    No code change needed — just set the env var and redeploy.
 
-4. **Google Cloud OAuth setup (§3-A)** — create OAuth 2.0 Client ID on
+2. **Google Cloud OAuth setup (§3-A)** — create OAuth 2.0 Client ID on
    console.cloud.google.com, set `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`,
    `GMAIL_OAUTH_REDIRECT_URI` on Railway, redeploy.
 
-5. **Replace 3–5 curator emails with real targets (§3-B)** — file: `data/curators_seed.json`.
+3. **Replace 3–5 curator emails with real targets (§3-B)** — file: `data/curators_seed.json`.
    Do NOT do all 50 — fresh Gmail sender reputation risk.
 
-6. **Verify Bug 1 on live Railway (§3-C)** — `GET /api/reports/weekly/{id}` must return
+4. **Verify Bug 1 on live Railway (§3-C)** — `GET /api/reports/weekly/{id}` must return
    `momentum_score`, `headline`, `highlights`. Migration auto-runs at boot (social_service.py:94).
 
-7. **End-to-end Phase 1 Gmail test (§3-D)** — OAuth in browser → generate pitch →
+5. **End-to-end Phase 1 Gmail test (§3-D)** — OAuth in browser → generate pitch →
    send to ONE real curator → confirm Sent folder → scan inbox → status = "replied".
 
 ---
@@ -163,33 +155,6 @@ Shipped in the May 9 autonomous CC run. Merged to main via `fecbeec`.
 
 ---
 
-## RISK MITIGATIONS — May 10 (all pending merge to main)
-
-10 units completed in session. 9 fix branches pushed to origin. **None merged yet.**
-
-| Branch | Risk | What it fixes | Tests |
-|--------|------|---------------|-------|
-| `fix/r01-dockerfile-service-files` | R-01 | Dockerfile: add 6 service files + 3 seed scripts | — |
-| `fix/b05-stripe-webhook-signature` | R-04 | Stripe webhook: enforce signature, env-gated dev bypass | 5 |
-| `fix/c03-startup-running-reset` | R-07 | Reset stuck `running` campaign actions at startup | 1 |
-| `fix/b01-anthropic-retry` | R-13 | Anthropic retry helper: 4 attempts, 1/2/4s backoff | 9 |
-| `fix/b02-deterministic-idempotency` | R-08 | Idempotency keys: sha256(artist:contact:date) | 2 |
-| `fix/b06-upload-size-limit` | R-14 | `/api/transcribe`: 25 MB cap + extension allowlist | 13 |
-| `fix/b03-daily-send-quota` | R-09 | Per-artist 50/day send quota, SQLite-backed | 5 |
-| `fix/r04-api-key-auth` | R-03 | X-API-Key middleware, dev-permissive if unset | 8 |
-| `fix/b07-cors-lockdown` | R-15 | CORS: env-driven origin list, no wildcard | 8 |
-
-Also: `docs/risk-register` (R-23 docs correction) and `docs/session-may10-final` (this file + session report).
-
-New env vars introduced (set on Railway when ready to enforce):
-- `PLMKR_API_KEY` — enable API key auth (unset = dev-permissive)
-- `STRIPE_DEV_ALLOW_UNSIGNED` — set to `true` only in dev when no webhook secret
-- `DAILY_PITCH_QUOTA` — per-artist daily send limit (default: 50)
-- `MAX_UPLOAD_SIZE` — transcribe upload cap in bytes (default: 26214400 = 25 MB)
-- `ALLOWED_ORIGINS` — comma-separated CORS origin list (default: Railway + Vercel + localhost)
-
----
-
 ## MANUAL CONFIG QUEUE — §3 (in execution order)
 
 Nothing in this section requires new code. All are Railway/Google/Buffer dashboard tasks.
@@ -208,28 +173,44 @@ Nothing in this section requires new code. All are Railway/Google/Buffer dashboa
 
 ## CODE ISSUES SURFACED BY AUDIT (2026-05-10)
 
-These were found during pre-flight read-only audit. No code changes made yet.
-Review and decide disposition before next build session.
+These were found during pre-flight read-only audit.
 
-| # | Severity | File:line | Issue | Recommended action |
-|---|----------|-----------|-------|--------------------|
-| AU-1 | 🟡 MEDIUM | main.py:1826 | `APP_BASE_URL` defaults to `http://192.168.18.59:8765` (local dev IP). Stripe checkout success/cancel URLs and agent photo fallback URLs point there in production. | Set `APP_BASE_URL=https://maestro-backend-production-6d9c.up.railway.app` on Railway. No code change — env var only. |
-| AU-2 | 🟡 MEDIUM | main.py:2114 | `GET /send-test-email` — unauthenticated endpoint, hardcoded recipient `yourpersonalemail@gmail.com`, uses legacy SMTP (`EMAIL_USER`/`EMAIL_PASS`). Dead dev scaffolding. | Delete the endpoint and the `EMAIL_USER`/`EMAIL_PASS` vars before production. |
-| AU-3 | 🔵 INFO | social_service.py:930 | Weekly report scheduler hardcoded to UTC Sunday 18:00. No per-artist timezone support. | Note only. Acceptable for v1. |
+| # | Severity | File:line | Issue | Status |
+|---|----------|-----------|-------|--------|
+| AU-1 | 🟡 MEDIUM | main.py | `APP_BASE_URL` defaults to local dev IP | 🔴 OPEN — env var fix, no code change needed |
+| AU-2 | 🟡 MEDIUM | main.py | `GET /send-test-email` unauthenticated endpoint | ✅ FIXED — `fix/r12-delete-send-test-email` (c6d2e8d) |
+| AU-3 | 🔵 INFO | social_service.py | Weekly reports hardcoded UTC | ✅ FIXED — `fix/f01-per-artist-timezone` (57068df) |
 
-Note: `ANTHROPIC_API_KEY` uses `os.environ[...]` (main.py:26) — hard crash at boot if absent.
-This is correct behavior (intentional guard), not a bug. Just make sure it's always set on Railway.
+Note: `ANTHROPIC_API_KEY` hard-crash on boot — fixed. See R-05 below.
 
 ---
+
+## TIER 2 RISK MITIGATIONS — Status (2026-05-10)
+
+Branches await merge to main. Merge Tier 1 first (10 branches, 132/132 cumulative).
+Then merge Tier 2 in creation order.
+
+| Risk | Branch | Commit | Status |
+|------|--------|--------|--------|
+| R-12 delete /send-test-email | fix/r12-delete-send-test-email | c6d2e8d | ✅ Mitigated — pending merge |
+| R-05 Anthropic graceful degradation | fix/r05-anthropic-graceful-degradation | 94ce0ce | ✅ Mitigated — pending merge |
+| R-02 persistent volume staging | fix/r02-persistent-volume-staging | c0db593 | ⚠️ Staged — dashboard step required (see RUNBOOK_RAILWAY_VOLUME.md) |
+| R-10 scheduler coalesce + batch limit | fix/r10-scheduler-backfill-protection | 91b651c | ✅ Mitigated — pending merge |
+| B-05 Stripe dev flag Railway guard | fix/b05-stripe-dev-flag-prod-guard | e22c635 | ✅ Mitigated — pending merge |
+| R-04 deep health auth status | fix/r04-health-reports-auth-status | bd80f9a | ✅ Mitigated — pending merge |
+| F1 per-artist timezone | fix/f01-per-artist-timezone | 57068df | ✅ Mitigated — pending merge |
 
 ## STANDING ITEMS
 
 - [ ] Tommy to test 0.D (Twilio OTP) on real device
 - [ ] Tommy to complete frontend 0.1/0.2/0.3 fixes in CallScreen.js (~/Desktop/[scrubbed]/)
+- [ ] **R-02 manual dashboard step**: Railway → Service → Volumes → Add → plmkr-data → /data → 1GB
 - [ ] Decide: keep SQLite on /data volume or add Railway Postgres add-on (DATABASE_URL)
 - [ ] Rotate any keys if exposed (check: ANTHROPIC, ELEVENLABS, TWILIO, STRIPE)
 - [ ] Set `APP_BASE_URL` on Railway (AU-1 above — do before next Stripe test)
-- [ ] Delete `/send-test-email` endpoint before production (AU-2 above)
+- [ ] Merge Tier 1 (10 branches) then Tier 2 (7 branches) to main
+- [ ] Twilio dev bypass: auth token invalid — OPEN (R-17 in risk register)
+- [ ] Gmail OAuth: not configured on Railway — OPEN (R-16 in risk register)
 
 ---
 
@@ -239,4 +220,4 @@ This is correct behavior (intentional guard), not a bug. Just make sure it's alw
 - 43 total agents in AGENTS list; 16 have distinct EL voices in `_EL_VOICE_MAP`; rest use prefix fallback.
 - `PLMKR_Master_PRD_v3.docx` in .gitignore (binary working doc, not versioned).
 - Buffer `_buffer_schedule_post()` in social_service.py is a stub — `"mocked": True`. Posts are NOT published to Buffer until credentials are set and the stub is wired to the real API call.
-- Tests: 78/78 passing on main as of May 9 merge (`fecbeec`). May 10 session added 51 more tests across 7 new/modified test files — all on fix branches, not yet merged.
+- Tests: 78/78 passing on main as of May 9 merge (`fecbeec`).
