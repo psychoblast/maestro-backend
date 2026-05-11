@@ -480,7 +480,7 @@ async def generate_booking_email(
     )
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _anthropic_call_with_retry(
+    resp    = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=600,
@@ -625,7 +625,7 @@ _BOOKING_CLASSIFY_SYSTEM = (
 
 async def _classify_booking_reply(text: str) -> dict:
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _anthropic_call_with_retry(
+    resp    = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=100,
@@ -862,7 +862,7 @@ async def _generate_booking_followup(original: dict, contact: dict, artist: dict
         "Write the booking follow-up. Return JSON only."
     )
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _anthropic_call_with_retry(
+    resp    = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=256,

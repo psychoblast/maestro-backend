@@ -551,7 +551,7 @@ async def generate_social_post(
     prompt += "\nWrite the post. Return JSON only."
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _anthropic_call_with_retry(
+    resp    = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_HAIKU,
         max_tokens=512,
@@ -910,7 +910,7 @@ async def generate_weekly_report(
     )
 
     _client = anthropic.Anthropic(api_key=_ANTHROPIC_KEY)
-    resp    = _anthropic_call_with_retry(
+    resp    = await _anthropic_call_with_retry(
         _client,
         model=_MODEL_SONNET,
         max_tokens=1200,
