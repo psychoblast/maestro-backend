@@ -675,6 +675,8 @@ async def generate_pitch_email(
     track_genre  = sanitize_for_prompt(track_metadata.get("genre", genre))
     curator_name = sanitize_for_prompt(curator.get("name", ""))
     outlet       = sanitize_for_prompt(curator.get("outlet", ""))
+    genres       = [sanitize_for_prompt(g) for g in curator.get("genres", [])]  # R-32
+    tier         = sanitize_for_prompt(str(curator.get("tier", "C")))            # R-32
 
     prompt = (
         f"Artist: {artist_name}\n"
@@ -684,8 +686,8 @@ async def generate_pitch_email(
         + (f"\nLink: {track_link}" if track_link else "")
         + f"\n\nCurator: {curator_name}\n"
         f"Outlet: {outlet}\n"
-        f"Covers: {', '.join(curator.get('genres',[]))}\n"
-        f"Tier: {curator.get('tier','C')}\n\n"
+        f"Covers: {', '.join(genres)}\n"
+        f"Tier: {tier}\n\n"
         "Write the pitch. Return JSON only."
     )
 
