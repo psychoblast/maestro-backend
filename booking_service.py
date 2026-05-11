@@ -451,13 +451,16 @@ async def generate_booking_email(
     artist_name     = sanitize_for_prompt(artist_profile.get("artist_name", "The artist"))  # R-23
     genre           = sanitize_for_prompt(artist_profile.get("genre", ""))
     bio             = sanitize_for_prompt((artist_profile.get("bio", "") or "")[:300])
-    available_dates = show_context.get("available_dates", [])
+    available_dates = [sanitize_for_prompt(d) for d in show_context.get("available_dates", [])]  # R-32
     highlight       = sanitize_for_prompt(show_context.get("highlight", ""))
     tour_region     = sanitize_for_prompt(show_context.get("tour_region", ""))
     contact_name    = sanitize_for_prompt(contact.get("name", ""))
     venue           = sanitize_for_prompt(contact.get("venue_or_festival", ""))
     city            = sanitize_for_prompt(contact.get("city", ""))
     country         = sanitize_for_prompt(contact.get("country", ""))
+    contact_type    = sanitize_for_prompt(str(contact.get("type", "venue")))       # R-32
+    genres          = [sanitize_for_prompt(g) for g in contact.get("genres", [])]  # R-32
+    tier            = sanitize_for_prompt(str(contact.get("tier", "C")))            # R-32
 
     prompt = (
         f"Artist: {artist_name}\n"
@@ -468,11 +471,11 @@ async def generate_booking_email(
         + (f"Available dates: {', '.join(available_dates)}\n" if available_dates else "")
         + f"\nContact: {contact_name}\n"
         f"Venue/Festival: {venue}\n"
-        f"Type: {contact.get('type', 'venue')}\n"
+        f"Type: {contact_type}\n"
         f"City: {city}, {country}\n"
         f"Capacity: {contact.get('capacity', 0)}\n"
-        f"Genres booked: {', '.join(contact.get('genres', []))}\n"
-        f"Tier: {contact.get('tier', 'C')}\n\n"
+        f"Genres booked: {', '.join(genres)}\n"
+        f"Tier: {tier}\n\n"
         "Write the booking inquiry email. Return JSON only."
     )
 
