@@ -1,5 +1,5 @@
 # PLMKR — TODOS
-Last updated: 2026-05-10 (Tier 2 mitigations — 7 risk branches shipped)
+Last updated: 2026-05-10 (Tier 3 risk mitigations added — R-06/R-07/R-21/R-22/R-23)
 
 ---
 
@@ -173,44 +173,46 @@ Nothing in this section requires new code. All are Railway/Google/Buffer dashboa
 
 ## CODE ISSUES SURFACED BY AUDIT (2026-05-10)
 
-These were found during pre-flight read-only audit.
+These were found during pre-flight read-only audit. No code changes made yet.
+Review and decide disposition before next build session.
 
-| # | Severity | File:line | Issue | Status |
-|---|----------|-----------|-------|--------|
-| AU-1 | 🟡 MEDIUM | main.py | `APP_BASE_URL` defaults to local dev IP | 🔴 OPEN — env var fix, no code change needed |
-| AU-2 | 🟡 MEDIUM | main.py | `GET /send-test-email` unauthenticated endpoint | ✅ FIXED — `fix/r12-delete-send-test-email` (c6d2e8d) |
-| AU-3 | 🔵 INFO | social_service.py | Weekly reports hardcoded UTC | ✅ FIXED — `fix/f01-per-artist-timezone` (57068df) |
+| # | Severity | File:line | Issue | Recommended action |
+|---|----------|-----------|-------|--------------------|
+| AU-1 | 🟡 MEDIUM | main.py:1826 | `APP_BASE_URL` defaults to `http://192.168.18.59:8765` (local dev IP). Stripe checkout success/cancel URLs and agent photo fallback URLs point there in production. | Set `APP_BASE_URL=https://maestro-backend-production-6d9c.up.railway.app` on Railway. No code change — env var only. |
+| AU-2 | 🟡 MEDIUM | main.py:2114 | `GET /send-test-email` — unauthenticated endpoint, hardcoded recipient `yourpersonalemail@gmail.com`, uses legacy SMTP (`EMAIL_USER`/`EMAIL_PASS`). Dead dev scaffolding. | Delete the endpoint and the `EMAIL_USER`/`EMAIL_PASS` vars before production. |
+| AU-3 | 🔵 INFO | social_service.py:930 | Weekly report scheduler hardcoded to UTC Sunday 18:00. No per-artist timezone support. | Note only. Acceptable for v1. |
 
-Note: `ANTHROPIC_API_KEY` hard-crash on boot — fixed. See R-05 below.
+Note: `ANTHROPIC_API_KEY` uses `os.environ[...]` (main.py:26) — hard crash at boot if absent.
+This is correct behavior (intentional guard), not a bug. Just make sure it's always set on Railway.
 
 ---
 
-## TIER 2 RISK MITIGATIONS — Status (2026-05-10)
+## TIER 3 RISK MITIGATIONS — May 10 (pending merge)
 
-Branches await merge to main. Merge Tier 1 first (10 branches, 132/132 cumulative).
-Then merge Tier 2 in creation order.
+5 branches pushed, tests red-on-main / green-on-branch verified. DO NOT merge individually —
+wait for cumulative V7 pytest run to confirm 0 regressions first.
 
-| Risk | Branch | Commit | Status |
-|------|--------|--------|--------|
-| R-12 delete /send-test-email | fix/r12-delete-send-test-email | c6d2e8d | ✅ Mitigated — pending merge |
-| R-05 Anthropic graceful degradation | fix/r05-anthropic-graceful-degradation | 94ce0ce | ✅ Mitigated — pending merge |
-| R-02 persistent volume staging | fix/r02-persistent-volume-staging | c0db593 | ⚠️ Staged — dashboard step required (see RUNBOOK_RAILWAY_VOLUME.md) |
-| R-10 scheduler coalesce + batch limit | fix/r10-scheduler-backfill-protection | 91b651c | ✅ Mitigated — pending merge |
-| B-05 Stripe dev flag Railway guard | fix/b05-stripe-dev-flag-prod-guard | e22c635 | ✅ Mitigated — pending merge |
-| R-04 deep health auth status | fix/r04-health-reports-auth-status | bd80f9a | ✅ Mitigated — pending merge |
-| F1 per-artist timezone | fix/f01-per-artist-timezone | 57068df | ✅ Mitigated — pending merge |
+| Risk | Branch | Commit | Tests | Description |
+|------|--------|--------|-------|-------------|
+| R-21 | `fix/r21-loud-migration-failures` | `56540c5` | 12 | Silent SQLite migration errors now re-raise (non-duplicate-column) |
+| R-06 | `fix/r06-postgres-failover-loud` | `b35498c` | 6 | Postgres init failure → sys.exit(1) unless DB_FAILOVER_TO_SQLITE=true |
+| R-22 | `fix/r22-422-passthrough` | `358f8ab` | 5 | 422 + HTTPException responses now include request_id |
+| R-07 | `fix/r07-broader-crash-recovery` | `b40f666` | 4 | campaign_actions 'running' rows reset to 'pending' at startup |
+| R-23 | `fix/r23-prompt-injection-v1-sanitization` | `90aa094` | 11 | sanitize_for_prompt() applied to 3 prompt construction sites |
+
+Next step: run cumulative V7 pytest (all 17 Tier 1+2 + 5 Tier 3 branches merged to throwaway),
+then merge-to-main after sign-off.
+
+---
 
 ## STANDING ITEMS
 
 - [ ] Tommy to test 0.D (Twilio OTP) on real device
 - [ ] Tommy to complete frontend 0.1/0.2/0.3 fixes in CallScreen.js (~/Desktop/ReveNation/)
-- [ ] **R-02 manual dashboard step**: Railway → Service → Volumes → Add → plmkr-data → /data → 1GB
 - [ ] Decide: keep SQLite on /data volume or add Railway Postgres add-on (DATABASE_URL)
 - [ ] Rotate any keys if exposed (check: ANTHROPIC, ELEVENLABS, TWILIO, STRIPE)
 - [ ] Set `APP_BASE_URL` on Railway (AU-1 above — do before next Stripe test)
-- [ ] Merge Tier 1 (10 branches) then Tier 2 (7 branches) to main
-- [ ] Twilio dev bypass: auth token invalid — OPEN (R-17 in risk register)
-- [ ] Gmail OAuth: not configured on Railway — OPEN (R-16 in risk register)
+- [ ] Delete `/send-test-email` endpoint before production (AU-2 above)
 
 ---
 
