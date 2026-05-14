@@ -911,7 +911,7 @@ app.add_middleware(
 
 # ── API key auth middleware ────────────────────────────────────────────────────
 
-_SKIP_AUTH_PATHS = {"/health", "/docs", "/redoc", "/openapi.json"}
+_SKIP_AUTH_PATHS = {"/health", "/api/admin/health/deep", "/docs", "/redoc", "/openapi.json"}
 
 class _APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
