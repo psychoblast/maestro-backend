@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 log = logging.getLogger("admin_service")
 
@@ -188,19 +188,22 @@ def _security_posture() -> dict:
 
 
 @router.get("/api/admin/health/deep", tags=["admin"])
-def admin_health_deep():
+def admin_health_deep(response: Response):
     """
-    Deep health check: DB, scheduler, OAuth token counts, disk usage, and
+    Readiness check: DB, scheduler, OAuth token counts, disk usage, and
     security posture of the running deploy.
+
+    Returns 503 when db_connected=False so Railway restarts on DB failure.
     """
-    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    db_ok = _check_db_connected()
+    if not db_ok:
+        response.status_code = 503
     return {
         "timestamp":                     datetime.now(timezone.utc).isoformat(),
-        "db_connected":                  _check_db_connected(),
+        "db_connected":                  db_ok,
         "scheduler_running":             _check_scheduler_running(),
         "gmail_token_valid_for_artists": _count_gmail_connected(),
         "buffer_token_valid_for_artists": _count_buffer_connected(),
         "disk_usage_pct":                _disk_usage_pct(),
         **_security_posture(),
-
     }
