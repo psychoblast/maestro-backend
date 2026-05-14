@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-10 (Tier 5 fixes)
-**Branch:** docs/session-may10-tier5
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session)
+**Last updated:** 2026-05-14 (May 14 reconciliation — verified against main `9ad30af`)
+**Branch:** docs/risk-register-may14-reconciliation
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification)
 **Total items:** 34 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5)
 
 ---
@@ -11,31 +11,31 @@
 
 | ID | Severity | Title | Owner | Status |
 |----|----------|-------|-------|--------|
-| R-01 | 🔴 CRITICAL | Dockerfile missing all Phase 1–4 service files | Dev | Open |
-| R-02 | 🔴 CRITICAL | `/data` is ephemeral — all data lost on redeploy | Tommy | Open |
-| R-03 | 🔴 CRITICAL | No authentication on most API endpoints | Dev | Open |
-| R-04 | 🔴 CRITICAL | Stripe webhook accepts unsigned events when secret absent | Tommy | Open |
-| R-05 | 🟠 HIGH | `ANTHROPIC_API_KEY` hard-crashes app at boot if absent | Tommy | Open |
-| R-06 | 🟠 HIGH | Postgres silent failover creates data split risk | Dev | Open |
-| R-07 | 🟠 HIGH | `"running"` campaign actions stuck permanently after crash | Dev | Open |
-| R-08 | 🟠 HIGH | Idempotency keys do not prevent duplicate sends | Dev | Open |
-| R-09 | 🟠 HIGH | No rate limiting on batch send operations | Dev | Open |
-| R-10 | 🟠 HIGH | Scheduler first-run bulk backfill fires all past-due actions at once | Dev | Open |
-| R-11 | 🟡 MEDIUM | `APP_BASE_URL` defaults to local LAN IP in production | Tommy | Open |
-| R-12 | 🟡 MEDIUM | Unauthenticated `/send-test-email` endpoint with hardcoded recipient | Dev | Open |
-| R-13 | 🟡 MEDIUM | No Anthropic API retry — rate limit silently fails entire batch | Dev | Open |
-| R-14 | 🟡 MEDIUM | `/api/transcribe` reads entire upload into memory with no size limit | Dev | Open |
-| R-15 | 🟡 MEDIUM | CORS fully open — any origin, any method | Dev | Open |
-| R-16 | 🟡 MEDIUM | Gmail OAuth not configured on Railway — all outreach blocked | Tommy | Open |
-| R-17 | 🟡 MEDIUM | Twilio auth token invalid format; SMS OTP dev bypass active | Tommy | Open |
-| R-18 | 🟡 MEDIUM | Whisper model re-downloads (~140 MB) on every cold start | Dev | Open |
-| R-19 | 🟡 MEDIUM | Kokoro TTS model files excluded from Railway deploy | Tommy | Open |
-| R-20 | 🟡 MEDIUM | Railway healthcheck is liveness-only; DB and scheduler failures undetected | Tommy | Open |
-| R-21 | 🟡 MEDIUM | Silent `ALTER TABLE` migration failure swallows `OperationalError` | Dev | Open |
-| R-22 | 🟡 MEDIUM | Generic error handler may suppress FastAPI 422 validation responses | Dev | Open |
-| R-23 | 🟡 MEDIUM | Prompt injection via user-controlled curator/contact fields into Claude | Dev | Open |
-| R-24 | 🔵 LOW | Bug 1 fix unverified on live Railway DB | Tommy | Open |
-| R-25 | 🔵 LOW | Campaign execute-due not smoke-tested against live Gmail account | Tommy | Open |
+| R-01 | 🔴 CRITICAL | Dockerfile missing all Phase 1–4 service files | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-02 | 🔴 CRITICAL | `/data` is ephemeral — all data lost on redeploy | Tommy | Open — NEEDS-REVIEW-2026-05-14 (railway.toml config done; Railway dashboard volume creation unconfirmed) |
+| R-03 | 🔴 CRITICAL | No authentication on most API endpoints | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-04 | 🔴 CRITICAL | Stripe webhook accepts unsigned events when secret absent | Tommy | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-05 | 🟠 HIGH | `ANTHROPIC_API_KEY` hard-crashes app at boot if absent | Tommy | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-06 | 🟠 HIGH | Postgres silent failover creates data split risk | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-07 | 🟠 HIGH | `"running"` campaign actions stuck permanently after crash | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-08 | 🟠 HIGH | Idempotency keys do not prevent duplicate sends | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-09 | 🟠 HIGH | No rate limiting on batch send operations | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-10 | 🟠 HIGH | Scheduler first-run bulk backfill fires all past-due actions at once | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-11 | 🟡 MEDIUM | `APP_BASE_URL` defaults to local LAN IP in production | Tommy | Open — NEEDS-REVIEW-2026-05-14 (env var must be set on Railway dashboard) |
+| R-12 | 🟡 MEDIUM | Unauthenticated `/send-test-email` endpoint with hardcoded recipient | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-13 | 🟡 MEDIUM | No Anthropic API retry — rate limit silently fails entire batch | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-14 | 🟡 MEDIUM | `/api/transcribe` reads entire upload into memory with no size limit | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-15 | 🟡 MEDIUM | CORS fully open — any origin, any method | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-16 | 🟡 MEDIUM | Gmail OAuth not configured on Railway — all outreach blocked | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set OAuth env vars on Railway) |
+| R-17 | 🟡 MEDIUM | Twilio auth token invalid format; SMS OTP dev bypass active | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set valid TWILIO_AUTH_TOKEN on Railway) |
+| R-18 | 🟡 MEDIUM | Whisper model re-downloads (~140 MB) on every cold start | Dev | Open — NEEDS-REVIEW-2026-05-14 (no code fix applied; known limitation) |
+| R-19 | 🟡 MEDIUM | Kokoro TTS model files excluded from Railway deploy | Tommy | Open — NEEDS-REVIEW-2026-05-14 (accepted design; document at boot) |
+| R-20 | 🟡 MEDIUM | Railway healthcheck is liveness-only; DB and scheduler failures undetected | Tommy | Open — ACTUALLY-OPEN 2026-05-14 (`railway.json` still uses `/health`; not fixed) |
+| R-21 | 🟡 MEDIUM | Silent `ALTER TABLE` migration failure swallows `OperationalError` | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-22 | 🟡 MEDIUM | Generic error handler may suppress FastAPI 422 validation responses | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-23 | 🟡 MEDIUM | Prompt injection via user-controlled curator/contact fields into Claude | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
+| R-24 | 🔵 LOW | Bug 1 fix unverified on live Railway DB | Tommy | Open — NEEDS-REVIEW-2026-05-14 (requires live Railway DB check) |
+| R-25 | 🔵 LOW | Campaign execute-due not smoke-tested against live Gmail account | Tommy | Open — NEEDS-REVIEW-2026-05-14 (requires live Gmail account) |
 | R-26 | 🔵 LOW | Buffer integration is mocked — social posts not published | Tommy | Accepted |
 | R-27 | 🔵 LOW | Scheduler not enabled — all timed jobs inactive | Tommy | Accepted |
 | R-28 | 🔵 LOW | Weekly report scheduler hardcoded to UTC Sunday 18:00 | Dev | Accepted |
@@ -52,7 +52,7 @@
 
 ---
 
-### R-01 — Dockerfile missing all Phase 1–4 service files
+### R-01 — Dockerfile missing all Phase 1–4 service files ✅ MITIGATED
 
 **What:** The `Dockerfile` copies only `main.py` from the Python source tree. The six service modules imported by `main.py` at module level are absent from the Docker image:
 
@@ -82,7 +82,7 @@ COPY pitch_service.py pr_service.py booking_service.py \
 Then rebuild and redeploy. Verify with `curl /api/admin/health/deep` — must return service module status.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r01-dockerfile-service-files`. Verified: 2026-05-14 against main `9ad30af` — all Phase 1-4 service files confirmed in COPY block.
 
 ---
 
@@ -105,11 +105,11 @@ The Dockerfile comment `# /data is the Railway persistent volume` describes inte
 3. Long-term: set `DATABASE_URL` to a Railway Postgres add-on so artist profiles survive independently of the volume.
 
 **Owner:** Tommy (Railway dashboard action)
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. `fix/r02-persistent-volume-staging` added `railway.toml` volume mount config (verified in repo). Railway dashboard volume creation is a manual step that cannot be confirmed from code; Tommy must verify volume exists in Railway dashboard.
 
 ---
 
-### R-03 — No authentication on most API endpoints
+### R-03 — No authentication on most API endpoints ✅ MITIGATED
 
 **What:** The entire API has no authentication layer. No API key header, no JWT, no session token. Artist identity is established via a plain `artist_id` query parameter accepted by every endpoint. Anyone who knows the Railway URL and any `artist_id` string can:
 
@@ -132,11 +132,11 @@ The Dockerfile comment `# /data is the Railway persistent volume` describes inte
 4. API key stored as Railway env var `PLMKR_API_KEY`; not in code.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r04-api-key-auth` + `_APIKeyMiddleware`. Verified: 2026-05-14 against main `9ad30af` — X-API-Key middleware active on all routes except /health and OPTIONS.
 
 ---
 
-### R-04 — Stripe webhook accepts unsigned events when `STRIPE_WEBHOOK_SECRET` is unset
+### R-04 — Stripe webhook accepts unsigned events when `STRIPE_WEBHOOK_SECRET` is unset ✅ MITIGATED
 
 **What:** `main.py:1891–1894`:
 ```python
@@ -162,7 +162,7 @@ The handler at `main.py:1904–1912` writes `tier="pro"`, `subscription_status="
 3. Verify: a POST with a missing or wrong `stripe-signature` header should return HTTP 400.
 
 **Owner:** Tommy (Railway env var)
-**Status:** Open
+**Status:** Mitigated — `fix/b05-stripe-webhook-signature` + `fix/b05-stripe-dev-flag-prod-guard`. Verified: 2026-05-14 against main `9ad30af` — `_verify_stripe_event()` enforces signature; unsigned events require explicit `STRIPE_DEV_ALLOW_UNSIGNED=true` env var.
 
 ---
 
@@ -170,7 +170,7 @@ The handler at `main.py:1904–1912` writes `tier="pro"`, `subscription_status="
 
 ---
 
-### R-05 — `ANTHROPIC_API_KEY` hard-crashes the app at boot if absent
+### R-05 — `ANTHROPIC_API_KEY` hard-crashes the app at boot if absent ✅ MITIGATED
 
 **What:** `main.py:26` uses bracket access, not `.get()`:
 ```python
@@ -188,11 +188,11 @@ All other env vars use `.get()` with safe defaults and warn at boot instead of c
 **Mitigation:** The hard crash is intentional (the app cannot function without Anthropic). Mitigation is process: add Railway monitoring/alerting on service health, and confirm the key is set before every deploy. Do not change the code — the loud failure is preferable to a silent startup that can't call Claude.
 
 **Owner:** Tommy
-**Status:** Open
+**Status:** Mitigated — `fix/r05-anthropic-graceful-degradation`. Verified: 2026-05-14 against main `9ad30af` — uses `os.environ.get()` with graceful degradation; boot warning printed when absent.
 
 ---
 
-### R-06 — Postgres silent failover creates data split risk
+### R-06 — Postgres silent failover creates data split risk ✅ MITIGATED
 
 **What:** `main.py:1060–1065`:
 ```python
@@ -218,11 +218,11 @@ except Exception as _pg_err:
 A boot crash is preferable to a silent data split. Mitigation approach: fail loud, fix Postgres, redeploy.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r06-postgres-failover-loud`. Verified: 2026-05-14 against main `9ad30af` — raises `RuntimeError` on Postgres init failure unless `DB_FAILOVER_TO_SQLITE=true` is explicitly set.
 
 ---
 
-### R-07 — `"running"` campaign action status stuck permanently after crash
+### R-07 — `"running"` campaign action status stuck permanently after crash ✅ MITIGATED
 
 **What:** `release_service.py:516, 543` sets action `status="running"` immediately before calling `_execute_action()`. If the process is killed mid-execution (Railway redeploy, OOM kill, health check timeout), the action stays `"running"` in SQLite forever. `_db_list_due_actions()` queries `WHERE status='pending'` — `"running"` rows are never revisited. No cleanup runs at boot.
 
@@ -240,11 +240,11 @@ conn.execute("UPDATE campaign_actions SET status='pending' WHERE status='running
 This resets any actions stuck from a prior crash to pending, so the next scheduler sweep retries them. Idempotent and safe.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r07-broader-crash-recovery` / `fix/c03-startup-running-reset`. Verified: 2026-05-14 against main `9ad30af` — `release_service.py:116` resets `status='running'` → `'pending'` at boot.
 
 ---
 
-### R-08 — Idempotency keys do not prevent duplicate sends
+### R-08 — Idempotency keys do not prevent duplicate sends ✅ MITIGATED
 
 **What:** Commit `8ed0073` added `idempotency_key UNIQUE` to the `pitches` table and equivalent tables in PR/booking. However, the batch handler at `pitch_service.py:744–752` builds pitch dicts without an `idempotency_key` field:
 ```python
@@ -265,11 +265,11 @@ Same pattern confirmed in `pr_service.py:224` and `booking_service.py:235`.
 2. Have the batch endpoint accept a caller-supplied `idempotency_key` parameter and pre-check for an existing pitch with that key before generating + sending.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/b02-deterministic-idempotency`. Verified: 2026-05-14 against main `9ad30af` — deterministic idempotency keys by `(artist_id, curator_id)` prevent duplicate pitch records; `daily_send_quota` table enforces per-artist cap.
 
 ---
 
-### R-09 — No rate limiting on batch send operations
+### R-09 — No rate limiting on batch send operations ✅ MITIGATED
 
 **What:** No throttle, quota, or rate-limit check exists on any endpoint. A caller can fire `POST /api/pitches/batch` with 50 curator IDs, have it rate-limited by Anthropic at curator #10, and immediately retry — resending to curators 1–9 again (compounding R-08). No daily send cap, no per-artist quota, no cool-down between batch calls.
 
@@ -281,11 +281,11 @@ Same pattern confirmed in `pr_service.py:224` and `booking_service.py:235`.
 **Mitigation:** Add a per-artist daily send counter in SQLite with a cap (e.g., 20 pitches/day). Check before generating and sending. Alternatively, use a simple token-bucket check at the batch endpoint level.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/b03-daily-send-quota`. Verified: 2026-05-14 against main `9ad30af` — `_check_and_increment_quota()` enforces daily send cap before batch processing.
 
 ---
 
-### R-10 — Scheduler first-run bulk backfill fires all past-due actions at once
+### R-10 — Scheduler first-run bulk backfill fires all past-due actions at once ✅ MITIGATED
 
 **What:** `execute_all_due_campaign_actions()` (`release_service.py:537`) queries all `status='pending' AND scheduled_for <= NOW()` with no row limit and processes every result in a single run. `_CAMPAIGN_SCHEDULE` has 21 entries per release (1 booking + 3 pitch waves + 2 PR waves + 15 social posts). When `SCHEDULER_ENABLED` is first flipped to `true`, if any releases exist with past `release_date`, all 21 × N actions fire immediately in the first hourly tick. Each action may call Anthropic and Gmail.
 
@@ -301,7 +301,7 @@ With no Anthropic retry (R-13), this burst almost certainly hits Anthropic's rat
 2. Long-term code fix: add a per-run cap (e.g., process at most 5 actions per scheduler tick) with a `next_run_after` backoff field.
 
 **Owner:** Dev (long-term); Tommy (short-term operational procedure)
-**Status:** Open
+**Status:** Mitigated — `fix/r10-scheduler-backfill-protection`. Verified: 2026-05-14 against main `9ad30af` — `SCHEDULER_BATCH_LIMIT` caps actions per tick; `coalesce=True` prevents missed-tick pile-up.
 
 ---
 
@@ -325,11 +325,11 @@ Stripe checkout `success_url` and `cancel_url` (lines 1876–1877) and agent pho
 **Mitigation:** Set `APP_BASE_URL=https://maestro-backend-production-6d9c.up.railway.app` on Railway. No code change needed. Do this before any Stripe checkout testing.
 
 **Owner:** Tommy
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. No code fix possible; Tommy must set `APP_BASE_URL` env var on Railway dashboard before any Stripe checkout testing.
 
 ---
 
-### R-12 — Unauthenticated `/send-test-email` endpoint with hardcoded recipient
+### R-12 — Unauthenticated `/send-test-email` endpoint with hardcoded recipient ✅ MITIGATED
 
 **What:** `main.py:2114`:
 ```python
@@ -350,11 +350,11 @@ An unauthenticated `GET` endpoint that sends an email via SMTP to a hardcoded re
 **Mitigation:** Delete the endpoint and the `EMAIL_USER`/`EMAIL_PASS` env vars entirely. No feature depends on them; all legitimate email sending goes through the Gmail OAuth path.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r12-delete-send-test-email`. Verified: 2026-05-14 against main `9ad30af` — grep finds no `/send-test-email` endpoint in `main.py`.
 
 ---
 
-### R-13 — No Anthropic API retry — rate limit silently fails entire batch
+### R-13 — No Anthropic API retry — rate limit silently fails entire batch ✅ MITIGATED
 
 **What:** All `messages.create()` calls across `pitch_service.py` (lines 677, 808, 1043), `pr_service.py` (lines 449, 583, 776), `booking_service.py` (lines 471, 604, 840), `social_service.py` (lines 500, 856) have no retry logic for Anthropic rate limits or transient errors. Compare: Gmail 429 has a 3-attempt exponential backoff (`pitch_service.py:307`). Anthropic has none.
 
@@ -368,11 +368,11 @@ If Anthropic rate-limits on curator #20 in a 50-curator batch, pitches 20–50 a
 **Mitigation:** Extract a shared `_anthropic_create_with_retry(client, **kwargs)` helper with 3-attempt exponential backoff (1s/2s/4s), modeled on `_gmail_execute_with_retry`. Apply to all call sites.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/b01-anthropic-retry` / `fix/r33-async-anthropic-retry`. Verified: 2026-05-14 against main `9ad30af` — `anthropic_utils.py` provides `_anthropic_call_with_retry()` async helper with 3-attempt backoff using `asyncio.sleep()`.
 
 ---
 
-### R-14 — `/api/transcribe` reads entire upload into memory with no size limit
+### R-14 — `/api/transcribe` reads entire upload into memory with no size limit ✅ MITIGATED
 
 **What:** `main.py:1111`:
 ```python
@@ -395,11 +395,11 @@ if len(data) > MAX_AUDIO_BYTES:
 Also validate `audio.content_type` is one of `audio/mpeg`, `audio/mp4`, `audio/webm`, `audio/ogg`.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/b06-upload-size-limit`. Verified: 2026-05-14 against main `9ad30af` — `MAX_UPLOAD_BYTES` enforced at `main.py:41`; 413 returned on oversized uploads.
 
 ---
 
-### R-15 — CORS fully open — any origin, any method
+### R-15 — CORS fully open — any origin, any method ✅ MITIGATED
 
 **What:** `main.py:849`:
 ```python
@@ -418,7 +418,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 ```
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/b07-cors-lockdown`. Verified: 2026-05-14 against main `9ad30af` — `ALLOWED_ORIGINS` env var–based; not wildcard. Set `ALLOWED_ORIGINS` on Railway to restrict to frontend domain.
 
 ---
 
@@ -434,7 +434,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 **Mitigation:** Complete §3-A: Google Cloud Console → OAuth 2.0 Client ID → set three Railway env vars → redeploy. Redirect URI must exactly match: `https://maestro-backend-production-6d9c.up.railway.app/api/gmail/callback`.
 
 **Owner:** Tommy
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. Tommy must set valid Gmail OAuth env vars on Railway: `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, `GMAIL_OAUTH_REDIRECT_URI`. This is a Part A Railway dashboard action; cannot be confirmed from code.
 
 ---
 
@@ -450,7 +450,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 **Mitigation:** Obtain the correct `TWILIO_AUTH_TOKEN` from console.twilio.com → Account → General Settings (32 lowercase hex chars). Set on Railway. Test with a real device end-to-end.
 
 **Owner:** Tommy
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. Tommy must obtain valid `TWILIO_AUTH_TOKEN` (32 lowercase hex chars) from Twilio console and set on Railway.
 
 ---
 
@@ -469,7 +469,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 3. Pre-warm by calling `get_whisper()` in the startup sequence (alongside the Kokoro warmup thread).
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. No code fix applied. Known limitation; acceptable for MVP per decision. Consider pre-baking model into Dockerfile build step as next-session improvement.
 
 ---
 
@@ -485,7 +485,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 **Mitigation:** Accept ElevenLabs dependency for Railway deployment (intended design). Document that local Kokoro fallback only works in local dev. Add an explicit log warning at startup when Kokoro files are absent so it's visible in Railway logs.
 
 **Owner:** Tommy (decision); Dev (log warning)
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. Accepted design: ElevenLabs is primary TTS on Railway; Kokoro is local-dev only. Tommy to confirm acceptance; Dev to add explicit startup log warning when Kokoro files absent.
 
 ---
 
@@ -505,11 +505,11 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 2. Or: keep `/health` as liveness and add an alerting check (uptime monitor or Railway alerting) that calls `/api/admin/health/deep` separately.
 
 **Owner:** Tommy (Railway config); Dev (readiness endpoint)
-**Status:** Open
+**Status:** Open — ACTUALLY-OPEN 2026-05-14. Verified: `railway.json:8` still uses `healthcheckPath: "/health"`. Fix requires updating `railway.json` to `/api/admin/health/deep` and ensuring that endpoint returns non-200 on DB failure.
 
 ---
 
-### R-21 — Silent `ALTER TABLE` migration failure swallows `OperationalError`
+### R-21 — Silent `ALTER TABLE` migration failure swallows `OperationalError` ✅ MITIGATED
 
 **What:** Both `pitch_service.py:108–111` and `social_service.py:100–105` use the same pattern:
 ```python
@@ -533,11 +533,11 @@ except sqlite3.OperationalError as e:
 ```
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r21-loud-migration-failures`. Verified: 2026-05-14 against main `9ad30af` — `pitch_service.py:123-124` and `social_service.py:105-116` re-raise non-duplicate-column `OperationalError`.
 
 ---
 
-### R-22 — Generic error handler may suppress FastAPI 422 validation responses
+### R-22 — Generic error handler may suppress FastAPI 422 validation responses ✅ MITIGATED
 
 **What:** `main.py:852–869` registers a catch-all exception handler:
 ```python
@@ -555,11 +555,11 @@ FastAPI raises `RequestValidationError` for 422 Unprocessable Entity responses (
 **Mitigation:** Add a dedicated `RequestValidationError` handler before the generic one, or check `isinstance(exc, RequestValidationError)` in the generic handler and re-raise to let FastAPI handle it natively.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r22-422-passthrough`. Verified: 2026-05-14 against main `9ad30af` — dedicated `@app.exception_handler(RequestValidationError)` at `main.py:938` preserves native 422 format.
 
 ---
 
-### R-23 — Prompt injection via user-controlled curator/contact fields into Claude
+### R-23 — Prompt injection via user-controlled curator/contact fields into Claude ✅ MITIGATED
 
 **What:** Curator `name`, `outlet`, and `genres` fields are interpolated directly into Anthropic prompts in `pitch_service.py:669–675`, `pr_service.py`, and `booking_service.py` with no sanitization:
 ```python
@@ -578,7 +578,7 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 **Mitigation:** Strip or escape known injection patterns from `name`, `outlet`, and `genres` fields before interpolation. At minimum, truncate string fields to 300 chars and strip newlines. Longer-term: use Claude's `system`/`user` message separation to keep curator data in a structured JSON block rather than raw string interpolation.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r23-prompt-injection-v1-sanitization` + `fix/r32-sanitize-list-join-fields`. Verified: 2026-05-14 against main `9ad30af` — `sanitize_for_prompt()` applied to all scalar and list-join fields in pitch/pr/booking prompt builders.
 
 ---
 
@@ -598,7 +598,7 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 **Mitigation:** After R-01 is resolved and Phases 1–4 are deployed, hit `GET /api/reports/weekly/{id}` and confirm `momentum_score`, `headline`, `highlights` appear in the response. This is §3-C.
 
 **Owner:** Tommy
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. Requires live Railway DB check after volume is confirmed created (R-02). Tommy must hit `GET /api/reports/weekly/{id}` and confirm `momentum_score`, `headline`, `highlights` fields appear.
 
 ---
 
@@ -614,7 +614,7 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 **Mitigation:** After R-01 and R-16 are resolved, manually trigger `POST /api/releases/{id}/campaign/execute-due` for a test release and verify at least one action of each type executes successfully.
 
 **Owner:** Tommy
-**Status:** Open
+**Status:** Open — NEEDS-REVIEW-2026-05-14. Requires live Gmail account and R-16 resolved. Tommy must smoke-test after Gmail OAuth is configured.
 
 ---
 
@@ -678,7 +678,7 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 **Mitigation:** Add `misfire_grace_time=60` (seconds) to both `add_job` calls to give Railway containers a 1-minute grace window.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — Verified: 2026-05-14 against main `9ad30af` — `pitch_service.py:1057` uses `misfire_grace_time=300`; `main.py:1212` uses `misfire_grace_time=120`. Both exceed the recommended 60s minimum.
 
 ---
 
@@ -712,7 +712,7 @@ The workaround that does work: `POST /api/curators/seed` reads `data/curators_se
 **Mitigation:** Add seed scripts to the Dockerfile `COPY` instruction (covered by R-01 fix). Update TODOS.md checklists to use the API endpoint path instead of the shell script path.
 
 **Owner:** Dev
-**Status:** Open
+**Status:** Mitigated — `fix/r01-dockerfile-service-files` / `docs/r31-cleanup`. Verified: 2026-05-14 against main `9ad30af` — `Dockerfile:20` includes `seed_curators.py seed_pr_contacts.py seed_booking_contacts.py`.
 
 ---
 
@@ -829,14 +829,16 @@ wrapped = (
 
 ## Appendix: Open item count by owner
 
-_Post-Tier 5: R-32, R-33, R-34 mitigated. Counts reflect pending merges._
+_Post-May-14 reconciliation: R-01, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23, R-29, R-31, R-32, R-33, R-34 all confirmed mitigated in main `9ad30af`._
 
-| Owner | Open (excl. mitigated) | Accepted |
-|-------|----------------------|----------|
-| Dev | 15 | 2 |
-| Tommy | 9 | 2 |
-| **Total** | **24** | **4** |
+| Owner | Open (incl. NEEDS-REVIEW) | Accepted |
+|-------|--------------------------|----------|
+| Dev | 1 (R-18 NEEDS-REVIEW) | 2 |
+| Tommy | 8 (R-02, R-11, R-16, R-17, R-19, R-20, R-24, R-25) | 2 |
+| **Total** | **9** | **4** |
 
-_Items mitigated by Tier 1–5 branches (pending merge to main): R-01, R-03, R-04, R-05,
-R-07, R-08, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23 (partial), R-31, R-32,
-R-33, R-34. See quick-reference table for branch/commit references._
+_R-20 is the only ACTUALLY-OPEN risk (not fixed in code). All other "Open" items are Tommy dashboard/env-var actions or accepted-design confirmations._
+
+_Items confirmed mitigated against main `9ad30af` (2026-05-14): R-01, R-03, R-04, R-05,
+R-06, R-07, R-08, R-09, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23, R-29, R-31,
+R-32, R-33, R-34. See quick-reference table for branch/commit references._
