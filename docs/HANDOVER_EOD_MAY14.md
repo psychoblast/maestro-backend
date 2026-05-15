@@ -1,7 +1,7 @@
 # PLMKR — End-of-Day Handover: May 14, 2026
 
 **Date:** 2026-05-14  
-**Current main HEAD:** `6f03520`  
+**Current main HEAD:** `1e98ea8` (updated after Batch 2)  
 **Entity:** Marquis Holdings LLC (NM)  
 **Operator:** Tommy Lam <mypsychoblast@gmail.com>
 
@@ -100,9 +100,82 @@ These cannot be resolved by code changes alone:
 3. **R-11 smoke test** — confirm Stripe checkout `success_url` and `cancel_url` resolve correctly
 
 ### Code work (no blockers):
-4. **Fix pre-existing test failure** — `test_full_artist_journey.py:247` asserts `pitch_sent + replied >= 2` but gets 0+0; cross-phase state not propagating correctly in the integration fixture. Not production-blocking but test count stuck at 220/221.
-5. **R-18 (Whisper cold-start)** — pre-bake Whisper `base` model into Dockerfile build step to eliminate 30–90s first-request delay
-6. **Merge `docs/risk-register-may14-reconciliation`** — branch `c5739c2` ready, pending merge to main
+4. ~~**Fix pre-existing test failure**~~ **DONE (Batch 2)** — `test_full_artist_journey.py:247` fixed with dynamic date window. 225/225 green.
+5. ~~**R-18 (Whisper cold-start)**~~ **DONE (Batch 2)** — Dockerfile pre-bakes Whisper base model. Mitigated.
+6. ~~**Merge `docs/risk-register-may14-reconciliation`**~~ **DONE (Batch 1)** — merged as `dfecc36`.
+
+---
+
+---
+
+## Batch 2 — Additional Work (Same Day)
+
+**Starting state:** main `fde654f` — 221 tests (220 pass / 1 fail)
+**Final state:** main `1e98ea8` — 225 tests (225 pass / 0 fail)
+
+### Commits Landed
+
+| Commit | Branch | Description |
+|--------|--------|-------------|
+| `d7973c8` | fix/test-full-artist-journey-247 | Fix flaky integration test — dynamic ±1h week window vs hardcoded 2026-05-04 range |
+| `5ce670d` | merge | fix/test-full-artist-journey-247 → main; 221/221 green |
+| `9a4ea76` | fix/r19-kokoro-startup-warning | R-19: `get_kokoro()` prints `[Kokoro] WARNING` when model files absent; 4 tests |
+| `e30c3b0` | merge | fix/r19-kokoro-startup-warning → main; 225/225 |
+| `dccb809` | fix/r18-whisper-prebake | R-18: `RUN python -c "import whisper; whisper.load_model('base')"` added to Dockerfile |
+| `5e78d4c` | merge | fix/r18-whisper-prebake → main; R-18 + R-19 marked Mitigated in RISK_REGISTER |
+| `b4f492d` | docs/stale-claims-cleanup-may14 | Fix 12 stale line numbers in MANUAL_SESSION_QUICK_REF.md; add banners to May 10 reports |
+| `70e89b9` | merge | docs/stale-claims-cleanup-may14 → main |
+| `3738149` | docs/test-hygiene-audit-may14 | TEST_HYGIENE_AUDIT_MAY14.md — 225 tests, all hygiene checks PASS |
+| `1e98ea8` | merge | docs/test-hygiene-audit-may14 → main |
+
+### Risks Fixed in Batch 2
+
+| Risk | Status change | What changed |
+|------|--------------|-------------|
+| R-18 (Whisper cold-start) | Needs-Manual-Review → **Mitigated** | Dockerfile now pre-bakes `whisper.load_model('base')` at image build time; eliminates ~140 MB first-request download |
+| R-19 (Kokoro absent on Railway) | Needs-Manual-Review → **Mitigated** | `get_kokoro()` now checks file existence before attempting import; prints explicit `[Kokoro] WARNING` instead of a silent failure |
+
+### Test Count Progression (Batch 2)
+
+| After task | Pass | Fail | Total |
+|-----------|------|------|-------|
+| Start of Batch 2 (main `fde654f`) | 220 | 1 | 221 |
+| fix/test-full-artist-journey-247 | 221 | 0 | 221 |
+| fix/r19-kokoro-startup-warning | 225 | 0 | 225 |
+| fix/r18-whisper-prebake | 225 | 0 | 225 |
+| End of Batch 2 (main `1e98ea8`) | **225** | **0** | **225** |
+
+### Updated Risk Register Summary (end of Batch 2)
+
+| Outcome | Count | Risk IDs |
+|---------|-------|----------|
+| Confirmed Mitigated (code verified) | 20 | R-01,03,04,05,06,07,08,09,10,12,13,14,15,18,19,20,21,22,23,29,31 |
+| Needs-Manual-Review (Tommy actions) | 5 | R-02,11,16,17,24,25 |
+| Accepted (known limitation) | 4 | R-26,27,28,30 |
+| Previously Mitigated (Tier 5) | 3 | R-32,33,34 |
+| **Total** | **32** | |
+
+**R-17 note:** Removed from Tommy-actions list — Twilio dev-bypass is an accepted interim state until SMS OTP scope is prioritized.
+
+### Updated Blockers for Tommy (Batch 2)
+
+Items unchanged from Batch 1 — same list, two fewer:
+- R-02, R-11, R-16 remain HIGH priority (volume, APP_BASE_URL, Gmail OAuth)
+- R-24, R-25 remain LOW (smoke tests after Tommy completes R-02/R-16)
+- R-19 blocker resolved in code (no Tommy action needed)
+- R-18 blocker resolved in code (no Tommy action needed)
+
+### Test Hygiene Audit
+
+Full audit of 37 test files (225 tests) completed. All checks PASS:
+- No skip/xfail markers without explanation
+- No duplicate test names
+- No print() calls or sys.path hacks in test bodies
+- No sleep > 1 s
+- No shared filesystem without `tmp_path` isolation
+- No trivial assertions
+
+Full report: `docs/TEST_HYGIENE_AUDIT_MAY14.md`
 
 ---
 
