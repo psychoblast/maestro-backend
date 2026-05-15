@@ -18,6 +18,7 @@ from typing import Optional
 # Boot: structured logging must be configured before any other module imports
 from logging_config import setup_logging, get_logger, bind_request_id
 setup_logging()
+log = get_logger("main")
 
 from error_reporting import init_error_reporting, capture_exception
 init_error_reporting()
@@ -80,11 +81,8 @@ client       = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY or "placeholder")
 async_client = anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY or "placeholder")
 
 if not ANTHROPIC_AVAILABLE:
-    print("=" * 60)
-    print("WARNING: ANTHROPIC_API_KEY is not set.")
-    print("  AI agent chat and handoff routes will return HTTP 503.")
-    print("  Set ANTHROPIC_API_KEY to enable AI features.")
-    print("=" * 60)
+    log.warning("boot_warning", extra={"event": "boot_warning", "key": "ANTHROPIC_API_KEY",
+                "detail": "AI agent chat and handoff routes will return HTTP 503. Set ANTHROPIC_API_KEY to enable."})
 
 # ── Agent roster ───────────────────────────────────────────────────────────────
 AGENTS = [
@@ -148,7 +146,7 @@ def _preload_skills() -> None:
             loaded += 1
         else:
             missing += 1
-    print(f"[SKILLS] Pre-loaded {loaded} skill files ({missing} missing)")
+    log.info("skills_preloaded", extra={"event": "skills_preloaded", "loaded": loaded, "missing": missing})
 
 _preload_skills()
 
@@ -601,7 +599,7 @@ def get_kokoro():
         onnx_path   = _BASE / "kokoro-v1.0.onnx"
         voices_path = _BASE / "voices-v1.0.bin"
         if not onnx_path.exists() or not voices_path.exists():
-            # R-19: explicit warning so Railway logs show the expected absence
+            # R-19: print() kept for test_r19 capsys assertion; log for structured output
             print(
                 f"[Kokoro] WARNING: Kokoro model files not found at {_BASE}/ "
                 "(kokoro-v1.0.onnx and/or voices-v1.0.bin). "
@@ -609,15 +607,20 @@ def get_kokoro():
                 "Expected on Railway (files excluded via .railwayignore); "
                 "only an issue if running locally without ElevenLabs configured."
             )
+            log.warning("tts_kokoro_missing", extra={
+                "event": "tts_kokoro_missing",
+                "model_dir": str(_BASE),
+                "detail": "Kokoro model files absent; TTS falls back to ElevenLabs. Expected on Railway.",
+            })
             _kokoro_available = False
             return None
         try:
             from kokoro_onnx import Kokoro
             _kokoro = Kokoro(str(onnx_path), str(voices_path))
             _kokoro_available = True
-            print("[TTS] Kokoro loaded OK")
+            log.info("tts_kokoro_ready", extra={"event": "tts_kokoro_ready"})
         except Exception as e:
-            print(f"[TTS] Kokoro unavailable: {e}")
+            log.error("tts_kokoro_error", extra={"event": "tts_kokoro_error", "error": str(e)})
             _kokoro_available = False
     return _kokoro if _kokoro_available else None
 
@@ -652,7 +655,7 @@ async def synthesize_speech(text: str, voice: str) -> Optional[bytes]:
             cache_file.write_bytes(audio_bytes)
             return audio_bytes
         except Exception as e:
-            print(f"[TTS] error: {e}")
+            log.error("tts_kokoro_synth_error", extra={"event": "tts_kokoro_synth_error", "error": str(e)})
             return None
 
 # ── ElevenLabs TTS (cloud fallback) ────────────────────────────────────────────
@@ -745,20 +748,22 @@ async def _synthesize_elevenlabs(text: str, voice: str) -> Optional[bytes]:
         }
         async with httpx.AsyncClient(timeout=30) as cl:
             r = await cl.post(url, json=body, headers=headers)
-            print(f"[TTS] ElevenLabs HTTP {r.status_code} | voice_id={voice_id} | key_prefix={ELEVENLABS_API_KEY[:8]}...")
+            log.info("tts_elevenlabs_response", extra={"event": "tts_elevenlabs_response",
+                     "status_code": r.status_code, "voice_id": voice_id})
             if r.status_code != 200:
                 _tts_last_error["detail"] = f"HTTP {r.status_code}: {r.text[:500]}"
-                print(f"[TTS] ElevenLabs error body: {r.text[:500]}")
+                log.warning("tts_elevenlabs_error", extra={"event": "tts_elevenlabs_error",
+                            "status_code": r.status_code, "detail": r.text[:200]})
             r.raise_for_status()
         wav = _pcm_to_wav(r.content, sr=24000)
         cache_file.write_bytes(wav)
         _tts_last_error["detail"] = None
-        print(f"[TTS] ElevenLabs OK: {len(wav)} bytes")
+        log.info("tts_elevenlabs_ok", extra={"event": "tts_elevenlabs_ok", "bytes": len(wav)})
         return wav
     except Exception as e:
         msg = f"{type(e).__name__}: {e}"
         _tts_last_error.setdefault("detail", msg)
-        print(f"[TTS] ElevenLabs exception: {msg}")
+        log.error("tts_elevenlabs_exception", extra={"event": "tts_elevenlabs_exception", "error": msg})
         return None
 
 async def tts(text: str, voice: str) -> Optional[bytes]:
@@ -840,27 +845,25 @@ def _check_env():
     phone = os.environ.get("TWILIO_PHONE_NUMBER", "")
     ok = True
     if not sid:
-        print("\u26a0️  TWILIO_ACCOUNT_SID not set \u2014 SMS OTP disabled")
+        log.warning("boot_warning", extra={"event": "boot_warning", "key": "TWILIO_ACCOUNT_SID", "detail": "SMS OTP disabled"})
         ok = False
     if not re.fullmatch(r'[0-9a-f]{32}', token.strip().lower()):
-        print(f"\u26a0️  TWILIO_AUTH_TOKEN invalid (got {len(token.strip())} chars, need exactly 32 lowercase hex chars)")
-        print("    \u27a4  Get it from: console.twilio.com \u2192 Account \u2192 General Settings \u2192 Auth Token")
-        print("    \u27a4  Format: 32 chars, only 0-9 and a-f, e.g. a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4")
-        print("    \u27a4  Update ~/.bashrc then: source ~/.bashrc && restart uvicorn")
+        log.warning("boot_warning", extra={"event": "boot_warning", "key": "TWILIO_AUTH_TOKEN",
+                    "detail": "invalid format — must be 32 lowercase hex chars; get from console.twilio.com"})
         ok = False
     if not phone:
-        print("\u26a0️  TWILIO_PHONE_NUMBER not set \u2014 SMS OTP disabled")
+        log.warning("boot_warning", extra={"event": "boot_warning", "key": "TWILIO_PHONE_NUMBER", "detail": "SMS OTP disabled"})
         ok = False
     if ok:
-        print("\u2713  Twilio env vars look valid")
+        log.info("boot_ok", extra={"event": "boot_ok", "key": "TWILIO", "detail": "env vars valid"})
     stripe_key = os.environ.get("STRIPE_SECRET_KEY", "")
     if not stripe_key:
-        print("\u26a0️  STRIPE_SECRET_KEY not set \u2014 billing checkout disabled")
+        log.warning("boot_warning", extra={"event": "boot_warning", "key": "STRIPE_SECRET_KEY", "detail": "billing checkout disabled"})
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not anthropic_key:
-        print("\u26a0️  ANTHROPIC_API_KEY not set \u2014 AI agents will fail!")
+        log.warning("boot_warning", extra={"event": "boot_warning", "key": "ANTHROPIC_API_KEY", "detail": "AI agents will fail"})
     else:
-        print("\u2713  ANTHROPIC_API_KEY present")
+        log.info("boot_ok", extra={"event": "boot_ok", "key": "ANTHROPIC_API_KEY", "detail": "present"})
 
 _check_env()
 
