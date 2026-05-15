@@ -103,7 +103,7 @@ def init_pr_db():
                 raise RuntimeError(f"Migration failure on table pr_outreach: {e}") from e
     conn.commit()
     conn.close()
-    print("[PR] SQLite PR tables ready")
+    log.info("db_ready", extra={"event": "db_ready", "svc": "pr_service"})
 
 
 # ── Artist data helper (same pattern as pitch_service) ────────────────────────
