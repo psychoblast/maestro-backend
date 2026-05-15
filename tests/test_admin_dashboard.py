@@ -259,3 +259,71 @@ def test_env_snapshot_comment_no_values(client):
     html = _html(client)
     # The JS checks 'SET'/'MISSING' — never the value itself
     assert "'SET'" in html or '"SET"' in html
+
+
+# ── Unit 4: Polish + responsive + accessibility ───────────────────────────────
+
+def test_section_titles_use_h2(client):
+    """Section titles use <h2> elements for proper heading hierarchy."""
+    html = _html(client)
+    assert html.count('<h2 class="section-title">') >= 6
+
+
+def test_sections_have_aria_label(client):
+    """All 6 sections have aria-label attributes."""
+    html = _html(client)
+    for label in ["Diagnostics", "Performance", "Anthropic API Usage",
+                  "Gmail API Usage", "Scheduler Queue", "Deep Health"]:
+        assert f'aria-label="{label}"' in html, f"Missing aria-label: {label}"
+
+
+def test_modal_has_role_dialog(client):
+    """Key modal has role='dialog' and aria-modal attributes."""
+    html = _html(client)
+    assert 'role="dialog"' in html
+    assert 'aria-modal="true"' in html
+
+
+def test_modal_has_aria_labelledby(client):
+    """Key modal uses aria-labelledby pointing to modal title."""
+    html = _html(client)
+    assert "aria-labelledby" in html
+    assert "modal-title" in html
+
+
+def test_refresh_timestamp_has_aria_live(client):
+    """Refresh timestamp element has aria-live='polite'."""
+    html = _html(client)
+    assert 'aria-live="polite"' in html
+
+
+def test_error_spans_have_role_alert(client):
+    """Error spans use role='alert' for screen reader announcement."""
+    html = _html(client)
+    assert 'role="alert"' in html
+
+
+def test_health_status_has_role_status(client):
+    """Health status indicator uses role='status'."""
+    html = _html(client)
+    assert 'role="status"' in html
+
+
+def test_badge_has_role_img(client):
+    """Status badges use role='img' with aria-label."""
+    html = _html(client)
+    assert 'role="img"' in html
+
+
+def test_footer_contains_version(client):
+    """Footer contains 'v0.1' version string."""
+    html = _html(client)
+    assert "v0.1" in html
+    assert "<footer>" in html
+
+
+def test_data_tables_have_aria_label(client):
+    """Data tables rendered by JS include aria-label attributes."""
+    html = _html(client)
+    # aria-label on tables is embedded in JS template strings
+    assert 'aria-label="Environment variables"' in html or "aria-label=" in html

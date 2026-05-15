@@ -15,6 +15,7 @@ Sorted alphabetically by path.
 
 | Method | Path | Auth Required | Summary |
 |--------|------|---------------|---------|
+| GET | `/admin/dashboard` | Yes (X-API-Key) | Admin Dashboard UI |
 | GET | `/api/admin/diagnostics` | Yes (X-API-Key) | Admin Diagnostics |
 | GET | `/api/admin/diagnostics/anthropic-stats` | Yes (X-API-Key) | Admin Anthropic Stats |
 | GET | `/api/admin/diagnostics/gmail-stats` | Yes (X-API-Key) | Admin Gmail Stats |
@@ -717,6 +718,12 @@ Sorted alphabetically by path.
 - **Summary:** Admin Health Deep — readiness check: DB, scheduler, OAuth tokens, disk, security posture
 - **Auth:** No
 - **Response:** 200 healthy / 503 when `db_connected=False` (triggers Railway restart)
+
+#### GET /admin/dashboard
+
+- **Summary:** Admin Dashboard — server-rendered HTML monitoring page; consumes all 6 admin diagnostic endpoints via in-page JS
+- **Auth:** Yes (X-API-Key — same `_APIKeyMiddleware` as all protected routes)
+- **Response:** 200 `text/html` — single-page dashboard; JS prompts for key on first load and stores in `sessionStorage`
 
 ---
 
