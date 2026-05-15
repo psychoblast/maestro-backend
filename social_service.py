@@ -42,6 +42,11 @@ _BUFFER_POST_URL      = "https://api.bufferapp.com/1/updates/create.json"
 
 _SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
 
+# R-28: configurable weekly report schedule (defaults: Sunday 18:00 UTC)
+_WEEKLY_REPORT_DAY    = os.environ.get("WEEKLY_REPORT_DAY",      "sun").strip().lower()
+_WEEKLY_REPORT_HOUR   = int(os.environ.get("WEEKLY_REPORT_HOUR_UTC", "18"))
+_WEEKLY_REPORT_MINUTE = int(os.environ.get("WEEKLY_REPORT_MINUTE",   "0"))
+
 router = APIRouter()
 
 
@@ -989,19 +994,22 @@ def init_report_scheduler():
         if _scheduler is None:
             log.warning("report_scheduler_disabled", extra={"event": "report_scheduler_disabled", "reason": "pitch_service scheduler not running"})
             return
-        # Sundays at 18:00 UTC — document as TODO for per-artist timezone support
+        # Schedule configurable via WEEKLY_REPORT_DAY / WEEKLY_REPORT_HOUR_UTC / WEEKLY_REPORT_MINUTE
         _scheduler.add_job(
             _generate_all_weekly_reports,
             "cron",
-            day_of_week="sun",
-            hour=18,
-            minute=0,
+            day_of_week=_WEEKLY_REPORT_DAY,
+            hour=_WEEKLY_REPORT_HOUR,
+            minute=_WEEKLY_REPORT_MINUTE,
             id="weekly_reports",
             replace_existing=True,
             coalesce=True,
             misfire_grace_time=120,
         )
-        log.info("report_scheduler_started", extra={"event": "report_scheduler_started", "schedule": "sun_18:00_UTC"})
+        log.info("report_scheduler_started", extra={
+            "event":   "report_scheduler_started",
+            "schedule": f"{_WEEKLY_REPORT_DAY}_{_WEEKLY_REPORT_HOUR:02d}:{_WEEKLY_REPORT_MINUTE:02d}_UTC",
+        })
     except ImportError:
         log.error("report_scheduler_disabled", extra={"event": "report_scheduler_disabled", "reason": "pitch_service not importable"})
     except Exception as e:
