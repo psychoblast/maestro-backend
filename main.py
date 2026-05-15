@@ -930,9 +930,11 @@ app.add_middleware(
 # ── Middleware stack (add_middleware is LIFO — last added executes first) ──────
 # Execution order for an incoming request:
 #   1. _RequestIDMiddleware  — generates UUID4 request_id, binds to contextvar
-#   2. _APIKeyMiddleware     — validates X-API-Key header
-#   3. CORSMiddleware        — handles preflight / injects CORS headers
-# (Timing middleware added in A4 will slot between 1 and 2.)
+#   2. _TimingMiddleware     — records duration, adds Server-Timing header, logs slow requests
+#   3. _APIKeyMiddleware     — validates X-API-Key header
+#   4. CORSMiddleware        — handles preflight / injects CORS headers
+
+_SLOW_REQUEST_THRESHOLD_MS = 2000.0
 
 class _RequestIDMiddleware(BaseHTTPMiddleware):
     """Generate a UUID4 request_id per request, bind via contextvar, echo as X-Request-ID."""
@@ -941,6 +943,31 @@ class _RequestIDMiddleware(BaseHTTPMiddleware):
         bind_request_id(rid)
         response = await call_next(request)
         response.headers["X-Request-ID"] = rid
+        return response
+
+
+class _TimingMiddleware(BaseHTTPMiddleware):
+    """Record request duration; add Server-Timing header; warn on slow requests."""
+    async def dispatch(self, request: Request, call_next):
+        import performance_metrics as _pm
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = (time.perf_counter() - start) * 1000.0
+        response.headers["Server-Timing"] = f"total;dur={duration_ms:.1f}"
+        route = request.url.path
+        _pm.record_request(route, duration_ms)
+        if duration_ms >= _SLOW_REQUEST_THRESHOLD_MS:
+            from logging_config import get_logger, get_request_id
+            get_logger("timing").warning(
+                "slow_request",
+                extra={
+                    "path":        route,
+                    "method":      request.method,
+                    "duration_ms": round(duration_ms),
+                    "status_code": response.status_code,
+                    "request_id":  get_request_id(),
+                },
+            )
         return response
 
 
@@ -963,6 +990,7 @@ class _APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(_APIKeyMiddleware)
+app.add_middleware(_TimingMiddleware)
 app.add_middleware(_RequestIDMiddleware)
 
 if not _PLMKR_API_KEY:
