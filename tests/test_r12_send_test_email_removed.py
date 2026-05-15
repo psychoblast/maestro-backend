@@ -15,18 +15,23 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY",  "sk-test")
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "test")
-    monkeypatch.setenv("DB_PATH",            str(tmp_path / "test.db"))
-    monkeypatch.setenv("DATABASE_URL",       "")
-    monkeypatch.setenv("AUDIO_CACHE_DIR",    str(tmp_path / "audio_cache"))
-    monkeypatch.setenv("ARTISTS_DIR",        str(tmp_path / "artists"))
+@pytest.fixture(scope="module")
+def client(tmp_path_factory):
+    # Module-scoped: both tests check static route structure — no state mutation.
+    # One reload serves both tests instead of two, saving ~3-4s.
+    tmp_path = tmp_path_factory.mktemp("r12")
+    mp = pytest.MonkeyPatch()
+    mp.setenv("ANTHROPIC_API_KEY",  "sk-test")
+    mp.setenv("ELEVENLABS_API_KEY", "test")
+    mp.setenv("DB_PATH",            str(tmp_path / "test.db"))
+    mp.setenv("DATABASE_URL",       "")
+    mp.setenv("AUDIO_CACHE_DIR",    str(tmp_path / "audio_cache"))
+    mp.setenv("ARTISTS_DIR",        str(tmp_path / "artists"))
     with patch("whisper.load_model", return_value=MagicMock()):
         import main as m
         importlib.reload(m)
         yield TestClient(m.app)
+    mp.undo()
 
 
 def test_send_test_email_returns_404(client):
