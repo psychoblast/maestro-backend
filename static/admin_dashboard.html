@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PLMKR Admin Dashboard</title>
+<style>
+/* ── Reset + tokens ─────────────────────────────────────────────────────── */
+:root {
+  --gold: #C9A84C;
+  --bg:   #07070C;
+  --bg1:  #0D0D14;
+  --bg2:  #14141E;
+  --border: rgba(201,168,76,0.18);
+  --border-dim: rgba(255,255,255,0.07);
+  --text: #E8E6E0;
+  --text-dim: #7A7870;
+  --text-muted: #2E2E38;
+  --green: #4EC994;
+  --yellow: #E8C96B;
+  --red: #E05555;
+  --radius: 6px;
+  --font-mono: "DM Mono", "Fira Mono", monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { min-height: 100vh; background: var(--bg); color: var(--text);
+  font-family: var(--font-mono); font-size: 13px; line-height: 1.5; }
+a { color: inherit; text-decoration: none; }
+
+/* ── Key modal ──────────────────────────────────────────────────────────── */
+#key-modal {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(7,7,12,0.93); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+#key-modal.hidden { display: none; }
+.modal-box {
+  background: var(--bg1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 32px; width: min(400px, 90vw);
+}
+.modal-box h2 { color: var(--gold); font-size: 16px; letter-spacing: .08em;
+  margin-bottom: 8px; }
+.modal-box p { color: var(--text-dim); font-size: 11px; margin-bottom: 20px; }
+.modal-box input {
+  width: 100%; padding: 10px 12px; background: var(--bg2);
+  border: 1px solid var(--border-dim); border-radius: var(--radius);
+  color: var(--text); font-family: var(--font-mono); font-size: 13px;
+  outline: none; margin-bottom: 14px;
+}
+.modal-box input:focus { border-color: var(--gold); }
+.modal-box button {
+  width: 100%; padding: 10px; background: var(--gold); color: #07070C;
+  border: none; border-radius: var(--radius); font-family: var(--font-mono);
+  font-size: 13px; font-weight: 600; cursor: pointer; letter-spacing: .06em;
+}
+.modal-box button:hover { background: var(--yellow); }
+
+/* ── Header ─────────────────────────────────────────────────────────────── */
+header {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(7,7,12,0.97); border-bottom: 1px solid var(--border-dim);
+  padding: 0 20px; height: 48px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+}
+.hdr-left { display: flex; align-items: center; gap: 16px; }
+.logo { color: var(--gold); font-size: 15px; letter-spacing: .14em; font-weight: 600; }
+#refresh-ts { font-size: 10px; color: var(--text-dim); letter-spacing: .06em; }
+.hdr-right { display: flex; align-items: center; gap: 10px; }
+.btn-sm {
+  padding: 5px 12px; border-radius: var(--radius); border: 1px solid var(--border-dim);
+  background: transparent; color: var(--text-dim); font-family: var(--font-mono);
+  font-size: 10px; cursor: pointer; letter-spacing: .06em; transition: all .15s;
+}
+.btn-sm:hover { border-color: var(--gold); color: var(--gold); }
+#pause-btn.paused { background: rgba(201,168,76,0.12); border-color: var(--gold);
+  color: var(--gold); }
+#signout-btn:hover { border-color: var(--red); color: var(--red); }
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+main {
+  padding: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 480px), 1fr));
+  gap: 16px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ── Section cards ───────────────────────────────────────────────────────── */
+.section-card {
+  background: var(--bg1); border: 1px solid var(--border-dim);
+  border-radius: var(--radius); padding: 18px; min-height: 160px;
+}
+.section-card.wide { grid-column: 1 / -1; }
+.section-title {
+  font-size: 10px; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--text-dim); margin-bottom: 14px; display: flex;
+  align-items: center; gap: 8px;
+}
+.section-title::before { content: ""; width: 3px; height: 12px;
+  background: var(--gold); border-radius: 2px; display: block; }
+.section-body { font-size: 12px; color: var(--text-dim); }
+.loading { color: var(--text-muted); font-size: 11px; font-style: italic; }
+.section-error { color: var(--red); font-size: 11px; }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.data-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.data-table th {
+  text-align: left; color: var(--text-muted); font-size: 9px;
+  letter-spacing: .14em; text-transform: uppercase;
+  padding: 4px 8px 6px; border-bottom: 1px solid var(--border-dim);
+  cursor: pointer; user-select: none;
+}
+.data-table th:hover { color: var(--text-dim); }
+.data-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-dim);
+  color: var(--text); vertical-align: middle; }
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr.sum-row td { color: var(--gold); font-weight: 600;
+  border-top: 1px solid var(--border-dim); }
+.data-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+/* ── Status badges ───────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 8px; border-radius: 999px; font-size: 10px;
+  font-weight: 600; letter-spacing: .04em;
+}
+.badge-green  { background: rgba(78,201,148,.15); color: var(--green); }
+.badge-yellow { background: rgba(232,201,107,.15); color: var(--yellow); }
+.badge-red    { background: rgba(224,85,85,.15); color: var(--red); }
+.badge-dim    { background: rgba(255,255,255,.05); color: var(--text-dim); }
+
+/* ── Health indicator ────────────────────────────────────────────────────── */
+.health-status {
+  font-size: 28px; font-weight: 700; letter-spacing: .04em;
+  margin-bottom: 10px; display: flex; align-items: center; gap: 10px;
+}
+.health-ok  { color: var(--green); }
+.health-err { color: var(--red); }
+.health-body { font-size: 11px; color: var(--text-dim);
+  max-height: 120px; overflow-y: auto; word-break: break-all; }
+
+/* ── KV list ─────────────────────────────────────────────────────────────── */
+.kv-list { list-style: none; }
+.kv-list li { display: flex; justify-content: space-between; padding: 3px 0;
+  border-bottom: 1px solid var(--border-dim); font-size: 11px; gap: 12px; }
+.kv-list li:last-child { border-bottom: none; }
+.kv-key { color: var(--text-dim); flex-shrink: 0; }
+.kv-val { color: var(--text); text-align: right; word-break: break-all; }
+
+/* ── Scheduler sub-blocks ────────────────────────────────────────────────── */
+.sub-label { font-size: 9px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--text-muted); margin: 14px 0 6px; }
+.count-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.count-pill { padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border-dim);
+  font-size: 11px; color: var(--text); }
+.count-pill span { color: var(--gold); font-weight: 600; margin-right: 4px; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+footer { text-align: center; padding: 20px; font-size: 10px;
+  color: var(--text-muted); letter-spacing: .08em; }
+
+/* ── Responsive: single column on narrow ─────────────────────────────────── */
+@media (max-width: 600px) {
+  main { padding: 12px; gap: 12px; }
+  header { padding: 0 12px; }
+  .section-card { padding: 14px; }
+  .section-card.wide { grid-column: 1; }
+}
+</style>
+</head>
+<body>
+
+<!-- Key prompt modal -->
+<div id="key-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-box">
+    <h2 id="modal-title">PLMKR Admin</h2>
+    <p>Enter your X-API-Key to continue. The key is stored in sessionStorage for this tab only.</p>
+    <input id="key-input" type="password" placeholder="plmkr-api-key" autocomplete="off"
+           aria-label="API Key">
+    <button id="key-submit">Unlock Dashboard</button>
+  </div>
+</div>
+
+<!-- Header -->
+<header>
+  <div class="hdr-left">
+    <span class="logo">PLMKR</span>
+    <span id="refresh-ts" aria-live="polite">—</span>
+  </div>
+  <div class="hdr-right">
+    <button class="btn-sm" id="pause-btn" aria-pressed="false">⏸ Pause</button>
+    <button class="btn-sm" id="signout-btn">Sign out</button>
+  </div>
+</header>
+
+<!-- Main grid -->
+<main id="dashboard">
+
+  <!-- Section 1: Diagnostics overview -->
+  <section class="section-card wide" id="s-diagnostics">
+    <div class="section-title">Diagnostics</div>
+    <div class="section-body loading" id="d-diagnostics">Loading…</div>
+  </section>
+
+  <!-- Section 2: Performance -->
+  <section class="section-card" id="s-performance">
+    <div class="section-title">Performance</div>
+    <div class="section-body loading" id="d-performance">Loading…</div>
+  </section>
+
+  <!-- Section 3: Anthropic stats -->
+  <section class="section-card" id="s-anthropic">
+    <div class="section-title">Anthropic API Usage</div>
+    <div class="section-body loading" id="d-anthropic">Loading…</div>
+  </section>
+
+  <!-- Section 4: Gmail stats -->
+  <section class="section-card" id="s-gmail">
+    <div class="section-title">Gmail API Usage</div>
+    <div class="section-body loading" id="d-gmail">Loading…</div>
+  </section>
+
+  <!-- Section 5: Scheduler -->
+  <section class="section-card wide" id="s-scheduler">
+    <div class="section-title">Scheduler Queue</div>
+    <div class="section-body loading" id="d-scheduler">Loading…</div>
+  </section>
+
+  <!-- Section 6: Deep health -->
+  <section class="section-card" id="s-health">
+    <div class="section-title">Deep Health</div>
+    <div class="section-body loading" id="d-health">Loading…</div>
+  </section>
+
+</main>
+
+<footer>PLMKR &middot; v0.1</footer>
+
+<script>
+// ── Constants ────────────────────────────────────────────────────────────────
+const KEY_SS  = 'plmkr_admin_key';
+const REFRESH = 30_000; // ms
+
+// ── State ────────────────────────────────────────────────────────────────────
+let _paused      = false;
+let _timer       = null;
+let _lastRefresh = null;
+let _tsInterval  = null;
+
+// ── Key management ────────────────────────────────────────────────────────────
+function apiKey()    { return sessionStorage.getItem(KEY_SS) || ''; }
+function setKey(k)   { sessionStorage.setItem(KEY_SS, k); }
+function clearKey()  { sessionStorage.removeItem(KEY_SS); }
+
+function showModal() {
+  document.getElementById('key-modal').classList.remove('hidden');
+  document.getElementById('key-input').focus();
+}
+function hideModal() {
+  document.getElementById('key-modal').classList.add('hidden');
+}
+
+document.getElementById('key-submit').addEventListener('click', () => {
+  const k = document.getElementById('key-input').value.trim();
+  if (!k) return;
+  setKey(k);
+  hideModal();
+  refreshAll();
+});
+document.getElementById('key-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('key-submit').click();
+});
+
+// ── Sign-out ──────────────────────────────────────────────────────────────────
+document.getElementById('signout-btn').addEventListener('click', () => {
+  if (!window.confirm('Sign out? Your API key will be cleared from this tab.')) return;
+  clearKey();
+  stopAutoRefresh();
+  allLoading();
+  showModal();
+});
+
+// ── Pause/resume ──────────────────────────────────────────────────────────────
+document.getElementById('pause-btn').addEventListener('click', () => {
+  _paused = !_paused;
+  const btn = document.getElementById('pause-btn');
+  btn.textContent = _paused ? '▶ Resume' : '⏸ Pause';
+  btn.setAttribute('aria-pressed', String(_paused));
+  btn.classList.toggle('paused', _paused);
+  if (_paused) stopAutoRefresh();
+  else { refreshAll(); startAutoRefresh(); }
+});
+
+// ── Timestamp ─────────────────────────────────────────────────────────────────
+function updateTs() {
+  const el = document.getElementById('refresh-ts');
+  if (!_lastRefresh) { el.textContent = 'Never refreshed'; return; }
+  const s = Math.round((Date.now() - _lastRefresh) / 1000);
+  el.textContent = `Last refreshed ${s}s ago`;
+}
+function startTsInterval() {
+  clearInterval(_tsInterval);
+  _tsInterval = setInterval(updateTs, 1000);
+}
+
+// ── Auto-refresh ──────────────────────────────────────────────────────────────
+function startAutoRefresh() {
+  clearTimeout(_timer);
+  _timer = setTimeout(() => { refreshAll(); startAutoRefresh(); }, REFRESH);
+}
+function stopAutoRefresh() { clearTimeout(_timer); }
+
+// ── Fetch helper ──────────────────────────────────────────────────────────────
+async function apiFetch(path) {
+  const resp = await fetch(path, { headers: { 'X-API-Key': apiKey() } });
+  if (resp.status === 401 || resp.status === 403) {
+    clearKey(); showModal(); throw new Error('Unauthorized — re-enter key');
+  }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+// ── Escape HTML ───────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// ── Helper: set section content ───────────────────────────────────────────────
+function sectionContent(id, html) {
+  const el = document.getElementById(id);
+  el.classList.remove('loading');
+  el.innerHTML = html;
+}
+function sectionError(id, msg) {
+  document.getElementById(id).innerHTML =
+    `<span class="section-error" role="alert">⚠ Error loading: ${esc(msg)}</span>`;
+}
+function allLoading() {
+  ['d-diagnostics','d-performance','d-anthropic','d-gmail','d-scheduler','d-health']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      el.classList.add('loading'); el.innerHTML = 'Loading…';
+    });
+}
+
+// ── Badge helper ──────────────────────────────────────────────────────────────
+function badge(text, type) {
+  return `<span class="badge badge-${esc(type)}" role="img" aria-label="${esc(type)}: ${esc(text)}">${esc(text)}</span>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section renderers
+// ─────────────────────────────────────────────────────────────────────────────
+
+// 1. Diagnostics (/api/admin/diagnostics)
+async function loadDiagnostics() {
+  try {
+    const d = await apiFetch('/api/admin/diagnostics');
+    let html = '';
+
+    // env_snapshot — show name + present/absent only (never values)
+    html += '<div class="sub-label">Environment</div>';
+    html += '<table class="data-table" aria-label="Environment variables"><thead><tr><th>Variable</th><th>Status</th></tr></thead><tbody>';
+    Object.entries(d.env_snapshot || {}).forEach(([k, v]) => {
+      const ok = v === 'SET' || v === true;
+      html += `<tr><td>${esc(k)}</td><td>${badge(ok ? 'SET' : 'MISSING', ok ? 'green' : 'red')}</td></tr>`;
+    });
+    html += '</tbody></table>';
+
+    // service_status
+    html += '<div class="sub-label">Services</div><ul class="kv-list">';
+    Object.entries(d.service_status || {}).forEach(([k, v]) => {
+      const type = v === 'ok' || v === true ? 'green' : v === 'warn' ? 'yellow' : 'red';
+      html += `<li><span class="kv-key">${esc(k)}</span><span class="kv-val">${badge(esc(v), type)}</span></li>`;
+    });
+    html += '</ul>';
+
+    // runtime
+    const rt = d.runtime || {};
+    html += '<div class="sub-label">Runtime</div><ul class="kv-list">';
+    Object.entries(rt).forEach(([k, v]) =>
+      html += `<li><span class="kv-key">${esc(k)}</span><span class="kv-val">${esc(v)}</span></li>`);
+    html += '</ul>';
+
+    // volume
+    const vol = d.volume || {};
+    html += '<div class="sub-label">Volume</div><ul class="kv-list">';
+    if (vol.mounted === false) {
+      html += `<li><span class="kv-key">status</span><span class="kv-val">${badge('not mounted', 'red')}</span></li>`;
+    } else {
+      Object.entries(vol).forEach(([k, v]) =>
+        html += `<li><span class="kv-key">${esc(k)}</span><span class="kv-val">${esc(v)}</span></li>`);
+    }
+    html += '</ul>';
+
+    // scheduler
+    const sch = d.scheduler || {};
+    html += '<div class="sub-label">Scheduler</div><ul class="kv-list">';
+    Object.entries(sch).forEach(([k, v]) =>
+      html += `<li><span class="kv-key">${esc(k)}</span><span class="kv-val">${esc(v)}</span></li>`);
+    html += '</ul>';
+
+    // recent errors (last 5)
+    const errs = (d.recent_errors || []).slice(-5);
+    html += '<div class="sub-label">Recent Errors</div>';
+    if (!errs.length) {
+      html += '<p style="color:var(--text-muted);font-size:11px">No recent errors ✓</p>';
+    } else {
+      html += '<ul class="kv-list">';
+      errs.forEach(e => {
+        const ts  = esc((e.ts || e.timestamp || '').slice(0, 19));
+        const msg = esc((e.message || e.msg || JSON.stringify(e)).slice(0, 80));
+        html += `<li><span class="kv-key" style="font-size:10px">${ts}</span><span class="kv-val">${msg}</span></li>`;
+      });
+      html += '</ul>';
+    }
+
+    sectionContent('d-diagnostics', html);
+  } catch(e) { sectionError('d-diagnostics', e.message); }
+}
+
+// 2. Performance (/api/admin/diagnostics/performance) — sortable table
+async function loadPerformance() {
+  try {
+    const d = await apiFetch('/api/admin/diagnostics/performance');
+    const rows = Object.entries(d);
+    if (!rows.length) { sectionContent('d-performance', '<p class="loading">No data yet</p>'); return; }
+
+    let html = `<table class="data-table" id="perf-table" aria-label="Route performance">
+      <thead><tr>
+        <th data-col="route" tabindex="0">Route ↕</th>
+        <th data-col="count" tabindex="0">Count ↕</th>
+        <th data-col="p50"   tabindex="0">p50 ms ↕</th>
+        <th data-col="p95"   tabindex="0">p95 ms ↕</th>
+        <th data-col="p99"   tabindex="0">p99 ms ↕</th>
+      </tr></thead><tbody>`;
+    rows.forEach(([route, m]) =>
+      html += `<tr data-route="${esc(route)}" data-count="${m.count||0}" data-p50="${m.p50||0}" data-p95="${m.p95||0}" data-p99="${m.p99||0}">
+        <td>${esc(route)}</td><td>${m.count||0}</td>
+        <td>${Number(m.p50||0).toFixed(0)}</td>
+        <td>${Number(m.p95||0).toFixed(0)}</td>
+        <td>${Number(m.p99||0).toFixed(0)}</td>
+      </tr>`);
+    html += '</tbody></table>';
+    sectionContent('d-performance', html);
+
+    // Sortable columns
+    const table = document.getElementById('perf-table');
+    let sortCol = 'route', sortAsc = true;
+    table.querySelectorAll('th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        sortAsc = col === sortCol ? !sortAsc : true;
+        sortCol = col;
+        const tbody = table.querySelector('tbody');
+        const trows = Array.from(tbody.querySelectorAll('tr'));
+        trows.sort((a, b) => {
+          const av = col === 'route' ? a.dataset[col] : +a.dataset[col];
+          const bv = col === 'route' ? b.dataset[col] : +b.dataset[col];
+          return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+        });
+        trows.forEach(r => tbody.appendChild(r));
+        table.querySelectorAll('th[data-col]').forEach(h =>
+          h.textContent = h.dataset.col.charAt(0).toUpperCase() + h.dataset.col.slice(1) + (h.dataset.col === 'p50' ? ' ms' : h.dataset.col === 'p95' ? ' ms' : h.dataset.col === 'p99' ? ' ms' : '') + ' ↕');
+      });
+    });
+  } catch(e) { sectionError('d-performance', e.message); }
+}
+
+// 3. Anthropic stats (/api/admin/diagnostics/anthropic-stats)
+async function loadAnthropic() {
+  try {
+    const d = await apiFetch('/api/admin/diagnostics/anthropic-stats');
+    const models = Object.entries(d);
+    if (!models.length) { sectionContent('d-anthropic', '<p class="loading">No calls recorded</p>'); return; }
+    let total = 0;
+    let html = `<table class="data-table" aria-label="Anthropic API usage">
+      <thead><tr><th>Model</th><th>Total</th><th>Success</th><th>Retry</th><th>Fail</th></tr></thead><tbody>`;
+    models.forEach(([model, c]) => {
+      total += c.total || 0;
+      html += `<tr><td>${esc(model)}</td><td>${c.total||0}</td><td>${c.success||0}</td><td>${c.retry||0}</td><td>${c.fail||0}</td></tr>`;
+    });
+    html += `<tr class="sum-row"><td>Total</td><td>${total}</td><td>—</td><td>—</td><td>—</td></tr>`;
+    html += '</tbody></table>';
+    sectionContent('d-anthropic', html);
+  } catch(e) { sectionError('d-anthropic', e.message); }
+}
+
+// 4. Gmail stats (/api/admin/diagnostics/gmail-stats)
+async function loadGmail() {
+  try {
+    const d = await apiFetch('/api/admin/diagnostics/gmail-stats');
+    const artists = Object.entries(d);
+    if (!artists.length) { sectionContent('d-gmail', '<p class="loading">No calls recorded</p>'); return; }
+    let total = 0;
+    let html = `<table class="data-table" aria-label="Gmail API usage">
+      <thead><tr><th>Artist ID</th><th>Total</th><th>Success</th><th>Retry</th><th>Fail</th></tr></thead><tbody>`;
+    artists.forEach(([aid, c]) => {
+      total += c.total || 0;
+      html += `<tr><td>${esc(aid)}</td><td>${c.total||0}</td><td>${c.success||0}</td><td>${c.retry||0}</td><td>${c.fail||0}</td></tr>`;
+    });
+    html += `<tr class="sum-row"><td>Total</td><td>${total}</td><td>—</td><td>—</td><td>—</td></tr>`;
+    html += '</tbody></table>';
+    sectionContent('d-gmail', html);
+  } catch(e) { sectionError('d-gmail', e.message); }
+}
+
+// 5. Scheduler (/api/admin/diagnostics/scheduler)
+async function loadScheduler() {
+  try {
+    const d = await apiFetch('/api/admin/diagnostics/scheduler');
+    let html = '';
+
+    // Status counts
+    html += '<div class="sub-label">Status counts (24 h)</div><div class="count-pills">';
+    Object.entries(d.counts_24h || {}).forEach(([status, n]) =>
+      html += `<div class="count-pill"><span>${n}</span>${esc(status)}</div>`);
+    if (!Object.keys(d.counts_24h || {}).length)
+      html += '<span style="color:var(--text-muted);font-size:11px">No actions in last 24h</span>';
+    html += '</div>';
+
+    // Next pending
+    const pending = d.next_pending || [];
+    html += '<div class="sub-label">Next pending</div>';
+    if (!pending.length) {
+      html += '<p style="color:var(--text-muted);font-size:11px">Queue empty</p>';
+    } else {
+      html += `<table class="data-table" aria-label="Pending scheduler actions">
+        <thead><tr><th>ID</th><th>Release</th><th>Type</th><th>Scheduled for</th></tr></thead><tbody>`;
+      pending.slice(0,10).forEach(a =>
+        html += `<tr><td>${esc(a.id)}</td><td>${esc(a.release_id)}</td><td>${esc(a.action_type)}</td><td>${esc((a.scheduled_for||'').slice(0,16))}</td></tr>`);
+      html += '</tbody></table>';
+    }
+
+    // Last completed
+    const completed = d.last_completed || [];
+    html += '<div class="sub-label">Last completed</div>';
+    if (!completed.length) {
+      html += '<p style="color:var(--text-muted);font-size:11px">No completed actions yet</p>';
+    } else {
+      html += `<table class="data-table" aria-label="Completed scheduler actions">
+        <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Executed at</th></tr></thead><tbody>`;
+      completed.slice(0,20).forEach(a => {
+        const st = a.status === 'done' ? 'green' : 'red';
+        html += `<tr><td>${esc(a.id)}</td><td>${esc(a.action_type)}</td><td>${badge(a.status, st)}</td><td>${esc((a.executed_at||'').slice(0,16))}</td></tr>`;
+      });
+      html += '</tbody></table>';
+    }
+
+    sectionContent('d-scheduler', html);
+  } catch(e) { sectionError('d-scheduler', e.message); }
+}
+
+// 6. Deep health (/api/admin/health/deep)
+async function loadHealth() {
+  try {
+    const resp = await fetch('/api/admin/health/deep');
+    const d = await resp.json();
+    const ok = resp.ok;
+    const cls = ok ? 'health-ok' : 'health-err';
+    const label = ok ? '● HEALTHY' : '● DEGRADED';
+    const ariaLabel = ok ? 'System healthy' : 'System degraded';
+    let html = `<div class="health-status ${cls}" role="status" aria-label="${ariaLabel}">${label}</div>`;
+    html += `<div class="health-body"><pre>${esc(JSON.stringify(d, null, 2))}</pre></div>`;
+    sectionContent('d-health', html);
+  } catch(e) { sectionError('d-health', e.message); }
+}
+
+// ── Refresh all sections ──────────────────────────────────────────────────────
+function refreshAll() {
+  if (!apiKey()) { showModal(); return; }
+  _lastRefresh = Date.now();
+  updateTs();
+  loadDiagnostics();
+  loadPerformance();
+  loadAnthropic();
+  loadGmail();
+  loadScheduler();
+  loadHealth();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(function boot() {
+  startTsInterval();
+  if (!apiKey()) { showModal(); return; }
+  refreshAll();
+  startAutoRefresh();
+})();
+</script>
+</body>
+</html>
