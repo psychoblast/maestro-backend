@@ -4,6 +4,7 @@ import io
 import sys
 import json
 import time
+import uuid
 import secrets
 import base64
 import random
@@ -13,6 +14,10 @@ import hashlib
 import sqlite3
 from pathlib import Path
 from typing import Optional
+
+# Boot: structured logging must be configured before any other module imports
+from logging_config import setup_logging, get_logger, bind_request_id
+setup_logging()
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -919,7 +924,22 @@ app.add_middleware(
 )
 
 
-# ── API key auth middleware ────────────────────────────────────────────────────
+# ── Middleware stack (add_middleware is LIFO — last added executes first) ──────
+# Execution order for an incoming request:
+#   1. _RequestIDMiddleware  — generates UUID4 request_id, binds to contextvar
+#   2. _APIKeyMiddleware     — validates X-API-Key header
+#   3. CORSMiddleware        — handles preflight / injects CORS headers
+# (Timing middleware added in A4 will slot between 1 and 2.)
+
+class _RequestIDMiddleware(BaseHTTPMiddleware):
+    """Generate a UUID4 request_id per request, bind via contextvar, echo as X-Request-ID."""
+    async def dispatch(self, request: Request, call_next):
+        rid = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        bind_request_id(rid)
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+
 
 _SKIP_AUTH_PATHS = {"/health", "/api/admin/health/deep", "/docs", "/redoc", "/openapi.json"}
 
@@ -940,6 +960,7 @@ class _APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 app.add_middleware(_APIKeyMiddleware)
+app.add_middleware(_RequestIDMiddleware)
 
 if not _PLMKR_API_KEY:
     print("[AUTH] WARNING: PLMKR_API_KEY is not set — all routes are unauthenticated (dev mode)")
@@ -948,33 +969,31 @@ if not _PLMKR_API_KEY:
 @app.exception_handler(RequestValidationError)
 async def _validation_error_handler(request: Request, exc: RequestValidationError):
     """Preserve FastAPI's native 422 format; attach request_id for tracing."""
-    import uuid as _uuid
+    from logging_config import get_request_id
     return JSONResponse(
         status_code=422,
-        content={"detail": exc.errors(), "request_id": str(_uuid.uuid4())},
+        content={"detail": exc.errors(), "request_id": get_request_id() or str(uuid.uuid4())},
     )
 
 
 @app.exception_handler(HTTPException)
 async def _http_exception_handler(request: Request, exc: HTTPException):
     """Preserve HTTPException status code and detail; attach request_id for tracing."""
-    import uuid as _uuid
+    from logging_config import get_request_id
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail, "request_id": str(_uuid.uuid4())},
+        content={"detail": exc.detail, "request_id": get_request_id() or str(uuid.uuid4())},
     )
 
 
 @app.exception_handler(Exception)
 async def _generic_error_handler(request: Request, exc: Exception):
     """Return a structured error envelope for genuinely unhandled (500-level) exceptions."""
-    import uuid as _uuid
-    import logging
-    request_id = str(_uuid.uuid4())
-    logging.getLogger("main").error(
+    from logging_config import get_logger, get_request_id
+    request_id = get_request_id() or str(uuid.uuid4())
+    get_logger("main").error(
         "unhandled_exception",
-        extra={"request_id": request_id, "path": str(request.url.path),
-               "error": str(exc)},
+        extra={"path": str(request.url.path), "error": str(exc)},
         exc_info=exc,
     )
     return JSONResponse(
