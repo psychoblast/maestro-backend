@@ -198,43 +198,44 @@ footer { text-align: center; padding: 20px; font-size: 10px;
 <main id="dashboard">
 
   <!-- Section 1: Diagnostics overview -->
-  <section class="section-card wide" id="s-diagnostics">
-    <div class="section-title">Diagnostics</div>
+  <section class="section-card wide" id="s-diagnostics" aria-label="Diagnostics">
+    <h2 class="section-title">Diagnostics</h2>
     <div class="section-body loading" id="d-diagnostics">Loading…</div>
   </section>
 
   <!-- Section 2: Performance -->
-  <section class="section-card" id="s-performance">
-    <div class="section-title">Performance</div>
+  <section class="section-card" id="s-performance" aria-label="Performance">
+    <h2 class="section-title">Performance</h2>
     <div class="section-body loading" id="d-performance">Loading…</div>
   </section>
 
   <!-- Section 3: Anthropic stats -->
-  <section class="section-card" id="s-anthropic">
-    <div class="section-title">Anthropic API Usage</div>
+  <section class="section-card" id="s-anthropic" aria-label="Anthropic API Usage">
+    <h2 class="section-title">Anthropic API Usage</h2>
     <div class="section-body loading" id="d-anthropic">Loading…</div>
   </section>
 
   <!-- Section 4: Gmail stats -->
-  <section class="section-card" id="s-gmail">
-    <div class="section-title">Gmail API Usage</div>
+  <section class="section-card" id="s-gmail" aria-label="Gmail API Usage">
+    <h2 class="section-title">Gmail API Usage</h2>
     <div class="section-body loading" id="d-gmail">Loading…</div>
   </section>
 
   <!-- Section 5: Scheduler -->
-  <section class="section-card wide" id="s-scheduler">
-    <div class="section-title">Scheduler Queue</div>
+  <section class="section-card wide" id="s-scheduler" aria-label="Scheduler Queue">
+    <h2 class="section-title">Scheduler Queue</h2>
     <div class="section-body loading" id="d-scheduler">Loading…</div>
   </section>
 
   <!-- Section 6: Deep health -->
-  <section class="section-card" id="s-health">
-    <div class="section-title">Deep Health</div>
+  <section class="section-card" id="s-health" aria-label="Deep Health">
+    <h2 class="section-title">Deep Health</h2>
     <div class="section-body loading" id="d-health">Loading…</div>
   </section>
 
 </main>
 
+<!-- Version: hardcoded v0.1 — update when PLMKR_VERSION env var exists -->
 <footer>PLMKR &middot; v0.1</footer>
 
 <script>
