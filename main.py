@@ -974,7 +974,8 @@ class _TimingMiddleware(BaseHTTPMiddleware):
         return response
 
 
-_SKIP_AUTH_PATHS = {"/health", "/api/admin/health/deep", "/docs", "/redoc", "/openapi.json"}
+_SKIP_AUTH_PATHS = {"/health", "/api/admin/health/deep", "/docs", "/redoc", "/openapi.json",
+                    "/admin/dashboard"}
 
 class _APIKeyMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
