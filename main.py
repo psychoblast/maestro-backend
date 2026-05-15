@@ -1857,6 +1857,17 @@ async def send_otp(payload: SendOtpRequest):
         if len(phone) < 8:
             raise HTTPException(status_code=400, detail="Invalid phone number")
 
+        # R-17 dev bypass: skip Twilio and store a fixed dev code
+        if SMS_OTP_DEV_BYPASS:
+            dev_otp = "000000"
+            _otp_store[phone] = {"otp": dev_otp, "expires": time.time() + OTP_EXPIRY_SECONDS}
+            log.warning("boot_warning", extra={
+                "event":  "boot_warning",
+                "key":    "SMS_OTP_DEV_BYPASS",
+                "detail": f"dev OTP 000000 stored for ...{phone[-4:]} without SMS send",
+            })
+            return {"status": "ok", "message": "Dev bypass — code is 000000"}
+
         account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
         auth_token  = os.environ.get("TWILIO_AUTH_TOKEN")
         from_number = os.environ.get("TWILIO_PHONE_NUMBER")
@@ -1864,20 +1875,20 @@ async def send_otp(payload: SendOtpRequest):
         if not all([account_sid, auth_token, from_number]):
             raise HTTPException(status_code=503, detail="SMS service not configured — set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER")
 
-        otp = str(secrets.randbelow(1000000)).zfill(6)
-        _otp_store[phone] = {"otp": otp, "expires": time.time() + OTP_EXPIRY_SECONDS}
-
         # Strip whitespace — Railway env vars can have trailing newlines/spaces
         auth_token  = (auth_token  or "").strip()
         account_sid = (account_sid or "").strip()
         from_number = (from_number or "").strip()
 
-        # Validate auth token format — Twilio tokens are exactly 32 lowercase hex chars
+        # Validate auth token format BEFORE storing OTP (R-17 fix: was after)
         if not (auth_token and len(auth_token) == 32 and re.fullmatch(r"[0-9a-f]+", auth_token.lower())):
             raise HTTPException(
                 status_code=503,
                 detail=f"SMS not configured — TWILIO_AUTH_TOKEN must be exactly 32 lowercase hex characters (got {len(auth_token)} chars). Set the correct token in Railway env vars."
             )
+
+        otp = str(secrets.randbelow(1000000)).zfill(6)
+        _otp_store[phone] = {"otp": otp, "expires": time.time() + OTP_EXPIRY_SECONDS}
 
         from twilio.rest import Client as TwilioClient
         twilio = TwilioClient(account_sid, auth_token)
@@ -2076,6 +2087,24 @@ if _on_railway and STRIPE_DEV_ALLOW_UNSIGNED:
     sys.exit(1)
 if STRIPE_AVAILABLE:
     stripe_lib.api_key = STRIPE_SECRET_KEY
+
+# R-17: SMS_OTP_DEV_BYPASS allows send-otp to succeed in local dev without real Twilio.
+SMS_OTP_DEV_BYPASS = os.environ.get("SMS_OTP_DEV_BYPASS", "").lower() == "true"
+if _on_railway and SMS_OTP_DEV_BYPASS:
+    print("=" * 60)
+    print("FATAL: SMS_OTP_DEV_BYPASS=true detected on Railway.")
+    print(f"  RAILWAY_ENVIRONMENT={_RAILWAY_ENVIRONMENT!r}")
+    print("  This bypasses SMS verification in production.")
+    print("  Unset SMS_OTP_DEV_BYPASS before deploying.")
+    print("=" * 60)
+    import sys
+    sys.exit(1)
+if SMS_OTP_DEV_BYPASS:
+    log.warning("boot_warning", extra={
+        "event":  "boot_warning",
+        "key":    "SMS_OTP_DEV_BYPASS",
+        "detail": "OTP bypass active — send-otp stores dev code without calling Twilio",
+    })
 
 if not STRIPE_WEBHOOK_SECRET and not STRIPE_DEV_ALLOW_UNSIGNED:
     print("[STRIPE] WARNING: STRIPE_WEBHOOK_SECRET not set and STRIPE_DEV_ALLOW_UNSIGNED not enabled — "
