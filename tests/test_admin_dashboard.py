@@ -363,3 +363,72 @@ def test_data_tables_have_aria_label(client):
     html = _html(client)
     # aria-label on tables is embedded in JS template strings
     assert 'aria-label="Environment variables"' in html or "aria-label=" in html
+
+
+# ── Unit 5 (S5 Unit 2): Surface polish — 4 of 6 items ────────────────────────
+# Picks: empty-states, click-to-copy errors, sticky table headers, raw JSON toggle
+
+def test_empty_state_css_class_defined(client):
+    """CSS includes .empty-state class for consistent empty-state rendering."""
+    html = _html(client)
+    assert "empty-state" in html
+
+
+def test_empty_state_used_in_section_loaders(client):
+    """JS loader functions use .empty-state class (not inline styles) for empty data."""
+    html = _html(client)
+    # At least 3 of the 6 loaders must reference empty-state for empty results
+    assert html.count("empty-state") >= 3
+
+
+def test_click_to_copy_on_error_rows(client):
+    """Diagnostics error rows have class='copyable' and data-copy attribute for clipboard copy."""
+    html = _html(client)
+    assert "copyable" in html
+    assert "data-copy" in html
+
+
+def test_copy_uses_navigator_clipboard(client):
+    """JS uses navigator.clipboard.writeText for click-to-copy."""
+    html = _html(client)
+    assert "navigator.clipboard" in html
+
+
+def test_copy_toast_element_present(client):
+    """Page has #copy-toast element for copy confirmation feedback."""
+    html = _html(client)
+    assert "copy-toast" in html
+
+
+def test_table_wrap_class_present(client):
+    """Table wrapper class exists in CSS for sticky-header scrollable tables."""
+    html = _html(client)
+    assert "table-wrap" in html
+
+
+def test_sticky_table_headers_in_css(client):
+    """CSS defines position: sticky for table headers inside .table-wrap."""
+    html = _html(client)
+    assert "position: sticky" in html or "position:sticky" in html
+
+
+def test_json_toggle_buttons_in_each_section(client):
+    """All 6 sections have a JSON toggle button with data-target attribute."""
+    html = _html(client)
+    assert html.count("json-toggle-btn") >= 6
+    for section_id in ["d-diagnostics", "d-performance", "d-anthropic",
+                       "d-gmail", "d-scheduler", "d-health"]:
+        assert f'data-target="{section_id}"' in html, f"Missing JSON toggle for {section_id}"
+
+
+def test_json_toggle_uses_raw_store(client):
+    """JS has _rawStore and storeRaw function for per-section raw data."""
+    html = _html(client)
+    assert "_rawStore" in html
+    assert "storeRaw" in html
+
+
+def test_raw_json_view_css_class(client):
+    """CSS includes .raw-json class for monospace raw JSON display."""
+    html = _html(client)
+    assert "raw-json" in html
