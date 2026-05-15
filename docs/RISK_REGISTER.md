@@ -41,7 +41,7 @@
 | R-28 | 🔵 LOW | Weekly report scheduler hardcoded to UTC Sunday 18:00 | Dev | **Mitigated** — commit `43def81` 2026-05-15 (configurable via WEEKLY_REPORT_DAY/HOUR_UTC/MINUTE) |
 | R-29 | 🔵 LOW | APScheduler interval jobs have no explicit `misfire_grace_time` | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 (`pitch_service.py:1057` `misfire_grace_time=300`; `main.py:1212` `misfire_grace_time=120`) |
 | R-30 | 🔵 LOW | Single uvicorn worker — scheduler and requests share one process | Dev | **Partially mitigated** — commit `4607eb4` 2026-05-15 (Option B guard; Option A out of scope) |
-| R-31 | 🔵 LOW | Seed scripts not in Docker image; Railway shell workaround fails | Dev | Open |
+| R-31 | 🔵 LOW | Seed scripts not in Docker image; Railway shell workaround fails | Dev | **Mitigated** — verified `Dockerfile:22-24`; `make verify-seeds-in-image` added; runbook Part I |
 | R-32 | 🟡 MEDIUM | `genres`/`tier`/`type` list-join fields bypass R-23 sanitization in prompt builders | Dev | **Mitigated** — `fix/r32-sanitize-list-join-fields` `05b3274` |
 | R-33 | 🟡 MEDIUM | `time.sleep()` in `_anthropic_call_with_retry` blocks async event loop | Dev | **Mitigated** — `fix/r33-async-anthropic-retry` `0e89372` |
 | R-34 | 🟡 MEDIUM | Inbound reply body sent to Claude classifier unsanitized — indirect prompt injection | Dev | **Mitigated** — `fix/r34-reply-classifier-delimited-prompt` `1a80956` |
@@ -737,7 +737,7 @@ The workaround that does work: `POST /api/curators/seed` reads `data/curators_se
 **Mitigation:** Add seed scripts to the Dockerfile `COPY` instruction (covered by R-01 fix). Update TODOS.md checklists to use the API endpoint path instead of the shell script path.
 
 **Owner:** Dev
-**Status:** Mitigated — `fix/r01-dockerfile-service-files` / `docs/r31-cleanup`. Verified: 2026-05-14 against main `9ad30af` — `Dockerfile:20` includes `seed_curators.py seed_pr_contacts.py seed_booking_contacts.py`.
+**Status:** ✅ MITIGATED — `Dockerfile:22-24` (within COPY block that includes all seed scripts). Verified 2026-05-15 S3 Unit 1: `seed_curators.py`, `seed_pr_contacts.py`, `seed_booking_contacts.py` all present in image at `/app/`. `Makefile` `verify-seeds-in-image` target added for local smoke-check (`make build-test && make verify-seeds-in-image`). `DEPLOYMENT_RUNBOOK_MAY14.md` Part I documents API-endpoint-first seeding path and Railway shell alternative. TODOS.md deploy checklists should use API endpoint path, not shell script path.
 
 ---
 
