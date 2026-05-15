@@ -1,3 +1,5 @@
+> **STATUS: Historical snapshot of May 10 work. Current state in docs/HANDOVER_EOD_MAY14.md.**
+
 # Verification Report — 2026-05-10 (Tier 1 Risk Mitigations)
 
 **Reviewer:** Claude (senior-engineer simulation)

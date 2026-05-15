@@ -1,5 +1,5 @@
 # PLMKR — Manual Session Quick Reference
-## Railway Production Deploy (main @ 7e41a2a)
+## Railway Production Deploy (main @ 5e78d4c)
 
 ---
 
@@ -106,6 +106,7 @@ curl -X POST https://<railway-url>/api/pitches/batch \
 
 ```
 GET  /health
+GET  /api/admin/health/deep
 GET  /docs
 GET  /redoc
 GET  /openapi.json
@@ -119,15 +120,15 @@ All other routes require `X-API-Key` header when `PLMKR_API_KEY` is set.
 
 | Item | File:Line |
 |------|-----------|
-| PLMKR_API_KEY auth middleware | `main.py:912` |
-| Stripe prod guard (sys.exit) | `main.py:~1835` |
+| PLMKR_API_KEY auth middleware | `main.py:926` |
+| Stripe prod guard (sys.exit) | `main.py:~1997` |
 | Postgres failover guard | `main.py` — `_init_pg_connection()` |
-| /data writable check | `main.py:850` |
-| Gmail auth route | `pitch_service.py:217` |
+| /data writable check | `main.py:860` |
+| Gmail auth route | `pitch_service.py:218` |
 | Gmail callback route | `pitch_service.py:240` |
-| Gmail status route | `pitch_service.py:258` |
-| Batch pitch send | `pitch_service.py:771` |
-| Daily quota check | `pitch_service.py:726` |
-| Inbox scan (reply detect) | `pitch_service.py:922` |
-| Deep health endpoint | `admin_service.py:190` |
+| Gmail status route | `pitch_service.py:269` |
+| Batch pitch send | `pitch_service.py:774` |
+| Daily quota check | `pitch_service.py:728` |
+| Inbox scan (reply detect) | `pitch_service.py:1012` |
+| Deep health endpoint | `admin_service.py:191` |
 | Security posture dict | `admin_service.py:171` |
