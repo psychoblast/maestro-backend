@@ -1,7 +1,7 @@
 # PLMKR — Manual Session Runbook
 ## Railway Production Deploy: First-Time Setup
 
-**Branch this runbook targets:** `main` (commit `7e41a2a`)  
+**Branch this runbook targets:** `main` (commit `5e78d4c`)  
 **Date written:** 2026-05-10  
 **Scope:** Everything a human operator must do manually — GCP OAuth console setup,
 Railway env vars, persistent volume, Gmail OAuth authorization, first test pitch send,

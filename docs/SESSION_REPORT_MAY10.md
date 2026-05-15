@@ -1,3 +1,5 @@
+> **STATUS: Historical snapshot of May 10 work. Current state in docs/HANDOVER_EOD_MAY14.md.**
+
 # Session Report — May 10, 2026
 
 ## Summary
