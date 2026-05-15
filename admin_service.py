@@ -1,19 +1,23 @@
 """
-PLMKR Admin Service — Stats and deep health endpoints.
+PLMKR Admin Service — Stats, deep health, and diagnostics endpoints.
 
 GET /api/admin/stats?artist_id=...&since=ISO_DATE
 GET /api/admin/health/deep
+GET /api/admin/diagnostics
 """
 
 import os
 import shutil
 import sqlite3
+import sys
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
+
+from logging_config import get_ring_buffer
 
 log = logging.getLogger("admin_service")
 
@@ -184,6 +188,127 @@ def _security_posture() -> dict:
         "stripe_signed_webhooks_required": bool(webhook_secret) or not dev_unsigned,
         "stripe_dev_allow_unsigned":     dev_unsigned,
         "cors_origins":                  allowed_origins or "*",
+    }
+
+
+# ── Diagnostics endpoint ──────────────────────────────────────────────────────
+
+# All env var names from the codebase. Values are never exposed — only SET/MISSING.
+_KNOWN_ENV_VARS = [
+    "ALLOWED_ORIGINS", "ANTHROPIC_API_KEY", "APP_BASE_URL",
+    "ARTISTS_DIR", "AUDIO_CACHE_DIR",
+    "BUFFER_CLIENT_ID", "BUFFER_CLIENT_SECRET", "BUFFER_REDIRECT_URI",
+    "CLOUDINARY_CLOUD_NAME", "DAILY_PITCH_QUOTA", "DATABASE_URL",
+    "DATA_DIR", "DB_FAILOVER_TO_SQLITE", "DB_PATH", "D_ID_API_KEY",
+    "ELEVENLABS_API_KEY",
+    "GMAIL_OAUTH_CLIENT_ID", "GMAIL_OAUTH_CLIENT_SECRET", "GMAIL_OAUTH_REDIRECT_URI",
+    "KNOWLEDGE_BASE", "MAX_UPLOAD_SIZE", "PLMKR_API_KEY",
+    "RAILWAY_ENVIRONMENT", "REPLY_POLL_HOURS",
+    "SCHEDULER_BATCH_LIMIT", "SCHEDULER_ENABLED", "SENTRY_DSN",
+    "SKILLS_DIR",
+    "STRIPE_DEV_ALLOW_UNSIGNED", "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET",
+    "TEMP_AUDIO_DIR", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
+]
+
+_SERVICE_ENV_MAP = {
+    "anthropic":   "ANTHROPIC_API_KEY",
+    "gmail":       "GMAIL_OAUTH_CLIENT_ID",
+    "stripe":      "STRIPE_SECRET_KEY",
+    "twilio":      "TWILIO_ACCOUNT_SID",
+    "buffer":      "BUFFER_CLIENT_ID",
+    "elevenlabs":  "ELEVENLABS_API_KEY",
+    "d_id":        "D_ID_API_KEY",
+    "cloudinary":  "CLOUDINARY_CLOUD_NAME",
+}
+
+
+def _env_snapshot() -> dict:
+    """Return SET/MISSING for every known env var. Never exposes values."""
+    return {
+        var: ("SET" if os.environ.get(var) else "MISSING")
+        for var in _KNOWN_ENV_VARS
+    }
+
+
+def _service_status() -> dict:
+    return {
+        svc: bool(os.environ.get(env_var))
+        for svc, env_var in _SERVICE_ENV_MAP.items()
+    }
+
+
+def _runtime_versions() -> dict:
+    versions: dict = {"python": sys.version.split()[0], "sqlite": "unknown"}
+    try:
+        import sqlite3 as _sq
+        versions["sqlite"] = _sq.sqlite_version
+    except Exception:
+        pass
+    try:
+        import uvicorn
+        versions["uvicorn"] = uvicorn.__version__
+    except Exception:
+        pass
+    try:
+        import fastapi
+        versions["fastapi"] = fastapi.__version__
+    except Exception:
+        pass
+    return versions
+
+
+def _volume_info() -> dict:
+    data_path = Path("/data")
+    writable = False
+    try:
+        test_file = data_path / ".write_test"
+        test_file.write_text("ok")
+        test_file.unlink()
+        writable = True
+    except Exception:
+        pass
+    info: dict = {"writable": writable}
+    try:
+        usage = shutil.disk_usage("/data")
+        info["total_mb"]  = round(usage.total / 1_048_576)
+        info["free_mb"]   = round(usage.free  / 1_048_576)
+        info["used_pct"]  = round(usage.used  / usage.total * 100, 1)
+    except Exception:
+        info["total_mb"] = info["free_mb"] = info["used_pct"] = None
+    return info
+
+
+def _scheduler_info() -> dict:
+    try:
+        from pitch_service import _scheduler
+        if _scheduler is None or not _scheduler.running:
+            return {"running": False, "jobs": 0, "next_run_time": None}
+        jobs = _scheduler.get_jobs()
+        next_times = [j.next_run_time for j in jobs if j.next_run_time]
+        return {
+            "running":       True,
+            "jobs":          len(jobs),
+            "next_run_time": min(next_times).isoformat() if next_times else None,
+        }
+    except Exception:
+        return {"running": False, "jobs": 0, "next_run_time": None}
+
+
+@router.get("/api/admin/diagnostics", tags=["admin"])
+def admin_diagnostics():
+    """
+    Full runtime diagnostics. Requires X-API-Key. Never exposes env var values.
+    """
+    rb = get_ring_buffer()
+    recent_errors = rb.get_entries()[-20:] if rb else []
+    return {
+        "timestamp":      datetime.now(timezone.utc).isoformat(),
+        "env_snapshot":   _env_snapshot(),
+        "service_status": _service_status(),
+        "runtime":        _runtime_versions(),
+        "volume":         _volume_info(),
+        "scheduler":      _scheduler_info(),
+        "recent_errors":  recent_errors,
     }
 
 
