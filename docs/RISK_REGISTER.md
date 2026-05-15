@@ -1,6 +1,6 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-15 S4 (Units 1–4: admin dashboard built; R-35 added; 351/351 GREEN tests)
+**Last updated:** 2026-05-15 S5 (R-35 mitigated; dashboard polish + runbook; 364/364 GREEN tests)
 **Branch:** main (via feat/deferred-risks-may15-s3-unit5-eod-handover)
 **Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification), Unit K (May 15 S2 Units 6–9 implementation), Unit L (May 15 S3 deferred risks R-31/R-27/R-26), Unit M (May 15 S4 admin dashboard)
 **Total items:** 35 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5; R-35 from S4)
@@ -45,7 +45,7 @@
 | R-32 | 🟡 MEDIUM | `genres`/`tier`/`type` list-join fields bypass R-23 sanitization in prompt builders | Dev | **Mitigated** — `fix/r32-sanitize-list-join-fields` `05b3274` |
 | R-33 | 🟡 MEDIUM | `time.sleep()` in `_anthropic_call_with_retry` blocks async event loop | Dev | **Mitigated** — `fix/r33-async-anthropic-retry` `0e89372` |
 | R-34 | 🟡 MEDIUM | Inbound reply body sent to Claude classifier unsanitized — indirect prompt injection | Dev | **Mitigated** — `fix/r34-reply-classifier-delimited-prompt` `1a80956` |
-| R-35 | 🔵 LOW | Admin dashboard page-load requires `X-API-Key` header — browser can't send it natively | Tommy | **⚠️ Open** — browser extension (ModHeader) needed in production; workaround documented in ADMIN_DASHBOARD.md |
+| R-35 | 🔵 LOW | Admin dashboard page-load requires `X-API-Key` header — browser can't send it natively | Dev | **✅ Mitigated** — commit `57ac62e` 2026-05-15 S5: `/admin/dashboard` added to `_SKIP_AUTH_PATHS`; shell is public; data endpoints remain auth-gated |
 
 ---
 
@@ -860,29 +860,25 @@ wrapped = (
 
 ---
 
-### R-35 — Admin dashboard page-load requires `X-API-Key` header — browser can't send it natively
+### R-35 — Admin dashboard page-load requires `X-API-Key` header — browser can't send it natively ✅ MITIGATED
 
-**What:** `GET /admin/dashboard` is protected by `_APIKeyMiddleware` which checks `X-API-Key` on
-every request including the initial page-load GET from a browser. Browsers don't have a native
-mechanism to attach arbitrary headers to top-level navigations, so a bare bookmark or typed URL
-returns a 401 page, not the dashboard.
+**What:** `GET /admin/dashboard` was protected by `_APIKeyMiddleware`, returning 401 on bare
+browser navigation because browsers cannot attach custom headers to top-level GET requests.
 
-**Where:** `main.py` — `_APIKeyMiddleware`; `admin_service.py:430-445` — `/admin/dashboard` route.
+**Fix applied:** Added `/admin/dashboard` to `_SKIP_AUTH_PATHS` in `main.py`. The HTML shell is
+now publicly served. It contains only markup + JS — no env var values, no secrets. All 6 JSON
+data endpoints remain fully auth-gated. The in-page JS key-prompt modal handles authentication
+entirely on the client side; data only appears after the correct key is entered.
 
-**Impact:** In production (PLMKR_API_KEY set), accessing the dashboard requires either:
-- A browser extension (e.g. ModHeader for Chrome) configured to inject `X-API-Key`.
-- A Cloudflare Access tunnel or similar mTLS layer fronting the route.
-- A curl pipe-to-browser workflow (curl → save HTML → open).
+**Security model confirmed:** 3 tests assert: (1) unauthed page-load returns 200, (2) authed and
+unauthed responses are identical HTML, (3) all 5 protected JSON endpoints still return 401 without
+a key.
 
-**Workaround:** Documented in `docs/ADMIN_DASHBOARD.md` — "How to access" section.
+**Branch:** `feat/may15-s5-unit1-r35-dashboard-unauth`
+**Commit:** `57ac62e` (2026-05-15 S5)
 
-**Future fix options:**
-1. Add `GET /admin/login` HTML form that POSTs credentials and sets a short-lived session cookie;
-   `/admin/dashboard` accepts either `X-API-Key` header or the cookie.
-2. Put `/admin/dashboard` behind Cloudflare Access (zero-trust SSO) and skip the JS key-prompt.
-
-**Owner:** Tommy
-**Status:** ⚠️ Open — low priority (internal-only tool, single operator). Workaround sufficient for current use.
+**Owner:** Dev (was Tommy)
+**Status:** ✅ MITIGATED — no browser extension required. Navigate directly to the Railway URL.
 
 ---
 
@@ -906,10 +902,10 @@ _May 15, 2026 (Units 1–4): R-20 fully closed — `railway.json:healthcheckPath
 | Owner | Open (incl. NEEDS-REVIEW) | Partially mitigated | Accepted |
 |-------|--------------------------|---------------------|----------|
 | Dev | 0 | 0 | 2 |
-| Tommy | 7 (R-02, R-11, R-16, R-17, R-24, R-25, R-35) | 0 | 2 |
-| **Total** | **7** | **0** | **4** |
+| Tommy | 6 (R-02, R-11, R-16, R-17, R-24, R-25) | 0 | 2 |
+| **Total** | **6** | **0** | **4** |
 
-_All open items are Tommy dashboard/env-var actions or require live Railway access. R-20 fully mitigated 2026-05-15. R-35 added 2026-05-15 S4 (dashboard browser nav barrier — low priority, workaround documented)._
+_All open items are Tommy Railway/env-var actions. R-35 mitigated 2026-05-15 S5 (commit `57ac62e`). R-20 fully mitigated 2026-05-15._
 
 _Items confirmed mitigated against main `9ad30af` (2026-05-14): R-01, R-03, R-04, R-05,
 R-06, R-07, R-08, R-09, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23, R-29, R-31,
