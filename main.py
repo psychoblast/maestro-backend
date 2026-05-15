@@ -1261,7 +1261,9 @@ init_report_scheduler()
 init_release_db()
 
 # Wire campaign executor into scheduler (every 1h)
-_SCHEDULER_ENABLED_FLAG = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
+# Runs in both "true" (live) and "dry_run" modes; execute_all_due_campaign_actions()
+# checks _SCHEDULER_DRY_RUN internally and logs instead of firing side effects.
+_SCHEDULER_ENABLED_FLAG = os.environ.get("SCHEDULER_ENABLED", "").lower() in ("true", "dry_run")
 if _SCHEDULER_ENABLED_FLAG:
     try:
         from pitch_service import _scheduler as _pitch_sched

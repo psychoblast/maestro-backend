@@ -41,6 +41,7 @@ _BUFFER_TOKEN_URL     = "https://api.bufferapp.com/1/oauth2/token.json"
 _BUFFER_POST_URL      = "https://api.bufferapp.com/1/updates/create.json"
 
 _SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
+_SCHEDULER_DRY_RUN = os.environ.get("SCHEDULER_ENABLED", "").lower() == "dry_run"
 
 # R-28: configurable weekly report schedule (defaults: Sunday 18:00 UTC)
 _WEEKLY_REPORT_DAY    = os.environ.get("WEEKLY_REPORT_DAY",      "sun").strip().lower()
@@ -969,7 +970,10 @@ def _get_artists_with_any_activity() -> list[str]:
 
 
 async def _generate_all_weekly_reports():
-    """Scheduler job: generate weekly report for every active artist (Sunday 18:00 UTC)."""
+    """Scheduler job: generate weekly report for every active artist. Logs 'would_have_fired' in dry_run mode."""
+    if _SCHEDULER_DRY_RUN:
+        log.info("would_have_fired", extra={"event": "would_have_fired", "job_id": "weekly_reports", "dry_run": True})
+        return
     artists = _get_artists_with_any_activity()
     log.info("report_scheduler_start", extra={"event": "report_scheduler_start", "artist_count": len(artists)})
     for aid in artists:
@@ -986,7 +990,7 @@ def init_report_scheduler():
     Add weekly report job to the existing pitch_service APScheduler instance.
     Called from main.py after init_scheduler(). No-op unless SCHEDULER_ENABLED=true.
     """
-    if not _SCHEDULER_ENABLED:
+    if not (_SCHEDULER_ENABLED or _SCHEDULER_DRY_RUN):
         log.info("report_scheduler_disabled", extra={"event": "report_scheduler_disabled", "reason": "SCHEDULER_ENABLED not set"})
         return
     try:

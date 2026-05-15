@@ -29,6 +29,7 @@ _DB_PATH = Path(os.environ.get("DB_PATH", "/data/memory.db"))
 # /api/admin/scheduler/catchup endpoint should be added; default scheduler
 # behavior is conservative.
 SCHEDULER_BATCH_LIMIT = int(os.environ.get("SCHEDULER_BATCH_LIMIT", "5"))
+_SCHEDULER_DRY_RUN = os.environ.get("SCHEDULER_ENABLED", "").lower() == "dry_run"
 
 # ── Action types ──────────────────────────────────────────────────────────────
 
@@ -558,6 +559,9 @@ async def execute_all_due_campaign_actions():
     Conservative cap prevents a flood of past-due actions (e.g. after downtime) from
     all firing in a single tick. Remaining actions are picked up on the next tick.
     """
+    if _SCHEDULER_DRY_RUN:
+        log.info("would_have_fired", extra={"event": "would_have_fired", "job_id": "campaign_executor", "dry_run": True})
+        return
     due_actions = _db_list_due_actions()
     batch = due_actions[:SCHEDULER_BATCH_LIMIT]
     log.info("scheduler_sweep", extra={"due_count": len(due_actions), "batch": len(batch)})
