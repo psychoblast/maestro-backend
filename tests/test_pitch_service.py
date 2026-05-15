@@ -9,6 +9,7 @@ import json
 import sqlite3
 import tempfile
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -262,9 +263,11 @@ def test_followup_no_pitches(ps):
 
 
 def test_followup_recent_pitch_not_triggered(ps):
-    """Pitch sent today → not in follow-up list (day 0, not in thresholds)."""
+    """Pitch sent right now → not in follow-up list (day 0, not in any tier threshold)."""
     _seed_curator(ps)
-    now_str = "2026-05-08T10:00:00"
+    # Use a timezone-aware timestamp so the aware/naive subtraction in
+    # _get_pitches_needing_followup doesn't raise TypeError and silently skip the row.
+    now_str = datetime.now(timezone.utc).isoformat()
     ps._db_create_pitch({
         "id": "fu-p1", "artist_id": "a1", "curator_id": "cur-test-001",
         "status": "sent", "subject": "S", "body": "B",
