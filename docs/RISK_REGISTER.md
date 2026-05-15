@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-15 S2 (Units 1–5 verification; R-32/33/34 detail sections updated from "pending merge" → confirmed on main)
-**Branch:** docs/risk-register-batch3-updates
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification)
+**Last updated:** 2026-05-15 S2 (Units 6–9: R-28/R-11/R-17/R-30 mitigated; 296/296 GREEN tests)
+**Branch:** main (via fix/risk-register-may15-s2-unit10-eod-handover)
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification), Unit K (May 15 S2 Units 6–9 implementation)
 **Total items:** 34 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5)
 
 ---
@@ -21,13 +21,13 @@
 | R-08 | 🟠 HIGH | Idempotency keys do not prevent duplicate sends | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-09 | 🟠 HIGH | No rate limiting on batch send operations | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-10 | 🟠 HIGH | Scheduler first-run bulk backfill fires all past-due actions at once | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
-| R-11 | 🟡 MEDIUM | `APP_BASE_URL` defaults to local LAN IP in production | Tommy | Open — NEEDS-REVIEW-2026-05-14 (env var must be set on Railway dashboard) |
+| R-11 | 🟡 MEDIUM | `APP_BASE_URL` defaults to local LAN IP in production | Tommy | **Mitigated** — commit `5cdcd0d` 2026-05-15 (hard-fail on Railway; localhost:8000 fallback in dev) |
 | R-12 | 🟡 MEDIUM | Unauthenticated `/send-test-email` endpoint with hardcoded recipient | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-13 | 🟡 MEDIUM | No Anthropic API retry — rate limit silently fails entire batch | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-14 | 🟡 MEDIUM | `/api/transcribe` reads entire upload into memory with no size limit | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-15 | 🟡 MEDIUM | CORS fully open — any origin, any method | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-16 | 🟡 MEDIUM | Gmail OAuth not configured on Railway — all outreach blocked | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set OAuth env vars on Railway) |
-| R-17 | 🟡 MEDIUM | Twilio auth token invalid format; SMS OTP dev bypass active | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set valid TWILIO_AUTH_TOKEN on Railway) |
+| R-17 | 🟡 MEDIUM | Twilio auth token invalid format; SMS OTP dev bypass active | Tommy | **Mitigated** — commit `a3d0d11` 2026-05-15 (SMS_OTP_DEV_BYPASS guard + store-before-validate fix; Tommy must still set valid TWILIO_AUTH_TOKEN on Railway) |
 | R-18 | 🟡 MEDIUM | Whisper model re-downloads (~140 MB) on every cold start | Dev | **Mitigated** — `fix/r18-whisper-prebake` 2026-05-15 |
 | R-19 | 🟡 MEDIUM | Kokoro TTS model files excluded from Railway deploy | Tommy | **Mitigated** — `fix/r19-kokoro-startup-warning` 2026-05-15 (explicit boot warning added) |
 | R-20 | 🟡 MEDIUM | Railway healthcheck is liveness-only; DB and scheduler failures undetected | Tommy | **Mitigated** — `railway.json:healthcheckPath` updated to `/api/admin/health/deep` (commit `7071746`); verified 2026-05-15 |
@@ -38,9 +38,9 @@
 | R-25 | 🔵 LOW | Campaign execute-due not smoke-tested against live Gmail account | Tommy | Open — NEEDS-REVIEW-2026-05-14 (requires live Gmail account) |
 | R-26 | 🔵 LOW | Buffer integration is mocked — social posts not published | Tommy | Accepted |
 | R-27 | 🔵 LOW | Scheduler not enabled — all timed jobs inactive | Tommy | Accepted |
-| R-28 | 🔵 LOW | Weekly report scheduler hardcoded to UTC Sunday 18:00 | Dev | Accepted |
+| R-28 | 🔵 LOW | Weekly report scheduler hardcoded to UTC Sunday 18:00 | Dev | **Mitigated** — commit `43def81` 2026-05-15 (configurable via WEEKLY_REPORT_DAY/HOUR_UTC/MINUTE) |
 | R-29 | 🔵 LOW | APScheduler interval jobs have no explicit `misfire_grace_time` | Dev | Open |
-| R-30 | 🔵 LOW | Single uvicorn worker — scheduler and requests share one process | Dev | Accepted |
+| R-30 | 🔵 LOW | Single uvicorn worker — scheduler and requests share one process | Dev | **Partially mitigated** — commit `4607eb4` 2026-05-15 (Option B guard; Option A out of scope) |
 | R-31 | 🔵 LOW | Seed scripts not in Docker image; Railway shell workaround fails | Dev | Open |
 | R-32 | 🟡 MEDIUM | `genres`/`tier`/`type` list-join fields bypass R-23 sanitization in prompt builders | Dev | **Mitigated** — `fix/r32-sanitize-list-join-fields` `05b3274` |
 | R-33 | 🟡 MEDIUM | `time.sleep()` in `_anthropic_call_with_retry` blocks async event loop | Dev | **Mitigated** — `fix/r33-async-anthropic-retry` `0e89372` |
@@ -309,7 +309,7 @@ With no Anthropic retry (R-13), this burst almost certainly hits Anthropic's rat
 
 ---
 
-### R-11 — `APP_BASE_URL` defaults to local LAN IP in production
+### R-11 — `APP_BASE_URL` defaults to local LAN IP in production ✅ MITIGATED
 
 **What:** `main.py:1826`:
 ```python
@@ -322,10 +322,10 @@ Stripe checkout `success_url` and `cancel_url` (lines 1876–1877) and agent pho
 **Likelihood:** Certain — env var not yet set on Railway.
 **Impact:** Medium — Stripe checkout UX broken; agent photo fallback broken. Does not affect API functionality.
 
-**Mitigation:** Set `APP_BASE_URL=https://maestro-backend-production-6d9c.up.railway.app` on Railway. No code change needed. Do this before any Stripe checkout testing.
+**Mitigation applied (2026-05-15 S2 Unit 7):** Changed `APP_BASE_URL` to default `None`. If `APP_BASE_URL is None` and `_on_railway` is truthy → `sys.exit(1)` at boot with a clear fatal message. In local dev without the env var → falls back to `http://localhost:8000` with a structured `boot_warning` log. Tommy must still set `APP_BASE_URL=https://maestro-backend-production-6d9c.up.railway.app` in Railway Variables.
 
 **Owner:** Tommy
-**Status:** Open — NEEDS-REVIEW-2026-05-14. No code fix possible; Tommy must set `APP_BASE_URL` env var on Railway dashboard before any Stripe checkout testing.
+**Status:** ✅ MITIGATED — commit `5cdcd0d` on main. Verified 2026-05-15 (S2 Unit 7): `main.py` hard-fails on Railway when `APP_BASE_URL` unset; `localhost:8000` fallback in dev. Tests: `tests/test_r11_app_base_url.py` (4 tests, all GREEN).
 
 ---
 
@@ -438,19 +438,22 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 
 ---
 
-### R-17 — Twilio auth token invalid format; SMS OTP dev bypass active
+### R-17 — Twilio auth token invalid format; SMS OTP dev bypass active ✅ MITIGATED
 
-**What:** `main.py:793` validates `TWILIO_AUTH_TOKEN` as exactly 32 lowercase hex characters. The current token fails this check. A dev bypass in the OTP path allows all OTP verification to pass without a real SMS send. No real Twilio SMS is sent in production.
+**What:** `main.py:793` validates `TWILIO_AUTH_TOKEN` as exactly 32 lowercase hex characters. The current token fails this check. A dev bypass in the OTP path allows all OTP verification to pass without a real SMS send. No real Twilio SMS is sent in production. Additionally, the original code stored the OTP in `_otp_store` BEFORE validating the auth token, meaning invalid-token errors left garbage entries in the store.
 
 **Where:** `main.py:786–803`; dev bypass code in the OTP verification path.
 
-**Likelihood:** Certain — bypass is active.
+**Likelihood:** Certain — bypass was active.
 **Impact:** Medium — authentication via SMS OTP is non-functional; anyone can bypass OTP verification in the current state.
 
-**Mitigation:** Obtain the correct `TWILIO_AUTH_TOKEN` from console.twilio.com → Account → General Settings (32 lowercase hex chars). Set on Railway. Test with a real device end-to-end.
+**Mitigation applied (2026-05-15 S2 Unit 8):**
+1. **Store-before-validate bug fixed:** Auth token validation now runs BEFORE OTP is stored in `_otp_store`. Malformed token returns 503 without creating a store entry.
+2. **`SMS_OTP_DEV_BYPASS` env var added:** Explicit dev-only bypass. When `true` in local dev, `send_otp` stores `000000` without calling Twilio. When `true` on Railway (`RAILWAY_ENVIRONMENT` set), app calls `sys.exit(1)` at boot — mirrors the `STRIPE_DEV_ALLOW_UNSIGNED` guard pattern.
+3. Tommy must still set valid `TWILIO_AUTH_TOKEN` (32 lowercase hex chars) from Twilio console on Railway for real SMS to work.
 
 **Owner:** Tommy
-**Status:** Open — NEEDS-REVIEW-2026-05-14. Tommy must obtain valid `TWILIO_AUTH_TOKEN` (32 lowercase hex chars) from Twilio console and set on Railway.
+**Status:** ✅ MITIGATED — commit `a3d0d11` on main. Verified 2026-05-15 (S2 Unit 8): store-before-validate fixed; Railway guard on `SMS_OTP_DEV_BYPASS`; `tests/test_r17_sms_otp_dev_bypass.py` (6 tests, all GREEN).
 
 ---
 
@@ -659,7 +662,7 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 
 ---
 
-### R-28 — Weekly report scheduler hardcoded to UTC Sunday 18:00
+### R-28 — Weekly report scheduler hardcoded to UTC Sunday 18:00 ✅ MITIGATED
 
 **What:** `social_service.py:930`. Weekly reports fire globally at Sunday 18:00 UTC regardless of artist timezone. No per-artist scheduling. Comment in code: `# Sundays at 18:00 UTC — document as TODO for per-artist timezone support`.
 
@@ -668,10 +671,16 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 **Likelihood:** Certain — hardcoded.
 **Impact:** Low — reports generate at a suboptimal time for non-UTC artists; no functional breakage.
 
-**Mitigation:** Acceptable for v1. Post-launch improvement: store `timezone` in artist profile and generate reports at the equivalent local Sunday 18:00.
+**Mitigation applied (2026-05-15 S2 Unit 6):** Three module-level constants read from env vars at import time:
+```python
+_WEEKLY_REPORT_DAY    = os.environ.get("WEEKLY_REPORT_DAY",      "sun").strip().lower()
+_WEEKLY_REPORT_HOUR   = int(os.environ.get("WEEKLY_REPORT_HOUR_UTC", "18"))
+_WEEKLY_REPORT_MINUTE = int(os.environ.get("WEEKLY_REPORT_MINUTE",   "0"))
+```
+`init_report_scheduler()` passes these to `add_job`. Defaults preserve existing v1 behavior (Sunday 18:00 UTC). Documented in `.env.example` under `[CONFIG]`. Per-artist timezone scheduling remains a post-launch improvement.
 
 **Owner:** Dev
-**Status:** Accepted (v1 limitation)
+**Status:** ✅ MITIGATED — commit `43def81` on main. Verified 2026-05-15 (S2 Unit 6): `social_service.py` uses env-var constants. Tests: `tests/test_r28_configurable_report_schedule.py` (5 tests, all GREEN).
 
 ---
 
@@ -691,7 +700,7 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 
 ---
 
-### R-30 — Single uvicorn worker — scheduler and requests share one process
+### R-30 — Single uvicorn worker — scheduler and requests share one process ⚠️ PARTIALLY MITIGATED
 
 **What:** The `CMD` in `Dockerfile:34` runs `uvicorn main:app` with no `--workers` flag. APScheduler runs in the same async event loop. A long scheduler sweep (21 campaign actions with Anthropic calls) blocks new request handling. A blocking Whisper download blocks all other requests.
 
