@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-15 (Batch 2 — R-18, R-19 mitigated)
-**Branch:** fix/r18-whisper-prebake
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2)
+**Last updated:** 2026-05-14 (Batch 3 — observability pass; R-20 dev-side complete)
+**Branch:** docs/risk-register-batch3-updates
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability)
 **Total items:** 34 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5)
 
 ---
@@ -30,7 +30,7 @@
 | R-17 | 🟡 MEDIUM | Twilio auth token invalid format; SMS OTP dev bypass active | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set valid TWILIO_AUTH_TOKEN on Railway) |
 | R-18 | 🟡 MEDIUM | Whisper model re-downloads (~140 MB) on every cold start | Dev | **Mitigated** — `fix/r18-whisper-prebake` 2026-05-15 |
 | R-19 | 🟡 MEDIUM | Kokoro TTS model files excluded from Railway deploy | Tommy | **Mitigated** — `fix/r19-kokoro-startup-warning` 2026-05-15 (explicit boot warning added) |
-| R-20 | 🟡 MEDIUM | Railway healthcheck is liveness-only; DB and scheduler failures undetected | Tommy | Open — ACTUALLY-OPEN 2026-05-14 (`railway.json` still uses `/health`; not fixed) |
+| R-20 | 🟡 MEDIUM | Railway healthcheck is liveness-only; DB and scheduler failures undetected | Tommy | Partially mitigated — dev side done (batch 3): `GET /api/admin/health/deep` returns non-200 on DB failure; `GET /api/admin/diagnostics` added. Tommy action remaining: update `railway.json:healthcheckPath` to `/api/admin/health/deep`. |
 | R-21 | 🟡 MEDIUM | Silent `ALTER TABLE` migration failure swallows `OperationalError` | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-22 | 🟡 MEDIUM | Generic error handler may suppress FastAPI 422 validation responses | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-23 | 🟡 MEDIUM | Prompt injection via user-controlled curator/contact fields into Claude | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
@@ -505,7 +505,13 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 2. Or: keep `/health` as liveness and add an alerting check (uptime monitor or Railway alerting) that calls `/api/admin/health/deep` separately.
 
 **Owner:** Tommy (Railway config); Dev (readiness endpoint)
-**Status:** Open — ACTUALLY-OPEN 2026-05-14. Verified: `railway.json:8` still uses `healthcheckPath: "/health"`. Fix requires updating `railway.json` to `/api/admin/health/deep` and ensuring that endpoint returns non-200 on DB failure.
+**Status:** Partially mitigated (batch 3, 2026-05-14). Dev side complete:
+- `GET /api/admin/health/deep` is implemented and returns `db_connected: false` + HTTP 503 on DB failure (already existed and verified).
+- `GET /api/admin/diagnostics` now provides full env snapshot, service status, per-route latency, and recent error log — see `feat/admin-diagnostics-endpoint` + `feat/external-call-observability`.
+- `GET /api/admin/diagnostics/performance` — per-route p50/p95/p99 latency.
+- `GET /api/admin/diagnostics/anthropic-stats` and `gmail-stats` — call counters by model/artist.
+
+**Tommy action remaining:** Update `railway.json:healthcheckPath` from `"/health"` to `"/api/admin/health/deep"`. Until done, Railway cannot auto-recover from DB failure.
 
 ---
 
@@ -831,13 +837,15 @@ wrapped = (
 
 _Post-May-14 reconciliation: R-01, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23, R-29, R-31, R-32, R-33, R-34 all confirmed mitigated in main `9ad30af`._
 
-| Owner | Open (incl. NEEDS-REVIEW) | Accepted |
-|-------|--------------------------|----------|
-| Dev | 0 | 2 |
-| Tommy | 7 (R-02, R-11, R-16, R-17, R-20, R-24, R-25) | 2 |
-| **Total** | **7** | **4** |
+_Batch 3 (May 14, 2026): R-20 dev side complete — diagnostics endpoint, health/deep, per-route metrics, Anthropic/Gmail call counters all implemented. Tommy action remaining: update `railway.json:healthcheckPath`._
 
-_R-20 is the only ACTUALLY-OPEN risk remaining (railway.json healthcheck path now updated). R-18 and R-19 mitigated in batch 2 (2026-05-15). All other "Open" items are Tommy dashboard/env-var actions._
+| Owner | Open (incl. NEEDS-REVIEW) | Partially mitigated | Accepted |
+|-------|--------------------------|---------------------|----------|
+| Dev | 0 | 0 | 2 |
+| Tommy | 6 (R-02, R-11, R-16, R-17, R-24, R-25) | 1 (R-20 — railway.json action) | 2 |
+| **Total** | **6** | **1** | **4** |
+
+_R-20 dev side complete in batch 3 (main `149dfec`). Tommy must still update `railway.json:healthcheckPath` to `/api/admin/health/deep`. All other "Open" items are Tommy dashboard/env-var actions or require live Railway access._
 
 _Items confirmed mitigated against main `9ad30af` (2026-05-14): R-01, R-03, R-04, R-05,
 R-06, R-07, R-08, R-09, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23, R-29, R-31,
