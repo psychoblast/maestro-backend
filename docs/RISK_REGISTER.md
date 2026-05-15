@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-15 S2 (Units 6–9: R-28/R-11/R-17/R-30 mitigated; 296/296 GREEN tests)
-**Branch:** main (via fix/risk-register-may15-s2-unit10-eod-handover)
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification), Unit K (May 15 S2 Units 6–9 implementation)
+**Last updated:** 2026-05-15 S3 (Units 1–4: R-31/R-27/R-26 addressed; 311/311 GREEN tests)
+**Branch:** main (via feat/deferred-risks-may15-s3-unit5-eod-handover)
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification), Unit K (May 15 S2 Units 6–9 implementation), Unit L (May 15 S3 deferred risks R-31/R-27/R-26)
 **Total items:** 34 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5)
 
 ---
@@ -36,8 +36,8 @@
 | R-23 | 🟡 MEDIUM | Prompt injection via user-controlled curator/contact fields into Claude | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-24 | 🔵 LOW | Bug 1 fix unverified on live Railway DB | Tommy | Open — NEEDS-REVIEW-2026-05-14 (requires live Railway DB check) |
 | R-25 | 🔵 LOW | Campaign execute-due not smoke-tested against live Gmail account | Tommy | Open — NEEDS-REVIEW-2026-05-14 (requires live Gmail account) |
-| R-26 | 🔵 LOW | Buffer integration is mocked — social posts not published | Tommy | Accepted |
-| R-27 | 🔵 LOW | Scheduler not enabled — all timed jobs inactive | Tommy | Accepted |
+| R-26 | 🔵 LOW | Buffer integration is mocked — social posts not published | Tommy | **⚠️ Partially Mitigated** — real httpx client added behind BUFFER_LIVE=false flag; 9 tests GREEN |
+| R-27 | 🔵 LOW | Scheduler not enabled — all timed jobs inactive | Tommy | **⚠️ Partially Mitigated** — SCHEDULER_ENABLED three-state (unset/dry_run/true); 6 tests GREEN; flip-the-switch checklist in SCHEDULER_AUDIT.md |
 | R-28 | 🔵 LOW | Weekly report scheduler hardcoded to UTC Sunday 18:00 | Dev | **Mitigated** — commit `43def81` 2026-05-15 (configurable via WEEKLY_REPORT_DAY/HOUR_UTC/MINUTE) |
 | R-29 | 🔵 LOW | APScheduler interval jobs have no explicit `misfire_grace_time` | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 (`pitch_service.py:1057` `misfire_grace_time=300`; `main.py:1212` `misfire_grace_time=120`) |
 | R-30 | 🔵 LOW | Single uvicorn worker — scheduler and requests share one process | Dev | **Partially mitigated** — commit `4607eb4` 2026-05-15 (Option B guard; Option A out of scope) |
@@ -630,35 +630,51 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 
 ---
 
-### R-26 — Buffer integration is mocked — social posts not published
+### R-26 — Buffer integration is mocked — social posts not published ⚠️ PARTIALLY MITIGATED
 
-**What:** `social_service.py:315, 404`. `_buffer_schedule_post()` returns `{"mocked": True}` and never calls the Buffer API. Social posts are stored in the DB with `mocked=True` and are not published to any social platform. This is expected design until Buffer OAuth is configured (§3-F).
+**What:** `social_service.py`. `_buffer_schedule_post()` previously always returned `{"mocked": True}` and never called the Buffer API. Social posts were stored in the DB but not published to any social platform.
 
-**Where:** `social_service.py:315, 404`.
+**Where:** `social_service.py:_buffer_schedule_post`, `social_service.py:_buffer_post_real`.
 
-**Likelihood:** Certain — by design.
+**Likelihood:** Certain — by design until BUFFER_LIVE=true.
 **Impact:** Low — known limitation; no surprise behavior unless the caller assumes posts are published.
 
-**Mitigation:** Complete §3-F (Buffer OAuth setup) when Phase 3 social scheduling is ready to go live. No code change needed until then.
+**Mitigation applied (2026-05-15 S3 Unit 4):** Real HTTP client added behind feature flag:
+- `_BUFFER_LIVE = os.environ.get("BUFFER_LIVE", "false").lower() == "true"` — defaults false (safe)
+- `_BUFFER_API_KEY = os.environ.get("BUFFER_API_KEY", "")` — must be set for live mode
+- `_buffer_post_real()`: async httpx.AsyncClient, 10s timeout, 429 retry (2 retries, exponential backoff), 500/non-200 error logging, malformed JSON handling
+- `_buffer_schedule_post()` routing: not-live → mock; dry_run → log `would_have_posted`; live → `_buffer_post_real()`
+- 9 tests in `tests/test_r26_buffer_live_client.py` — all GREEN
+
+**Remaining:** Tommy must set `BUFFER_LIVE=true` + `BUFFER_API_KEY` on Railway after at least one artist completes Buffer OAuth flow. See `.env.example` for ramp guidance.
 
 **Owner:** Tommy
-**Status:** Accepted (known limitation)
+**Status:** ⚠️ Partially Mitigated — code ready, flag off. Enable: set `BUFFER_LIVE=true` + `BUFFER_API_KEY` on Railway after Buffer OAuth verified.
 
 ---
 
-### R-27 — Scheduler not enabled — all timed jobs inactive
+### R-27 — Scheduler not enabled — all timed jobs inactive ⚠️ PARTIALLY MITIGATED
 
-**What:** `SCHEDULER_ENABLED=false` (not set on Railway). Inbox poll (every 6h), weekly report (Sundays 18:00 UTC), and release campaign execute-due (hourly) are all disabled. Data accumulates but no automated actions fire.
+**What:** `SCHEDULER_ENABLED` was unset on Railway. Inbox poll (every 6h), weekly report (Sundays 18:00 UTC), and release campaign execute-due (hourly) were all disabled. Data accumulates but no automated actions fire.
 
-**Where:** `pitch_service.py:39`; `social_service.py:42`; `main.py:1078`.
+**Where:** `pitch_service.py:_SCHEDULER_ENABLED/_SCHEDULER_DRY_RUN`; `social_service.py:_SCHEDULER_DRY_RUN`; `release_service.py:_SCHEDULER_DRY_RUN`; `main.py:_SCHEDULER_ENABLED_FLAG`.
 
 **Likelihood:** Certain — by design until manual steps are complete.
 **Impact:** Low — no data loss; intended state until §3-A through §3-D are verified.
 
-**Mitigation:** Enable after §3-A through §3-D are verified. Resolve R-10 (bulk backfill risk) before enabling if any releases with past dates exist.
+**Mitigation applied (2026-05-15 S3 Units 2–3):**
+- **Unit 2 (audit):** `docs/SCHEDULER_AUDIT.md` produced via static code audit. 3 jobs found, 0 STOP-SHIP. Risk levels: `inbox_poll` MEDIUM, `weekly_reports` MEDIUM, `campaign_executor` HIGH. Flip-the-switch checklist included.
+- **Unit 3 (three-state flag):** `SCHEDULER_ENABLED` now accepts three values:
+  - unset / false → scheduler does not start (safe default, existing behavior)
+  - `dry_run` → scheduler starts; jobs log `would_have_fired` but send NO emails / make no API calls
+  - `true` → fully live; sends real emails via Gmail
+- All three service modules updated: `pitch_service._poll_all`, `social_service._generate_all_weekly_reports`, `release_service.execute_all_due_campaign_actions`
+- 6 tests in `tests/test_r27_scheduler_dry_run.py` — all GREEN
+
+**Remaining:** Tommy must follow `docs/SCHEDULER_AUDIT.md` flip-the-switch checklist. Recommended ramp: unset → dry_run (observe 24h) → true (SCHEDULER_BATCH_LIMIT=1 first).
 
 **Owner:** Tommy
-**Status:** Accepted (intentional)
+**Status:** ⚠️ Partially Mitigated — three-state flag in code; enable by setting `SCHEDULER_ENABLED=dry_run` on Railway first.
 
 ---
 
