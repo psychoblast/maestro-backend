@@ -22,6 +22,8 @@ def _load_app(monkeypatch, tmp_path, *, railway_env: str = "", dev_flag: str = "
     monkeypatch.setenv("AUDIO_CACHE_DIR",    str(tmp_path / "audio_cache"))
     monkeypatch.setenv("ARTISTS_DIR",        str(tmp_path / "artists"))
     monkeypatch.setenv("ELEVENLABS_API_KEY", "")
+    # R-11 guard: Railway tests need APP_BASE_URL set to avoid a separate sys.exit(1)
+    monkeypatch.setenv("APP_BASE_URL",       "https://test.railway.app")
 
     if railway_env:
         monkeypatch.setenv("RAILWAY_ENVIRONMENT", railway_env)
