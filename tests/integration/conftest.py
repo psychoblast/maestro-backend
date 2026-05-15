@@ -159,3 +159,73 @@ def gmail_ready(db_path, artist_id, seeded_artist):
     """Artist exists + has Gmail tokens stored."""
     seed_gmail_tokens(db_path, artist_id)
     return artist_id
+
+
+# ── Additional helpers added Unit 2 (May 15) ─────────────────────────────────
+
+def make_claude_response(payload: dict) -> object:
+    """Return a MagicMock that looks like an anthropic.Message with JSON content."""
+    import json as _json
+    from unittest.mock import MagicMock
+    m = MagicMock()
+    m.content = [MagicMock(text=_json.dumps(payload))]
+    return m
+
+
+def make_send_gmail_svc(thread_id: str, msg_id: str = "msg-001") -> object:
+    """Return a MagicMock Gmail service that simulates a successful send.
+
+    Mocks at the google-api-client boundary:
+      service.users().messages().send(...).execute()  → {"id": ..., "threadId": ...}
+    """
+    from unittest.mock import MagicMock
+    svc = MagicMock()
+    (svc.users.return_value.messages.return_value
+        .send.return_value.execute.return_value) = {"id": msg_id, "threadId": thread_id}
+    return svc
+
+
+def build_release_app(db_path: str) -> "FastAPI":
+    """Build a test FastAPI app that includes all 5 service routers (pitch+pr+booking+social+release)."""
+    import importlib
+    os.environ["DB_PATH"]             = db_path
+    os.environ["DATABASE_URL"]        = ""
+    os.environ["ANTHROPIC_API_KEY"]   = "sk-test"
+    os.environ["GMAIL_OAUTH_CLIENT_ID"]     = "test-client-id"
+    os.environ["GMAIL_OAUTH_CLIENT_SECRET"] = "test-secret"
+    os.environ["GMAIL_OAUTH_REDIRECT_URI"]  = "http://localhost/callback"
+
+    import pitch_service, pr_service, booking_service, social_service, release_service
+    for mod in (pitch_service, pr_service, booking_service, social_service, release_service):
+        importlib.reload(mod)
+
+    _ensure_artists_table(db_path)
+    pitch_service.init_pitch_db()
+    pr_service.init_pr_db()
+    booking_service.init_booking_db()
+    social_service.init_social_db()
+    release_service.init_release_db()
+
+    app = FastAPI(title="PLMKR Scheduler Test App")
+    app.include_router(pitch_service.router)
+    app.include_router(pr_service.router)
+    app.include_router(booking_service.router)
+    app.include_router(social_service.router)
+    app.include_router(release_service.router)
+    return app
+
+
+@pytest.fixture()
+def mock_anthropic():
+    """Fixture: patch anthropic.Anthropic at the SDK boundary with a realistic pitch response.
+
+    _anthropic_call_with_retry still executes, so observability counters increment.
+    """
+    from unittest.mock import patch, MagicMock
+    _default = make_claude_response({
+        "subject": "Pitch — Test Artist",
+        "body":    "Hi! We'd love to be featured on your playlist.",
+    })
+    with patch("anthropic.Anthropic") as mc:
+        mc.return_value.messages.create.return_value = _default
+        yield mc
