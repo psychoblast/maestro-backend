@@ -167,6 +167,42 @@ footer { text-align: center; padding: 20px; font-size: 10px;
   .section-card { padding: 14px; }
   .section-card.wide { grid-column: 1; }
 }
+
+/* ── Empty state ─────────────────────────────────────────────────────────── */
+.empty-state { color: var(--text-muted); font-size: 11px; font-style: italic; padding: 2px 0; }
+
+/* ── Scrollable table wrapper (sticky headers) ───────────────────────────── */
+.table-wrap { max-height: 280px; overflow-y: auto; }
+.table-wrap .data-table thead th { position: sticky; top: 0; background: var(--bg1); z-index: 1; }
+
+/* ── Section header (title + raw JSON toggle) ────────────────────────────── */
+.section-hdr { display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 14px; gap: 8px; }
+.section-hdr .section-title { margin-bottom: 0; flex: 1; }
+.json-toggle-btn {
+  padding: 2px 7px; border-radius: var(--radius); border: 1px solid var(--border-dim);
+  background: transparent; color: var(--text-muted); font-family: var(--font-mono);
+  font-size: 9px; cursor: pointer; letter-spacing: .06em; flex-shrink: 0;
+  transition: all .15s; white-space: nowrap;
+}
+.json-toggle-btn:hover { border-color: var(--gold); color: var(--gold); }
+.json-toggle-btn.active { border-color: var(--gold); color: var(--gold);
+  background: rgba(201,168,76,0.08); }
+.raw-json { font-size: 10px; color: var(--text-dim); white-space: pre-wrap;
+  word-break: break-all; max-height: 320px; overflow-y: auto; line-height: 1.6; }
+
+/* ── Copy toast ──────────────────────────────────────────────────────────── */
+#copy-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--bg1); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px 16px; font-size: 11px; color: var(--green); z-index: 9998;
+  opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap;
+}
+#copy-toast.show { opacity: 1; }
+
+/* ── Copyable error rows ─────────────────────────────────────────────────── */
+li.copyable { cursor: pointer; }
+li.copyable:hover { background: rgba(201,168,76,0.04); }
 </style>
 </head>
 <body>
@@ -199,37 +235,55 @@ footer { text-align: center; padding: 20px; font-size: 10px;
 
   <!-- Section 1: Diagnostics overview -->
   <section class="section-card wide" id="s-diagnostics" aria-label="Diagnostics">
-    <h2 class="section-title">Diagnostics</h2>
+    <div class="section-hdr">
+      <h2 class="section-title">Diagnostics</h2>
+      <button class="json-toggle-btn" data-target="d-diagnostics" aria-label="Toggle raw JSON for Diagnostics">{ }</button>
+    </div>
     <div class="section-body loading" id="d-diagnostics">Loading…</div>
   </section>
 
   <!-- Section 2: Performance -->
   <section class="section-card" id="s-performance" aria-label="Performance">
-    <h2 class="section-title">Performance</h2>
+    <div class="section-hdr">
+      <h2 class="section-title">Performance</h2>
+      <button class="json-toggle-btn" data-target="d-performance" aria-label="Toggle raw JSON for Performance">{ }</button>
+    </div>
     <div class="section-body loading" id="d-performance">Loading…</div>
   </section>
 
   <!-- Section 3: Anthropic stats -->
   <section class="section-card" id="s-anthropic" aria-label="Anthropic API Usage">
-    <h2 class="section-title">Anthropic API Usage</h2>
+    <div class="section-hdr">
+      <h2 class="section-title">Anthropic API Usage</h2>
+      <button class="json-toggle-btn" data-target="d-anthropic" aria-label="Toggle raw JSON for Anthropic API Usage">{ }</button>
+    </div>
     <div class="section-body loading" id="d-anthropic">Loading…</div>
   </section>
 
   <!-- Section 4: Gmail stats -->
   <section class="section-card" id="s-gmail" aria-label="Gmail API Usage">
-    <h2 class="section-title">Gmail API Usage</h2>
+    <div class="section-hdr">
+      <h2 class="section-title">Gmail API Usage</h2>
+      <button class="json-toggle-btn" data-target="d-gmail" aria-label="Toggle raw JSON for Gmail API Usage">{ }</button>
+    </div>
     <div class="section-body loading" id="d-gmail">Loading…</div>
   </section>
 
   <!-- Section 5: Scheduler -->
   <section class="section-card wide" id="s-scheduler" aria-label="Scheduler Queue">
-    <h2 class="section-title">Scheduler Queue</h2>
+    <div class="section-hdr">
+      <h2 class="section-title">Scheduler Queue</h2>
+      <button class="json-toggle-btn" data-target="d-scheduler" aria-label="Toggle raw JSON for Scheduler Queue">{ }</button>
+    </div>
     <div class="section-body loading" id="d-scheduler">Loading…</div>
   </section>
 
   <!-- Section 6: Deep health -->
   <section class="section-card" id="s-health" aria-label="Deep Health">
-    <h2 class="section-title">Deep Health</h2>
+    <div class="section-hdr">
+      <h2 class="section-title">Deep Health</h2>
+      <button class="json-toggle-btn" data-target="d-health" aria-label="Toggle raw JSON for Deep Health">{ }</button>
+    </div>
     <div class="section-body loading" id="d-health">Loading…</div>
   </section>
 
@@ -237,6 +291,8 @@ footer { text-align: center; padding: 20px; font-size: 10px;
 
 <!-- Version: hardcoded v0.1 — update when PLMKR_VERSION env var exists -->
 <footer>PLMKR &middot; v0.1</footer>
+
+<div id="copy-toast">Copied!</div>
 
 <script>
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -352,6 +408,52 @@ function badge(text, type) {
   return `<span class="badge badge-${esc(type)}" role="img" aria-label="${esc(type)}: ${esc(text)}">${esc(text)}</span>`;
 }
 
+// ── Raw data store (for JSON toggle) ─────────────────────────────────────────
+const _rawStore = {};
+function storeRaw(id, data) { _rawStore[id] = data; }
+
+// ── Copy toast ────────────────────────────────────────────────────────────────
+let _copyTimer = null;
+function showCopyToast(msg = 'Copied!') {
+  const toast = document.getElementById('copy-toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(_copyTimer);
+  _copyTimer = setTimeout(() => toast.classList.remove('show'), 2000);
+}
+
+// ── Click-to-copy: event delegation on diagnostics error list ─────────────────
+document.getElementById('d-diagnostics').addEventListener('click', e => {
+  const row = e.target.closest('li.copyable');
+  if (!row) return;
+  const text = row.dataset.copy || row.textContent.trim();
+  navigator.clipboard?.writeText(text).then(() => showCopyToast('Error copied!'))
+    .catch(() => showCopyToast('Copy unavailable'));
+});
+
+// ── JSON toggle buttons ───────────────────────────────────────────────────────
+const _loaders = {};  // populated after function declarations below
+function _setupJsonToggles() {
+  document.querySelectorAll('.json-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id   = btn.dataset.target;
+      const el   = document.getElementById(id);
+      const show = btn.classList.toggle('active');
+      if (show) {
+        btn.textContent = '← back';
+        const raw = _rawStore[id];
+        el.classList.remove('loading');
+        el.innerHTML = raw !== undefined
+          ? `<pre class="raw-json">${esc(JSON.stringify(raw, null, 2))}</pre>`
+          : '<p class="empty-state">No data loaded yet — trigger a refresh first.</p>';
+      } else {
+        btn.textContent = '{ }';
+        _loaders[id]?.();
+      }
+    });
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Section renderers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -360,6 +462,7 @@ function badge(text, type) {
 async function loadDiagnostics() {
   try {
     const d = await apiFetch('/api/admin/diagnostics');
+    storeRaw('d-diagnostics', d);
     let html = '';
 
     // env_snapshot — show name + present/absent only (never values)
@@ -404,17 +507,18 @@ async function loadDiagnostics() {
       html += `<li><span class="kv-key">${esc(k)}</span><span class="kv-val">${esc(v)}</span></li>`);
     html += '</ul>';
 
-    // recent errors (last 5)
+    // recent errors (last 5) — click any row to copy full JSON to clipboard
     const errs = (d.recent_errors || []).slice(-5);
-    html += '<div class="sub-label">Recent Errors</div>';
+    html += '<div class="sub-label">Recent Errors <span style="color:var(--text-muted);font-size:9px">(click row to copy)</span></div>';
     if (!errs.length) {
-      html += '<p style="color:var(--text-muted);font-size:11px">No recent errors ✓</p>';
+      html += '<p class="empty-state">No recent errors ✓</p>';
     } else {
       html += '<ul class="kv-list">';
       errs.forEach(e => {
-        const ts  = esc((e.ts || e.timestamp || '').slice(0, 19));
-        const msg = esc((e.message || e.msg || JSON.stringify(e)).slice(0, 80));
-        html += `<li><span class="kv-key" style="font-size:10px">${ts}</span><span class="kv-val">${msg}</span></li>`;
+        const ts   = esc((e.ts || e.timestamp || '').slice(0, 19));
+        const msg  = esc((e.message || e.msg || JSON.stringify(e)).slice(0, 80));
+        const full = esc(JSON.stringify(e));
+        html += `<li class="copyable" data-copy="${full}" title="Click to copy full error"><span class="kv-key" style="font-size:10px">${ts}</span><span class="kv-val">${msg}</span></li>`;
       });
       html += '</ul>';
     }
@@ -427,10 +531,11 @@ async function loadDiagnostics() {
 async function loadPerformance() {
   try {
     const d = await apiFetch('/api/admin/diagnostics/performance');
-    const rows = Object.entries(d);
-    if (!rows.length) { sectionContent('d-performance', '<p class="loading">No data yet</p>'); return; }
+    storeRaw('d-performance', d);
+    const rows = Object.entries(d.routes || d || {});
+    if (!rows.length) { sectionContent('d-performance', '<p class="empty-state">No route data yet — make some requests first.</p>'); return; }
 
-    let html = `<table class="data-table" id="perf-table" aria-label="Route performance">
+    let html = `<div class="table-wrap"><table class="data-table" id="perf-table" aria-label="Route performance">
       <thead><tr>
         <th data-col="route" tabindex="0">Route ↕</th>
         <th data-col="count" tabindex="0">Count ↕</th>
@@ -445,7 +550,7 @@ async function loadPerformance() {
         <td>${Number(m.p95||0).toFixed(0)}</td>
         <td>${Number(m.p99||0).toFixed(0)}</td>
       </tr>`);
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     sectionContent('d-performance', html);
 
     // Sortable columns
@@ -475,8 +580,9 @@ async function loadPerformance() {
 async function loadAnthropic() {
   try {
     const d = await apiFetch('/api/admin/diagnostics/anthropic-stats');
-    const models = Object.entries(d);
-    if (!models.length) { sectionContent('d-anthropic', '<p class="loading">No calls recorded</p>'); return; }
+    storeRaw('d-anthropic', d);
+    const models = Object.entries(d.models || d || {});
+    if (!models.length) { sectionContent('d-anthropic', '<p class="empty-state">No Anthropic calls recorded yet.</p>'); return; }
     let total = 0;
     let html = `<table class="data-table" aria-label="Anthropic API usage">
       <thead><tr><th>Model</th><th>Total</th><th>Success</th><th>Retry</th><th>Fail</th></tr></thead><tbody>`;
@@ -494,8 +600,9 @@ async function loadAnthropic() {
 async function loadGmail() {
   try {
     const d = await apiFetch('/api/admin/diagnostics/gmail-stats');
-    const artists = Object.entries(d);
-    if (!artists.length) { sectionContent('d-gmail', '<p class="loading">No calls recorded</p>'); return; }
+    storeRaw('d-gmail', d);
+    const artists = Object.entries(d.artists || d || {});
+    if (!artists.length) { sectionContent('d-gmail', '<p class="empty-state">No Gmail calls recorded yet.</p>'); return; }
     let total = 0;
     let html = `<table class="data-table" aria-label="Gmail API usage">
       <thead><tr><th>Artist ID</th><th>Total</th><th>Success</th><th>Retry</th><th>Fail</th></tr></thead><tbody>`;
@@ -513,6 +620,7 @@ async function loadGmail() {
 async function loadScheduler() {
   try {
     const d = await apiFetch('/api/admin/diagnostics/scheduler');
+    storeRaw('d-scheduler', d);
     let html = '';
 
     // Status counts
@@ -520,35 +628,35 @@ async function loadScheduler() {
     Object.entries(d.counts_24h || {}).forEach(([status, n]) =>
       html += `<div class="count-pill"><span>${n}</span>${esc(status)}</div>`);
     if (!Object.keys(d.counts_24h || {}).length)
-      html += '<span style="color:var(--text-muted);font-size:11px">No actions in last 24h</span>';
+      html += '<span class="empty-state">No actions in last 24h</span>';
     html += '</div>';
 
     // Next pending
     const pending = d.next_pending || [];
     html += '<div class="sub-label">Next pending</div>';
     if (!pending.length) {
-      html += '<p style="color:var(--text-muted);font-size:11px">Queue empty</p>';
+      html += '<p class="empty-state">Queue empty</p>';
     } else {
-      html += `<table class="data-table" aria-label="Pending scheduler actions">
+      html += `<div class="table-wrap"><table class="data-table" aria-label="Pending scheduler actions">
         <thead><tr><th>ID</th><th>Release</th><th>Type</th><th>Scheduled for</th></tr></thead><tbody>`;
       pending.slice(0,10).forEach(a =>
         html += `<tr><td>${esc(a.id)}</td><td>${esc(a.release_id)}</td><td>${esc(a.action_type)}</td><td>${esc((a.scheduled_for||'').slice(0,16))}</td></tr>`);
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
     }
 
     // Last completed
     const completed = d.last_completed || [];
     html += '<div class="sub-label">Last completed</div>';
     if (!completed.length) {
-      html += '<p style="color:var(--text-muted);font-size:11px">No completed actions yet</p>';
+      html += '<p class="empty-state">No completed actions yet</p>';
     } else {
-      html += `<table class="data-table" aria-label="Completed scheduler actions">
+      html += `<div class="table-wrap"><table class="data-table" aria-label="Completed scheduler actions">
         <thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Executed at</th></tr></thead><tbody>`;
       completed.slice(0,20).forEach(a => {
         const st = a.status === 'done' ? 'green' : 'red';
         html += `<tr><td>${esc(a.id)}</td><td>${esc(a.action_type)}</td><td>${badge(a.status, st)}</td><td>${esc((a.executed_at||'').slice(0,16))}</td></tr>`;
       });
-      html += '</tbody></table>';
+      html += '</tbody></table></div>';
     }
 
     sectionContent('d-scheduler', html);
@@ -560,6 +668,7 @@ async function loadHealth() {
   try {
     const resp = await fetch('/api/admin/health/deep');
     const d = await resp.json();
+    storeRaw('d-health', d);
     const ok = resp.ok;
     const cls = ok ? 'health-ok' : 'health-err';
     const label = ok ? '● HEALTHY' : '● DEGRADED';
@@ -585,6 +694,15 @@ function refreshAll() {
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (function boot() {
+  // Register loader map for JSON toggle back-navigation
+  _loaders['d-diagnostics'] = loadDiagnostics;
+  _loaders['d-performance']  = loadPerformance;
+  _loaders['d-anthropic']    = loadAnthropic;
+  _loaders['d-gmail']        = loadGmail;
+  _loaders['d-scheduler']    = loadScheduler;
+  _loaders['d-health']       = loadHealth;
+
+  _setupJsonToggles();
   startTsInterval();
   if (!apiKey()) { showModal(); return; }
   refreshAll();
