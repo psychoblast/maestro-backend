@@ -271,6 +271,58 @@ For emergency: Railway also supports one-click rollback in the Deployments panel
 
 ---
 
+## Part I — Running DB Seeds Against Railway (one-time per deployment)
+
+Seed scripts populate the curator, PR-contact, and booking-contact databases. They are baked
+into the Docker image at `/app/` (covered by R-31 fix). To run them against the live Railway DB
+after a fresh deploy:
+
+**Preferred approach — API endpoints (no shell access required):**
+
+```bash
+# Seed curators from the bundled JSON (data/curators_seed.json is in the image)
+curl -X POST https://<railway-url>/api/curators/seed \
+  -H "X-API-Key: $PLMKR_API_KEY"
+
+# Seed PR contacts (if endpoint exists)
+curl -X POST https://<railway-url>/api/pr-contacts/seed \
+  -H "X-API-Key: $PLMKR_API_KEY"
+
+# Seed booking contacts (if endpoint exists)
+curl -X POST https://<railway-url>/api/booking-contacts/seed \
+  -H "X-API-Key: $PLMKR_API_KEY"
+```
+
+**Alternative — Railway shell (requires seed scripts at /app):**
+
+If the API endpoint does not yet exist for a given seed type, you can run the scripts directly
+via Railway's shell. Open Railway → Service → Settings → Shell, then:
+
+```bash
+# All seed scripts are at /app/ in the image
+cd /app
+python3 seed_curators.py
+python3 seed_pr_contacts.py
+python3 seed_booking_contacts.py
+```
+
+**Verification:**
+
+```bash
+# Confirm curators were seeded (returns list)
+curl -H "X-API-Key: $PLMKR_API_KEY" https://<railway-url>/api/curators
+```
+
+**Notes:**
+
+- Seeds are idempotent via UNIQUE constraints — re-running them is safe.
+- The `/data` Railway volume must be attached (Part C) before seeding; otherwise the SQLite DB
+  is ephemeral and seeds are lost on the next redeploy.
+- Local verification: `make build-test && make verify-seeds-in-image` confirms seed scripts are
+  present in the image before deploying.
+
+---
+
 ## Auth Bypass Paths (No X-API-Key Required)
 
 ```
