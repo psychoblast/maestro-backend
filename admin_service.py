@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import HTMLResponse
 
 from logging_config import get_ring_buffer
 
@@ -23,7 +24,8 @@ log = logging.getLogger("admin_service")
 
 router = APIRouter()
 
-_DB_PATH = Path(os.environ.get("DB_PATH", "/data/memory.db"))
+_DB_PATH     = Path(os.environ.get("DB_PATH", "/data/memory.db"))
+_STATIC_DIR  = Path(__file__).parent / "static"
 
 
 def _conn():
@@ -423,3 +425,21 @@ def admin_health_deep(response: Response):
         "disk_usage_pct":                _disk_usage_pct(),
         **_security_posture(),
     }
+
+
+@router.get("/admin/dashboard", tags=["admin"], response_class=HTMLResponse)
+def admin_dashboard():
+    """
+    In-app admin monitoring dashboard — server-rendered HTML.
+
+    Requires X-API-Key (same middleware as all protected routes).
+    The page JS stores the key in sessionStorage for in-page API fetches.
+
+    Decision: static HTML file at static/admin_dashboard.html (no Jinja2 — existing
+    codebase has no templates dir; static/ is already copied in Dockerfile).
+    """
+    html_path = _STATIC_DIR / "admin_dashboard.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=503, detail="Dashboard HTML not found in static/")
+    log.info("dashboard_served", extra={"event": "dashboard_served", "svc": "admin_service"})
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
