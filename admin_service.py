@@ -11,7 +11,7 @@ import shutil
 import sqlite3
 import sys
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -324,6 +324,64 @@ def admin_diagnostics_performance():
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "routes":    get_all_percentiles(),
+    }
+
+
+def _scheduler_queue_diagnostics() -> dict:
+    """Query campaign_actions for scheduler queue state. Returns empty lists on OperationalError."""
+    import json as _json
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    try:
+        conn = _conn()
+        cur = conn.cursor()
+
+        cur.execute(
+            "SELECT id, release_id, action_type, scheduled_for "
+            "FROM campaign_actions WHERE status='pending' "
+            "ORDER BY scheduled_for ASC LIMIT 10"
+        )
+        next_pending = [
+            {"id": r[0], "release_id": r[1], "action_type": r[2], "scheduled_for": r[3]}
+            for r in cur.fetchall()
+        ]
+
+        cur.execute(
+            "SELECT id, release_id, action_type, executed_at, status, result_json "
+            "FROM campaign_actions WHERE status IN ('done', 'failed') "
+            "ORDER BY executed_at DESC LIMIT 20"
+        )
+        last_completed = [
+            {
+                "id": r[0], "release_id": r[1], "action_type": r[2],
+                "executed_at": r[3], "status": r[4],
+                "result": _json.loads(r[5] or "{}"),
+            }
+            for r in cur.fetchall()
+        ]
+
+        cur.execute(
+            "SELECT status, COUNT(*) FROM campaign_actions "
+            "WHERE created_at >= ? GROUP BY status",
+            (cutoff_24h,)
+        )
+        counts_24h = {row[0]: row[1] for row in cur.fetchall()}
+
+        conn.close()
+        return {
+            "next_pending":   next_pending,
+            "last_completed": last_completed,
+            "counts_24h":     counts_24h,
+        }
+    except sqlite3.OperationalError:
+        return {"next_pending": [], "last_completed": [], "counts_24h": {}}
+
+
+@router.get("/api/admin/diagnostics/scheduler", tags=["admin"])
+def admin_diagnostics_scheduler():
+    """Scheduler queue state: next 10 pending, last 20 completed, 24h status counts. Auth required."""
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        **_scheduler_queue_diagnostics(),
     }
 
 

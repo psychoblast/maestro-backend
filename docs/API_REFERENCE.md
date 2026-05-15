@@ -19,6 +19,7 @@ Sorted alphabetically by path.
 | GET | `/api/admin/diagnostics/anthropic-stats` | Yes (X-API-Key) | Admin Anthropic Stats |
 | GET | `/api/admin/diagnostics/gmail-stats` | Yes (X-API-Key) | Admin Gmail Stats |
 | GET | `/api/admin/diagnostics/performance` | Yes (X-API-Key) | Admin Diagnostics Performance |
+| GET | `/api/admin/diagnostics/scheduler` | Yes (X-API-Key) | Admin Diagnostics Scheduler |
 | GET | `/api/admin/health/deep` | No | Admin Health Deep |
 | GET | `/api/admin/stats` | Yes (X-API-Key) | Admin Stats |
 | GET | `/api/agents` | Yes (X-API-Key) | List Agents |
@@ -698,6 +699,12 @@ Sorted alphabetically by path.
 - **Summary:** Admin Diagnostics Performance — per-route p50/p95/p99 latency percentiles (rolling 1000 requests)
 - **Auth:** Yes (X-API-Key)
 - **Response:** 200 — route-keyed latency percentile object
+
+#### GET /api/admin/diagnostics/scheduler
+
+- **Summary:** Admin Diagnostics Scheduler — scheduler queue state: next 10 pending, last 20 completed, 24h status counts
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — `{timestamp, next_pending[{id, release_id, action_type, scheduled_for}], last_completed[{id, release_id, action_type, executed_at, status, result}], counts_24h{status: count}}`
 
 #### GET /api/admin/diagnostics
 
