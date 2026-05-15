@@ -2038,16 +2038,33 @@ STRIPE_SECRET_KEY        = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET    = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 STRIPE_DEV_ALLOW_UNSIGNED = os.environ.get("STRIPE_DEV_ALLOW_UNSIGNED", "").lower() == "true"
 STRIPE_AVAILABLE         = bool(STRIPE_SECRET_KEY)
-APP_BASE_URL             = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
-
-
-APP_BASE_URL            = os.environ.get("APP_BASE_URL", "http://192.168.18.59:8765")
+APP_BASE_URL             = os.environ.get("APP_BASE_URL") or None   # R-11: None if unset
 _RAILWAY_ENVIRONMENT    = os.environ.get("RAILWAY_ENVIRONMENT", "")
 
 # Refuse to start if the dev bypass is active in a Railway production environment.
 # STRIPE_DEV_ALLOW_UNSIGNED skips webhook signature verification — safe in local dev,
 # catastrophic if left on in production (accepts forged events from anyone).
 _on_railway = bool(_RAILWAY_ENVIRONMENT)
+
+# R-11: hard-fail in production if APP_BASE_URL is unset; fall back in dev.
+if APP_BASE_URL is None:
+    if _on_railway:
+        print("=" * 60)
+        print("FATAL: APP_BASE_URL is not set on Railway.")
+        print("  OAuth redirect URIs, billing links, and audio URLs require")
+        print("  a public HTTPS base URL. Set APP_BASE_URL in Railway Variables:")
+        print("  e.g. https://your-service.up.railway.app")
+        print("=" * 60)
+        import sys
+        sys.exit(1)
+    else:
+        APP_BASE_URL = "http://localhost:8000"
+        log.warning("boot_warning", extra={
+            "event":  "boot_warning",
+            "key":    "APP_BASE_URL",
+            "detail": "unset — falling back to http://localhost:8000 (set before deploying to Railway)",
+        })
+
 if _on_railway and STRIPE_DEV_ALLOW_UNSIGNED:
     print("=" * 60)
     print("FATAL: STRIPE_DEV_ALLOW_UNSIGNED=true detected on Railway.")
