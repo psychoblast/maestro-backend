@@ -11,6 +11,7 @@ Simulates a complete week for one artist across all four phases:
 
 import json
 import uuid
+from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
@@ -228,12 +229,16 @@ def test_full_artist_journey(client):
     # PHASE 3 — Weekly Report aggregating all activity
     # ═══════════════════════════════════════════════════════════════════════
 
+    # Use a dynamic window that always covers records created during this test run.
+    _now = datetime.now(timezone.utc)
+    _week_start = (_now - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    _week_end   = (_now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
     with patch("anthropic.Anthropic") as mc:
         mc.return_value.messages.create.return_value = _claude_json_response(REPORT_ANALYSIS)
         r = client.post("/api/reports/weekly/generate", json={
             "artist_id":  ARTIST_ID,
-            "week_start": "2026-05-04T00:00:00",
-            "week_end":   "2026-05-10T23:59:59",
+            "week_start": _week_start,
+            "week_end":   _week_end,
         })
     assert r.status_code == 200, r.text
     report = r.json()
