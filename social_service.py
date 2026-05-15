@@ -405,6 +405,10 @@ async def buffer_callback(code: str, state: str):
         raise HTTPException(status_code=503, detail="Buffer OAuth not configured")
     artist_id = state
     try:
+        # PERF-MAY14: blocking httpx.post() inside async def — blocks the event loop
+        # during the OAuth token exchange (~200–500ms). Fix: replace with
+        # `async with httpx.AsyncClient() as c: resp = await c.post(...)`.
+        # Low impact at current traffic; defer until Buffer OAuth is actively used.
         import httpx
         resp = httpx.post(
             _BUFFER_TOKEN_URL,
