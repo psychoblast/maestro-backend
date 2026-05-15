@@ -1,444 +1,914 @@
-# PLMKR API Reference
+> **Generated 2026-05-14 from main `a1afbe0`. Source of truth: `app.openapi()` at runtime.**
+> This file is regenerated automatically. Do not edit manually.
 
-Base URL: `https://YOUR-RAILWAY-URL` (replace with your Railway deployment URL)
+# PLMKR — Playmaker API Reference
 
-All write endpoints accept and return `application/json`. Timestamps are ISO 8601 UTC.
+**Version:** 3.0.0 | **Base URL:** Railway deploy root
 
----
-
-## Health
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Liveness check — returns `{"status": "ok"}` |
+All authenticated endpoints require the header `X-API-Key: <your-key>`.
 
 ---
 
-## Phase 1 — Gmail OAuth
+## Endpoint Index
 
-| Method | Path | Query Params | Description |
-|--------|------|--------------|-------------|
-| GET | `/api/gmail/auth` | `artist_id` | Redirect to Google OAuth consent screen |
-| GET | `/api/gmail/callback` | `code`, `state` | OAuth callback — exchanges code for tokens |
-| GET | `/api/gmail/status` | `artist_id` | Check whether Gmail is connected |
-| POST | `/api/gmail/send` | — | Send an email from the artist's Gmail account |
+Sorted alphabetically by path.
 
-### POST /api/gmail/send
-```json
-{
-  "artist_id": "string",
-  "to": "recipient@example.com",
-  "subject": "Email subject",
-  "body": "Plain text body"
-}
-```
-Returns: `{"message_id": "...", "thread_id": "..."}`
-
----
-
-## Phase 1 — Curators
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/curators` | List curators (query: `genre`, `tier`) |
-| GET | `/api/curators/{id}` | Get single curator |
-| POST | `/api/curators` | Create curator (returns 201) |
-| PATCH | `/api/curators/{id}` | Update curator fields |
-| POST | `/api/curators/seed` | Seed all curators from `data/curators_seed.json` |
-
-### POST /api/curators
-```json
-{
-  "name": "Jordan Lee",
-  "outlet": "Indie Discovery Playlist",
-  "genres": ["indie", "pop"],
-  "tier": "A|B|C",
-  "contact_email": "jordan@example.com",
-  "notes": "optional"
-}
-```
-
----
-
-## Phase 1 — Pitch Lifecycle
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/pitches` | List pitches (query: `artist_id`, `status`) |
-| GET | `/api/pitches/{id}` | Get pitch + interactions |
-| PATCH | `/api/pitches/{id}` | Update pitch fields |
-| POST | `/api/pitches/generate` | Generate pitch email via Claude (dry run) |
-| POST | `/api/pitches/batch` | Generate + send pitches to multiple curators |
-| POST | `/api/inbox/scan` | Scan Gmail inbox for curator replies |
-| POST | `/api/pitches/followups/queue` | Queue follow-up emails for unanswered pitches |
-
-### POST /api/pitches/generate
-```json
-{ "artist_id": "string", "curator_id": "string" }
-```
-Returns: `{"subject": "...", "body": "..."}`
-
-### POST /api/pitches/batch
-```json
-{
-  "artist_id": "string",
-  "curator_ids": ["uuid1", "uuid2"]
-}
-```
-Returns: `{"sent": 2, "failed": 0, "errors": [], "pitch_ids": ["uuid1", "uuid2"]}`
-
-### POST /api/inbox/scan
-Query param: `artist_id`
-
-Returns:
-```json
-{
-  "scanned": 10,
-  "matched": 2,
-  "classified": [
-    { "pitch_id": "uuid", "from": "curator@example.com", "sentiment": "positive", "summary": "..." }
-  ]
-}
-```
-
-**Pitch statuses:** `draft` → `sent` → `replied` | `passed` | `failed`
-
----
-
-## Phase 2 — PR Contacts & Outreach
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/pr-contacts` | List PR contacts (query: `tier`, `outlet_type`) |
-| GET | `/api/pr-contacts/{id}` | Get single PR contact |
-| POST | `/api/pr-contacts` | Create PR contact (returns 201) |
-| PATCH | `/api/pr-contacts/{id}` | Update PR contact |
-| POST | `/api/pr-contacts/seed` | Seed from `data/pr_contacts_seed.json` |
-| GET | `/api/pr-outreach` | List outreach records (query: `artist_id`, `status`) |
-| GET | `/api/pr-outreach/{id}` | Get outreach + interactions |
-| PATCH | `/api/pr-outreach/{id}` | Update outreach fields |
-| POST | `/api/pr-outreach/generate` | Generate PR email via Claude (dry run) |
-| POST | `/api/pr-outreach/batch` | Generate + send PR emails to multiple contacts |
-| POST | `/api/pr-outreach/scan` | Scan Gmail inbox for PR replies |
-| POST | `/api/pr-outreach/followups/queue` | Queue follow-up emails |
-
-### POST /api/pr-contacts
-```json
-{
-  "name": "Alex Rivera",
-  "outlet_type": "blog|magazine|podcast|newsletter",
-  "outlet_name": "Indie Pulse Blog",
-  "genres": ["indie"],
-  "tier": "A|B|C",
-  "contact_email": "alex@indiepulse.example.com",
-  "beat": "emerging artists"
-}
-```
-
-### POST /api/pr-outreach/batch
-```json
-{
-  "artist_id": "string",
-  "contact_ids": ["uuid1", "uuid2"],
-  "release_context": { "release_name": "New EP", "release_date": "2026-06-01" }
-}
-```
-Returns: `{"sent": 2, "failed": 0, "errors": [], "outreach_ids": ["uuid1", "uuid2"]}`
-
-**Outreach statuses:** `draft` → `sent` → `replied` | `featured` | `passed` | `failed`
+| Method | Path | Auth Required | Summary |
+|--------|------|---------------|---------|
+| GET | `/api/admin/diagnostics` | Yes (X-API-Key) | Admin Diagnostics |
+| GET | `/api/admin/diagnostics/anthropic-stats` | Yes (X-API-Key) | Admin Anthropic Stats |
+| GET | `/api/admin/diagnostics/gmail-stats` | Yes (X-API-Key) | Admin Gmail Stats |
+| GET | `/api/admin/diagnostics/performance` | Yes (X-API-Key) | Admin Diagnostics Performance |
+| GET | `/api/admin/health/deep` | No | Admin Health Deep |
+| GET | `/api/admin/stats` | Yes (X-API-Key) | Admin Stats |
+| GET | `/api/agents` | Yes (X-API-Key) | List Agents |
+| GET | `/api/artist` | Yes (X-API-Key) | Get Artist |
+| GET | `/api/artist/lookup` | Yes (X-API-Key) | Lookup Artist |
+| POST | `/api/artist/save` | Yes (X-API-Key) | Save Artist |
+| POST | `/api/auth/send-otp` | Yes (X-API-Key) | Send Otp |
+| POST | `/api/auth/verify-otp` | Yes (X-API-Key) | Verify Otp |
+| GET | `/api/avatar/status` | Yes (X-API-Key) | Avatar Status |
+| POST | `/api/avatar/talk` | Yes (X-API-Key) | Avatar Talk |
+| POST | `/api/billing/create-checkout` | Yes (X-API-Key) | Create Checkout |
+| GET | `/api/billing/history` | Yes (X-API-Key) | Get Billing History |
+| POST | `/api/billing/upgrade` | Yes (X-API-Key) | Billing Upgrade |
+| POST | `/api/billing/webhook` | Yes (X-API-Key) | Billing Webhook |
+| GET | `/api/booking-contacts` | Yes (X-API-Key) | List Booking Contacts |
+| POST | `/api/booking-contacts` | Yes (X-API-Key) | Create Booking Contact |
+| GET | `/api/booking-contacts/{contact_id}` | Yes (X-API-Key) | Get Booking Contact |
+| PATCH | `/api/booking-contacts/{contact_id}` | Yes (X-API-Key) | Patch Booking Contact |
+| POST | `/api/booking-contacts/seed` | Yes (X-API-Key) | Seed Booking Contacts Endpoint |
+| GET | `/api/booking-inquiries` | Yes (X-API-Key) | List Booking Inquiries |
+| GET | `/api/booking-inquiries/{inquiry_id}` | Yes (X-API-Key) | Get Booking Inquiry |
+| PATCH | `/api/booking-inquiries/{inquiry_id}` | Yes (X-API-Key) | Patch Booking Inquiry |
+| POST | `/api/booking-inquiries/batch` | Yes (X-API-Key) | Send Booking Emails |
+| POST | `/api/booking-inquiries/followups/queue` | Yes (X-API-Key) | Queue Booking Followups |
+| POST | `/api/booking-inquiries/generate` | Yes (X-API-Key) | Api Generate Booking |
+| POST | `/api/booking-inquiries/scan` | Yes (X-API-Key) | Api Scan Booking Inbox |
+| GET | `/api/buffer/auth` | Yes (X-API-Key) | Buffer Auth |
+| GET | `/api/buffer/callback` | Yes (X-API-Key) | Buffer Callback |
+| GET | `/api/buffer/status` | Yes (X-API-Key) | Buffer Status |
+| POST | `/api/chat_stream` | Yes (X-API-Key) | Chat Stream |
+| GET | `/api/curators` | Yes (X-API-Key) | List Curators |
+| POST | `/api/curators` | Yes (X-API-Key) | Create Curator |
+| GET | `/api/curators/{curator_id}` | Yes (X-API-Key) | Get Curator |
+| PATCH | `/api/curators/{curator_id}` | Yes (X-API-Key) | Patch Curator |
+| POST | `/api/curators/seed` | Yes (X-API-Key) | Seed Curators Endpoint |
+| GET | `/api/gmail/auth` | Yes (X-API-Key) | Gmail Auth |
+| GET | `/api/gmail/callback` | Yes (X-API-Key) | Gmail Callback |
+| POST | `/api/gmail/send` | Yes (X-API-Key) | Api Send Email |
+| GET | `/api/gmail/status` | Yes (X-API-Key) | Gmail Status |
+| POST | `/api/greet` | Yes (X-API-Key) | Greet |
+| POST | `/api/handoff` | Yes (X-API-Key) | Handoff |
+| GET | `/api/health` | Yes (X-API-Key) | Api Health |
+| GET | `/api/history` | Yes (X-API-Key) | Get History |
+| POST | `/api/inbox/scan` | Yes (X-API-Key) | Api Scan Inbox |
+| POST | `/api/inbox/scan-all` | Yes (X-API-Key) | Api Scan All Inbox |
+| GET | `/api/notifications/{artist_id}` | Yes (X-API-Key) | Get Notifications |
+| POST | `/api/notifications/register` | Yes (X-API-Key) | Register Push Token |
+| POST | `/api/notifications/send` | Yes (X-API-Key) | Send Notification |
+| GET | `/api/pitches` | Yes (X-API-Key) | List Pitches |
+| GET | `/api/pitches/{pitch_id}` | Yes (X-API-Key) | Get Pitch |
+| PATCH | `/api/pitches/{pitch_id}` | Yes (X-API-Key) | Patch Pitch |
+| POST | `/api/pitches/batch` | Yes (X-API-Key) | Send Pitch Emails |
+| POST | `/api/pitches/followups/queue` | Yes (X-API-Key) | Queue Followups |
+| POST | `/api/pitches/generate` | Yes (X-API-Key) | Api Generate Pitch |
+| GET | `/api/pr-contacts` | Yes (X-API-Key) | List Pr Contacts |
+| POST | `/api/pr-contacts` | Yes (X-API-Key) | Create Pr Contact |
+| GET | `/api/pr-contacts/{contact_id}` | Yes (X-API-Key) | Get Pr Contact |
+| PATCH | `/api/pr-contacts/{contact_id}` | Yes (X-API-Key) | Patch Pr Contact |
+| POST | `/api/pr-contacts/seed` | Yes (X-API-Key) | Seed Pr Contacts Endpoint |
+| GET | `/api/pr-outreach` | Yes (X-API-Key) | List Pr Outreach |
+| GET | `/api/pr-outreach/{outreach_id}` | Yes (X-API-Key) | Get Pr Outreach |
+| PATCH | `/api/pr-outreach/{outreach_id}` | Yes (X-API-Key) | Patch Pr Outreach |
+| POST | `/api/pr-outreach/batch` | Yes (X-API-Key) | Send Pr Emails |
+| POST | `/api/pr-outreach/followups/queue` | Yes (X-API-Key) | Queue Pr Followups |
+| POST | `/api/pr-outreach/generate` | Yes (X-API-Key) | Api Generate Pr |
+| POST | `/api/pr-outreach/scan` | Yes (X-API-Key) | Api Scan Pr Inbox |
+| GET | `/api/releases` | Yes (X-API-Key) | List Releases |
+| POST | `/api/releases` | Yes (X-API-Key) | Create Release |
+| GET | `/api/releases/{release_id}` | Yes (X-API-Key) | Get Release |
+| PATCH | `/api/releases/{release_id}` | Yes (X-API-Key) | Patch Release |
+| GET | `/api/releases/{release_id}/campaign` | Yes (X-API-Key) | Get Campaign |
+| POST | `/api/releases/{release_id}/campaign/execute-due` | Yes (X-API-Key) | Execute Due Actions |
+| POST | `/api/releases/{release_id}/generate-campaign` | Yes (X-API-Key) | Generate Campaign |
+| GET | `/api/reports/weekly` | Yes (X-API-Key) | List Weekly Reports |
+| GET | `/api/reports/weekly/{report_id}` | Yes (X-API-Key) | Get Weekly Report |
+| POST | `/api/reports/weekly/generate` | Yes (X-API-Key) | Api Generate Weekly Report |
+| GET | `/api/social/posts` | Yes (X-API-Key) | List Posts |
+| POST | `/api/social/posts` | Yes (X-API-Key) | Create Post |
+| GET | `/api/social/posts/{post_id}` | Yes (X-API-Key) | Get Post |
+| PATCH | `/api/social/posts/{post_id}` | Yes (X-API-Key) | Patch Post |
+| DELETE | `/api/social/posts/{post_id}` | Yes (X-API-Key) | Delete Post |
+| POST | `/api/social/posts/batch` | Yes (X-API-Key) | Schedule Posts |
+| POST | `/api/social/posts/generate` | Yes (X-API-Key) | Api Generate Post |
+| POST | `/api/transcribe` | Yes (X-API-Key) | Transcribe |
+| GET | `/api/tts` | Yes (X-API-Key) | Tts Endpoint |
+| POST | `/api/tts/cancel` | Yes (X-API-Key) | Tts Cancel |
+| GET | `/api/tts/status` | Yes (X-API-Key) | Tts Status |
+| POST | `/api/tts/synth` | Yes (X-API-Key) | Tts Synth |
+| GET | `/health` | No | Liveness check |
 
 ---
 
-## Phase 2 — Booking Contacts & Inquiries
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/booking-contacts` | List booking contacts (query: `tier`, `venue_type`) |
-| GET | `/api/booking-contacts/{id}` | Get single booking contact |
-| POST | `/api/booking-contacts` | Create booking contact (returns 201) |
-| PATCH | `/api/booking-contacts/{id}` | Update booking contact |
-| POST | `/api/booking-contacts/seed` | Seed from `data/booking_contacts_seed.json` |
-| GET | `/api/booking-inquiries` | List inquiries (query: `artist_id`, `status`) |
-| GET | `/api/booking-inquiries/{id}` | Get inquiry + interactions |
-| PATCH | `/api/booking-inquiries/{id}` | Update inquiry fields |
-| POST | `/api/booking-inquiries/generate` | Generate booking email via Claude (dry run) |
-| POST | `/api/booking-inquiries/batch` | Generate + send booking emails |
-| POST | `/api/booking-inquiries/scan` | Scan Gmail for booking replies |
-| POST | `/api/booking-inquiries/followups/queue` | Queue follow-up emails |
-| POST | `/api/inbox/scan-all` | Unified scan: pitches + PR + booking in one call |
-
-### POST /api/booking-contacts
-```json
-{
-  "name": "Sam Torres",
-  "venue_name": "The Local Spot",
-  "venue_type": "club|festival|theater|arena|bar",
-  "city": "Brooklyn",
-  "capacity": 500,
-  "genres": ["indie"],
-  "tier": "A|B|C",
-  "contact_email": "sam@venue.example.com"
-}
-```
-
-### POST /api/booking-inquiries/batch
-```json
-{
-  "artist_id": "string",
-  "contact_ids": ["uuid1", "uuid2"],
-  "show_context": { "preferred_dates": "June 2026", "set_length_minutes": 45 }
-}
-```
-Returns: `{"sent": 2, "failed": 0, "errors": [], "inquiry_ids": ["uuid1", "uuid2"]}`
-
-**Inquiry statuses:** `draft` → `sent` → `replied` | `booked` | `passed` | `failed`
-
-### POST /api/inbox/scan-all
-Query param: `artist_id`
-
-Returns:
-```json
-{
-  "artist_id": "string",
-  "pitch": { "scanned": 10, "matched": 1, "classified": [...] },
-  "pr": { "scanned": 10, "matched": 0, "classified": [] },
-  "booking": { "scanned": 10, "matched": 1, "classified": [...] },
-  "total_matched": 2
-}
-```
+## Endpoint Groups
 
 ---
 
-## Phase 3 — Social Posts
+### health — Liveness check
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/social/posts` | List posts (query: `artist_id`, `platform`, `status`) |
-| GET | `/api/social/posts/{id}` | Get single post |
-| POST | `/api/social/posts` | Create post manually (returns 201) |
-| PATCH | `/api/social/posts/{id}` | Update post (status, posted_at, post_url) |
-| DELETE | `/api/social/posts/{id}` | Delete post (returns 204) |
-| POST | `/api/social/posts/generate` | Generate post via Claude (dry run) |
-| POST | `/api/social/posts/batch` | Generate + schedule posts for multiple platforms |
+#### GET /health
 
-### POST /api/social/posts/generate
-```json
-{
-  "artist_id": "string",
-  "platform": "twitter|instagram|tiktok|facebook",
-  "context": { "release": "new single" },
-  "tone": "authentic|hype|reflective|promotional"
-}
-```
-Returns: `{"content": "...", "hashtags": ["..."], "best_time": "18:00", "artist_id": "...", "platform": "..."}`
-
-**Platform character limits:** Twitter: 280 · Instagram/TikTok: 2200 · Facebook: 1000
-
-### POST /api/social/posts/batch
-```json
-{
-  "artist_id": "string",
-  "platforms": ["twitter", "instagram"],
-  "context": { "release": "new EP" },
-  "tone": "authentic",
-  "posts_per_platform": 3,
-  "schedule_buffer": false,
-  "buffer_profile_ids": [],
-  "start_date": "2026-05-15"
-}
-```
-Returns: `{"generated": 6, "scheduled_via_buffer": 0, "errors": [], "post_ids": [...]}`
-
-**Post statuses:** `draft` → `scheduled` → `posted`
+- **Summary:** Liveness check — returns 200 OK when the service is running
+- **Auth:** No
+- **Query params:** none
+- **Response:** 200 `{}` — service is up
 
 ---
 
-## Phase 3 — Buffer OAuth
+### gmail — Gmail OAuth 2.0 connect/disconnect
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/buffer/auth` | Redirect to Buffer OAuth consent screen |
-| GET | `/api/buffer/callback` | Buffer OAuth callback (exchange code for tokens) |
-| GET | `/api/buffer/status` | Check whether Buffer is connected |
+#### GET /api/gmail/auth
 
----
+- **Summary:** Gmail Auth — redirect artist to Google OAuth consent screen
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — redirect or OAuth URL
 
-## Phase 3 — Weekly Reports
+#### GET /api/gmail/callback
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/reports/weekly` | List reports (query: `artist_id`, `limit`) |
-| GET | `/api/reports/weekly/{id}` | Get single report |
-| POST | `/api/reports/weekly/generate` | Generate weekly report via Claude Sonnet |
+- **Summary:** Gmail Callback — exchange OAuth code for tokens and persist in artist profile
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `code` (string, required), `state` (string, required)
+- **Response:** 200 — tokens stored confirmation
 
-### POST /api/reports/weekly/generate
-```json
-{
-  "artist_id": "string",
-  "week_start": "2026-05-04T00:00:00",
-  "week_end": "2026-05-10T23:59:59"
-}
-```
-If `week_start`/`week_end` are omitted, defaults to the previous Mon–Sun.
+#### GET /api/gmail/status
 
-Returns:
-```json
-{
-  "id": "uuid",
-  "artist_id": "string",
-  "week_start": "2026-05-04T00:00:00",
-  "week_end": "2026-05-10T23:59:59",
-  "headline": "Strong week across all channels",
-  "highlights": ["3 pitches sent", "1 PR reply", "4 social posts"],
-  "insights": "...",
-  "recommendations": "...",
-  "momentum_score": 7,
-  "summary": {
-    "pitches":     { "sent": 2, "replied": 1, "reply_rate": 0.33 },
-    "pr_outreach": { "sent": 2, "replied": 0, "featured": 0 },
-    "booking":     { "sent": 2, "replied": 1, "booked": 0 },
-    "social":      { "posted": 0, "scheduled": 4 }
-  },
-  "generated_at": "2026-05-10T18:00:00+00:00"
-}
-```
+- **Summary:** Gmail Status — return whether artist has active Gmail tokens
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — `{ connected: bool }`
 
-`momentum_score`: 1 (stalled) → 5 (steady) → 10 (breakthrough week)
+#### POST /api/gmail/send
+
+- **Summary:** Api Send Email — send a one-off email via artist's connected Gmail account
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `to` (string, required)
+  - `subject` (string, required)
+  - `body` (string, required)
+- **Response:** 200 — send confirmation
 
 ---
 
----
+### curators — Curator contact management
 
-## Phase 4 — Release Campaign Orchestration
+#### GET /api/curators
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/releases` | Create a release |
-| GET | `/api/releases` | List releases (`?artist_id=`) |
-| GET | `/api/releases/{id}` | Get one release |
-| PATCH | `/api/releases/{id}` | Update release fields |
-| POST | `/api/releases/{id}/generate-campaign` | Generate campaign actions from release date |
-| GET | `/api/releases/{id}/campaign` | List campaign actions with status |
-| POST | `/api/releases/{id}/campaign/execute-due` | Execute all actions due now |
+- **Summary:** List Curators — return all curators, optionally filtered
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `genre` (string, optional), `tier` (string, optional)
+- **Response:** 200 — array of curator objects
 
-### POST /api/releases
-```json
-{
-  "artist_id":    "string",
-  "title":        "Album Title",
-  "release_date": "2026-06-01",
-  "genre":        "indie",
-  "mood":         "melancholic"
-}
-```
+#### POST /api/curators
 
-### POST /api/releases/{id}/generate-campaign — Response
-```json
-{
-  "release_id":       "uuid",
-  "actions_created":  21,
-  "status":           "active"
-}
-```
+- **Summary:** Create Curator — add a new curator to the database
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `name` (string, required)
+  - `contact_email` (string, required)
+  - `outlet` (string, optional, default `""`)
+  - `genres` (array of string, optional, default `[]`)
+  - `tier` (string, optional, default `"C"`)
+  - `notes` (string, optional)
+  - `response_rate` (number, optional, default `0.0`)
+- **Response:** 201 — created curator object
 
-### GET /api/releases/{id}/campaign — Response
-```json
-{
-  "release_id": "uuid",
-  "actions": [
-    {
-      "id":            "uuid",
-      "action_type":   "pitch_curators",
-      "scheduled_for": "2026-05-18T00:00:00+00:00",
-      "status":        "pending",
-      "payload":       { "artist_id": "...", "tier_filter": ["A","B"] }
-    }
-  ],
-  "counts": { "total": 21, "pending": 21, "done": 0, "failed": 0 }
-}
-```
+#### GET /api/curators/{curator_id}
 
-**Action types:**
-- `pitch_curators` — sends curator pitch batch (Phase 1)
-- `pr_outreach` — sends PR outreach batch (Phase 2)
-- `booking_inquiry` — sends venue booking batch (Phase 2)
-- `social_post_schedule` — generates social posts (Phase 3)
+- **Summary:** Get Curator — fetch a single curator by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `curator_id` (string, required)
+- **Response:** 200 — curator object
 
-**Campaign schedule relative to release_date:**
-- `-21d` booking_inquiry (venue advance booking)
-- `-14d` pitch_curators wave 1
-- `-10d` pr_outreach wave 1
-- `-7d` pitch_curators wave 2 + social ramp begins
-- `-3d` pr_outreach wave 2
-- `0d` pitch_curators release day + social release day post
-- `+1d` through `+7d` social posts daily
+#### PATCH /api/curators/{curator_id}
+
+- **Summary:** Patch Curator — update one or more fields on a curator
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `curator_id` (string, required)
+- **Request body:** any subset of `name`, `outlet`, `genres`, `tier`, `contact_email`, `notes`, `response_rate` (all optional/nullable)
+- **Response:** 200 — updated curator object
+
+#### POST /api/curators/seed
+
+- **Summary:** Seed Curators Endpoint — load curators from `data/curators_seed.json` (idempotent)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** none
+- **Response:** 200 — seed result summary
 
 ---
 
-## Admin
+### pitches — Curator pitch lifecycle — generate, send, scan, follow-up
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/admin/stats` | Activity stats for an artist (`?artist_id=`, `?since=ISO_DATE`) |
-| GET | `/api/admin/health/deep` | DB, scheduler, OAuth token counts, disk usage |
+#### GET /api/pitches
 
-### GET /api/admin/stats — Response
-```json
-{
-  "artist_id":              "string",
-  "since":                  "1970-01-01T00:00:00",
-  "pitches_sent":           12,
-  "pitches_replied":        3,
-  "reply_rate":             0.25,
-  "pr_sent":                8,
-  "pr_replied":             2,
-  "pr_reply_rate":          0.25,
-  "booking_sent":           5,
-  "booking_replied":        1,
-  "booking_reply_rate":     0.20,
-  "social_posts_published": 14,
-  "last_report_date":       "2026-05-10T18:00:00"
-}
-```
+- **Summary:** List Pitches — return all pitches for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — array of pitch objects
 
-### GET /api/admin/health/deep — Response
-```json
-{
-  "timestamp":                     "2026-05-09T21:00:00+00:00",
-  "db_connected":                  true,
-  "scheduler_running":             true,
-  "gmail_token_valid_for_artists": 3,
-  "buffer_token_valid_for_artists": 1,
-  "disk_usage_pct":                34.2
-}
-```
+#### GET /api/pitches/{pitch_id}
+
+- **Summary:** Get Pitch — fetch a single pitch by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `pitch_id` (string, required)
+- **Response:** 200 — pitch object
+
+#### PATCH /api/pitches/{pitch_id}
+
+- **Summary:** Patch Pitch — update pitch status
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `pitch_id` (string, required)
+- **Request body:** `status` (string, optional/nullable)
+- **Response:** 200 — updated pitch object
+
+#### POST /api/pitches/generate
+
+- **Summary:** Api Generate Pitch — generate (but do not send) a pitch draft for one curator
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `curator_id` (string, required)
+  - `track_metadata` (object, optional, default `{}`)
+- **Response:** 200 — `{ subject, body, curator_id }`
+
+#### POST /api/pitches/batch
+
+- **Summary:** Send Pitch Emails — generate and send pitches to multiple curators in one call
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `curator_ids` (array of string, required)
+  - `track_metadata` (object, optional, default `{}`)
+- **Response:** 200 — `{ sent: N, failed: M, errors: [...], pitch_ids: [...] }`
+
+#### POST /api/inbox/scan
+
+- **Summary:** Api Scan Inbox — manually trigger inbox scan for one artist (curator replies)
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — scan results with reply counts
+
+#### POST /api/pitches/followups/queue
+
+- **Summary:** Queue Followups — find sent pitches at follow-up threshold and send follow-up emails
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, optional, default `""` = all artists)
+- **Response:** 200 — `{ queued: N, sent: M, failed: K, details: [...] }`
 
 ---
 
-## Error Codes
+### pr — PR contact management and outreach lifecycle
 
-| Code | Meaning |
-|------|---------|
-| 400 | Invalid request body or missing required field |
-| 404 | Resource not found |
-| 503 | Gmail or Buffer OAuth not configured (env vars missing) |
-| 500 | Generation failed (Claude error) or internal error |
+#### GET /api/pr-contacts
 
-All errors return a structured envelope:
-```json
-{ "error": "ExceptionType", "detail": "human readable message", "request_id": "uuid" }
-```
+- **Summary:** List Pr Contacts — return all PR contacts, optionally filtered
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `genre` (string, optional), `tier` (string, optional), `outlet_type` (string, optional)
+- **Response:** 200 — array of PR contact objects
 
-Gmail-specific errors returned in batch `errors[]` array:
-- `GmailNotConnected` — artist has not completed Gmail OAuth
-- `GmailAuthExpired` — access token expired and refresh failed
+#### POST /api/pr-contacts
+
+- **Summary:** Create Pr Contact — add a new PR contact
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `name` (string, required)
+  - `contact_email` (string, required)
+  - `outlet_type` (string, optional, default `"blog"`)
+  - `outlet_name` (string, optional)
+  - `genres` (array of string, optional)
+  - `tier` (string, optional, default `"C"`)
+  - `beat` (string, optional)
+  - `notes` (string, optional)
+  - `response_rate` (number, optional, default `0.0`)
+- **Response:** 201 — created PR contact object
+
+#### GET /api/pr-contacts/{contact_id}
+
+- **Summary:** Get Pr Contact — fetch a single PR contact by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `contact_id` (string, required)
+- **Response:** 200 — PR contact object
+
+#### PATCH /api/pr-contacts/{contact_id}
+
+- **Summary:** Patch Pr Contact — update one or more fields on a PR contact
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `contact_id` (string, required)
+- **Request body:** any subset of `name`, `outlet_type`, `outlet_name`, `genres`, `tier`, `contact_email`, `beat`, `notes`, `response_rate` (all optional/nullable)
+- **Response:** 200 — updated PR contact object
+
+#### POST /api/pr-contacts/seed
+
+- **Summary:** Seed Pr Contacts Endpoint — load PR contacts from seed file (idempotent)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** none
+- **Response:** 200 — seed result summary
+
+#### GET /api/pr-outreach
+
+- **Summary:** List Pr Outreach — return all PR outreach records for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — array of PR outreach objects
+
+#### GET /api/pr-outreach/{outreach_id}
+
+- **Summary:** Get Pr Outreach — fetch a single PR outreach record by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `outreach_id` (string, required)
+- **Response:** 200 — PR outreach object
+
+#### PATCH /api/pr-outreach/{outreach_id}
+
+- **Summary:** Patch Pr Outreach — update status or feature URL on a PR outreach record
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `outreach_id` (string, required)
+- **Request body:** `status` (string, optional/nullable), `feature_url` (string, optional/nullable)
+- **Response:** 200 — updated PR outreach object
+
+#### POST /api/pr-outreach/generate
+
+- **Summary:** Api Generate Pr — generate (but do not send) a PR email draft for one contact
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `contact_id` (string, required)
+  - `release_context` (object, optional, default `{}`)
+- **Response:** 200 — `{ subject, body, contact_id }`
+
+#### POST /api/pr-outreach/batch
+
+- **Summary:** Send Pr Emails — generate and send PR emails to multiple contacts in one call
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `contact_ids` (array of string, required)
+  - `release_context` (object, optional, default `{}`)
+- **Response:** 200 — `{ sent: N, failed: M, errors: [...], outreach_ids: [...] }`
+
+#### POST /api/pr-outreach/scan
+
+- **Summary:** Api Scan Pr Inbox — manually trigger PR inbox scan for one artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — scan results with reply counts
+
+#### POST /api/pr-outreach/followups/queue
+
+- **Summary:** Queue Pr Followups — find sent PR outreach on day 3 or 7 and send follow-ups
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, optional, default `""` = all artists)
+- **Response:** 200 — `{ queued: N, sent: M, failed: K, details: [...] }`
 
 ---
 
-## Interactive Docs
+### booking — Booking contact management and inquiry lifecycle
 
-FastAPI auto-generates Swagger UI at `/docs` and ReDoc at `/redoc`.
+#### GET /api/booking-contacts
 
-## For Frontend Developers
+- **Summary:** List Booking Contacts — return all booking contacts, optionally filtered
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `genre` (string, optional), `tier` (string, optional), `type` (string, optional), `city` (string, optional)
+- **Response:** 200 — array of booking contact objects
 
-OpenAPI spec is exported to `docs/openapi.json`. Run `python3 scripts/export_openapi.py` to regenerate after adding endpoints.
+#### POST /api/booking-contacts
+
+- **Summary:** Create Booking Contact — add a new venue/festival booking contact
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `name` (string, required)
+  - `contact_email` (string, required)
+  - `venue_or_festival` (string, optional)
+  - `type` (string, optional, default `"venue"`)
+  - `city` (string, optional)
+  - `country` (string, optional)
+  - `capacity` (integer, optional, default `0`)
+  - `genres` (array of string, optional)
+  - `tier` (string, optional, default `"C"`)
+  - `notes` (string, optional)
+  - `response_rate` (number, optional, default `0.0`)
+- **Response:** 201 — created booking contact object
+
+#### GET /api/booking-contacts/{contact_id}
+
+- **Summary:** Get Booking Contact — fetch a single booking contact by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `contact_id` (string, required)
+- **Response:** 200 — booking contact object
+
+#### PATCH /api/booking-contacts/{contact_id}
+
+- **Summary:** Patch Booking Contact — update one or more fields on a booking contact
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `contact_id` (string, required)
+- **Request body:** any subset of `name`, `venue_or_festival`, `type`, `city`, `country`, `capacity`, `genres`, `tier`, `contact_email`, `notes`, `response_rate` (all optional/nullable)
+- **Response:** 200 — updated booking contact object
+
+#### POST /api/booking-contacts/seed
+
+- **Summary:** Seed Booking Contacts Endpoint — load booking contacts from seed file (idempotent)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** none
+- **Response:** 200 — seed result summary
+
+#### GET /api/booking-inquiries
+
+- **Summary:** List Booking Inquiries — return all booking inquiry records for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — array of booking inquiry objects
+
+#### GET /api/booking-inquiries/{inquiry_id}
+
+- **Summary:** Get Booking Inquiry — fetch a single booking inquiry by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `inquiry_id` (string, required)
+- **Response:** 200 — booking inquiry object
+
+#### PATCH /api/booking-inquiries/{inquiry_id}
+
+- **Summary:** Patch Booking Inquiry — update status, booking date, or fee on an inquiry
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `inquiry_id` (string, required)
+- **Request body:** `status` (string, optional/nullable), `booking_date` (string, optional/nullable), `booking_fee` (number, optional/nullable)
+- **Response:** 200 — updated booking inquiry object
+
+#### POST /api/booking-inquiries/generate
+
+- **Summary:** Api Generate Booking — generate (but do not send) a booking inquiry email draft
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `contact_id` (string, required)
+  - `show_context` (object, optional, default `{}`)
+- **Response:** 200 — `{ subject, body, contact_id }`
+
+#### POST /api/booking-inquiries/batch
+
+- **Summary:** Send Booking Emails — generate and send booking emails to multiple contacts in one call
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `contact_ids` (array of string, required)
+  - `show_context` (object, optional, default `{}`)
+- **Response:** 200 — `{ sent: N, failed: M, errors: [...], inquiry_ids: [...] }`
+
+#### POST /api/booking-inquiries/scan
+
+- **Summary:** Api Scan Booking Inbox — manually trigger booking inbox scan for one artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — scan results with reply counts
+
+#### POST /api/inbox/scan-all
+
+- **Summary:** Api Scan All Inbox — single Gmail auth round-trip runs pitch + PR + booking reply detection
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — combined scan results for all three channels
+
+#### POST /api/booking-inquiries/followups/queue
+
+- **Summary:** Queue Booking Followups — find sent booking inquiries on day 5 or 14 and send follow-ups
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, optional, default `""` = all artists)
+- **Response:** 200 — `{ queued: N, sent: M, failed: K, details: [...] }`
+
+---
+
+### social — Social post generation, scheduling, and Buffer integration
+
+#### GET /api/social/posts
+
+- **Summary:** List Posts — return all social posts for an artist, optionally filtered
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required), `platform` (string, optional), `status` (string, optional)
+- **Response:** 200 — array of social post objects
+
+#### POST /api/social/posts
+
+- **Summary:** Create Post — create a new social post record
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `platform` (string, required)
+  - `content` (string, required)
+  - `media_url` (string, optional, default `""`)
+  - `scheduled_at` (string ISO datetime, optional/nullable)
+  - `status` (string, optional, default `"draft"`)
+- **Response:** 201 — created post object
+
+#### GET /api/social/posts/{post_id}
+
+- **Summary:** Get Post — fetch a single social post by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `post_id` (string, required)
+- **Response:** 200 — social post object
+
+#### PATCH /api/social/posts/{post_id}
+
+- **Summary:** Patch Post — update content, status, schedule time, or engagement stats
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `post_id` (string, required)
+- **Request body:** any subset of `content`, `media_url`, `status`, `scheduled_at`, `posted_at`, `post_url`, `engagement_stats` (all optional/nullable)
+- **Response:** 200 — updated social post object
+
+#### DELETE /api/social/posts/{post_id}
+
+- **Summary:** Delete Post — delete a social post record
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `post_id` (string, required)
+- **Response:** 204 — no content
+
+#### POST /api/social/posts/generate
+
+- **Summary:** Api Generate Post — generate a single social post draft with AI
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `platform` (string, required)
+  - `context` (object, optional, default `{}`)
+  - `tone` (string, optional, default `"authentic"`)
+- **Response:** 200 — `{ platform, content, tone }`
+
+#### POST /api/social/posts/batch
+
+- **Summary:** Schedule Posts — generate N posts per platform and optionally push to Buffer
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `platforms` (array of string, required)
+  - `context` (object, optional, default `{}`)
+  - `tone` (string, optional, default `"authentic"`)
+  - `posts_per_platform` (integer, optional, default `3`)
+  - `schedule_buffer` (boolean, optional, default `false`)
+  - `buffer_profile_ids` (array of string, optional, default `[]`)
+  - `start_date` (string ISO date, optional/nullable)
+- **Response:** 200 — `{ generated: N, scheduled_via_buffer: M, errors: [...], post_ids: [...] }`
+
+---
+
+### buffer — Buffer OAuth 2.0 connect/disconnect
+
+#### GET /api/buffer/auth
+
+- **Summary:** Buffer Auth — redirect artist to Buffer OAuth consent screen
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — redirect or OAuth URL
+
+#### GET /api/buffer/callback
+
+- **Summary:** Buffer Callback — handle Buffer OAuth callback, exchange code for access token and store it
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `code` (string, required), `state` (string, required)
+- **Response:** 200 — token stored confirmation
+
+#### GET /api/buffer/status
+
+- **Summary:** Buffer Status — check whether artist has an active Buffer token
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — `{ connected: bool }`
+
+---
+
+### reports — Weekly activity reports with AI-generated insights
+
+#### GET /api/reports/weekly
+
+- **Summary:** List Weekly Reports — return recent weekly reports for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required), `limit` (integer, optional, default `12`)
+- **Response:** 200 — array of weekly report objects
+
+#### GET /api/reports/weekly/{report_id}
+
+- **Summary:** Get Weekly Report — fetch a single weekly report by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `report_id` (string, required)
+- **Response:** 200 — weekly report object with AI narrative
+
+#### POST /api/reports/weekly/generate
+
+- **Summary:** Api Generate Weekly Report — generate a new weekly report with AI insights
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `week_start` (string ISO date, optional/nullable)
+  - `week_end` (string ISO date, optional/nullable)
+- **Response:** 200 — generated weekly report object
+
+---
+
+### releases — Release management and campaign orchestration
+
+#### POST /api/releases
+
+- **Summary:** Create Release — create a new release record
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `title` (string, required)
+  - `release_date` (string ISO date, required)
+  - `genre` (string, optional/nullable)
+  - `mood` (string, optional/nullable)
+- **Response:** 200 — created release object
+
+#### GET /api/releases
+
+- **Summary:** List Releases — list all releases for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — array of release objects
+
+#### GET /api/releases/{release_id}
+
+- **Summary:** Get Release — fetch a single release by ID
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `release_id` (string, required)
+- **Response:** 200 — release object
+
+#### PATCH /api/releases/{release_id}
+
+- **Summary:** Patch Release — update release fields
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `release_id` (string, required)
+- **Request body:** any subset of `title`, `release_date`, `genre`, `mood`, `status` (all optional/nullable)
+- **Response:** 200 — updated release object
+
+#### POST /api/releases/{release_id}/generate-campaign
+
+- **Summary:** Generate Campaign — generate campaign_actions for a release (idempotent; clears pending actions and regenerates)
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `release_id` (string, required)
+- **Response:** 200 — array of generated campaign actions
+
+#### GET /api/releases/{release_id}/campaign
+
+- **Summary:** Get Campaign — list all campaign actions for a release
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `release_id` (string, required)
+- **Response:** 200 — array of campaign action objects
+
+#### POST /api/releases/{release_id}/campaign/execute-due
+
+- **Summary:** Execute Due Actions — execute all campaign actions for this release where `scheduled_for <= now`
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `release_id` (string, required)
+- **Response:** 200 — `{ executed: N, failed: M, results: [...] }`
+
+---
+
+### admin — Platform administration and diagnostics
+
+#### GET /api/admin/stats
+
+- **Summary:** Admin Stats — return activity stats for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required), `since` (string ISO datetime, optional — omit for all-time)
+- **Response:** 200 — pitch/PR/booking/post counts and status breakdown
+
+#### GET /api/admin/diagnostics/anthropic-stats
+
+- **Summary:** Admin Anthropic Stats — per-model Anthropic call counters (total, success, retry, fail)
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — model-keyed counters object
+
+#### GET /api/admin/diagnostics/gmail-stats
+
+- **Summary:** Admin Gmail Stats — per-artist Gmail call counters (total, success, retry, fail)
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — artist-keyed counters object
+
+#### GET /api/admin/diagnostics/performance
+
+- **Summary:** Admin Diagnostics Performance — per-route p50/p95/p99 latency percentiles (rolling 1000 requests)
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — route-keyed latency percentile object
+
+#### GET /api/admin/diagnostics
+
+- **Summary:** Admin Diagnostics — full runtime diagnostics; never exposes env var values
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — runtime diagnostics object (versions, uptime, counts)
+
+#### GET /api/admin/health/deep
+
+- **Summary:** Admin Health Deep — readiness check: DB, scheduler, OAuth tokens, disk, security posture
+- **Auth:** No
+- **Response:** 200 healthy / 503 when `db_connected=False` (triggers Railway restart)
+
+---
+
+### agents — Agent roster, TTS, conversation, and billing
+
+#### GET /api/agents
+
+- **Summary:** List Agents — return the full agent roster with skills and voice assignments
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — array of agent objects
+
+#### GET /api/artist
+
+- **Summary:** Get Artist — fetch artist profile
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, optional, default `""`)
+- **Response:** 200 — ArtistProfile object
+
+#### GET /api/artist/lookup
+
+- **Summary:** Lookup Artist — find existing artist profile by name (case-insensitive)
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `name` (string, required)
+- **Response:** 200 — ArtistProfile object or null
+
+#### POST /api/artist/save
+
+- **Summary:** Save Artist — create or overwrite an artist profile
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `name` (string, required)
+  - `country` (string, optional)
+  - `genres` (array of string, optional)
+  - `monthly_listeners` (string, optional)
+  - `tier` (string, optional, default `"Gold"`)
+  - `onboarded` (boolean, optional, default `false`)
+  - `bio` (string, optional)
+  - `photo` (string, optional/nullable)
+- **Response:** 200 — saved ArtistProfile object
+
+#### POST /api/transcribe
+
+- **Summary:** Transcribe — transcribe an audio file to text via Whisper
+- **Auth:** Yes (X-API-Key)
+- **Request body:** multipart/form-data with `audio` (binary, required)
+- **Response:** 200 — `{ text: "..." }`
+
+#### POST /api/greet
+
+- **Summary:** Greet — return the agent's opening line when an artist starts a chat (uses static rotating greetings, zero API calls)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** form-encoded: `agent_id` (string, required), `tts_on` (string, optional, default `"true"`)
+- **Response:** 200 — `{ greeting: "...", audio_b64: "..." }`
+
+#### POST /api/handoff
+
+- **Summary:** Handoff — new agent delivers a warm personalised greeting after Marcus routes to them, with full conversation context
+- **Auth:** Yes (X-API-Key)
+- **Request body:** form-encoded:
+  - `agent_id` (string, required)
+  - `history` (string JSON array, optional, default `"[]"`)
+  - `tts_on` (string, optional, default `"true"`)
+  - `artist_id` (string, optional, default `""`)
+  - `from_agent_id` (string, optional, default `"puppet-master"`)
+- **Response:** 200 — `{ greeting: "...", audio_b64: "..." }`
+
+#### POST /api/chat_stream
+
+- **Summary:** Chat Stream — send a message to an agent and receive a streaming response
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `agent_id` (string, required)
+  - `message` (string, required)
+  - `artist_id` (string, optional, default `""`)
+  - `history` (string JSON array, optional, default `"[]"`)
+  - `tts` (boolean, optional, default `true`)
+- **Response:** 200 — SSE stream of text chunks + optional audio
+
+#### GET /api/tts
+
+- **Summary:** Tts Endpoint — synthesize text to audio (streaming)
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `text` (string, required), `voice` (string, optional, default `"am_michael"`)
+- **Response:** 200 — audio stream
+
+#### POST /api/tts/cancel
+
+- **Summary:** Tts Cancel — mark a call as ended so any in-flight `/api/tts/synth` for that call returns null
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `call_id` (string, required)
+- **Response:** 200 — confirmation
+
+#### POST /api/tts/synth
+
+- **Summary:** Tts Synth — synthesize text to base64 WAV; used by app to bypass SSE buffering
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `text` (string, required)
+  - `voice` (string, optional, default `"am_onyx"`)
+  - `call_id` (string, optional, default `""`)
+- **Response:** 200 — `{ audio_b64: "..." }`
+
+#### GET /api/tts/status
+
+- **Summary:** Tts Status — returns whether TTS is ready (Kokoro loaded OR ElevenLabs key present)
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — `{ ready: bool, provider: "kokoro"|"elevenlabs" }`
+
+#### GET /api/health
+
+- **Summary:** Api Health — secondary health endpoint
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — `{}`
+
+#### GET /api/history
+
+- **Summary:** Get History — retrieve conversation history for an artist/agent pair
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required), `agent_id` (string, required)
+- **Response:** 200 — array of conversation turn objects
+
+#### POST /api/auth/send-otp
+
+- **Summary:** Send Otp — send a 6-digit OTP via Twilio SMS
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `phone` (string, required)
+- **Response:** 200 — `{ sent: true }`
+
+#### POST /api/auth/verify-otp
+
+- **Summary:** Verify Otp — verify a 6-digit OTP; consumes the code on success
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `phone` (string, required), `code` (string, required)
+- **Response:** 200 — `{ verified: true }` or error
+
+#### POST /api/notifications/register
+
+- **Summary:** Register Push Token — save Expo push token to the artist's profile
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_id` (string, required), `push_token` (string, required)
+- **Response:** 200 — confirmation
+
+#### POST /api/notifications/send
+
+- **Summary:** Send Notification — send a push notification to an artist via Expo push API and store in history
+- **Auth:** Yes (X-API-Key)
+- **Request body:**
+  - `artist_id` (string, required)
+  - `title` (string, required)
+  - `body` (string, required)
+  - `agent_id` (string, optional, default `""`)
+  - `data` (object, optional, default `{}`)
+- **Response:** 200 — `{ sent: true, ticket: {...} }`
+
+#### GET /api/notifications/{artist_id}
+
+- **Summary:** Get Notifications — return the artist's notification history
+- **Auth:** Yes (X-API-Key)
+- **Path params:** `artist_id` (string, required)
+- **Response:** 200 — array of notification history objects
+
+#### POST /api/billing/create-checkout
+
+- **Summary:** Create Checkout — create a Stripe checkout session for a tier upgrade
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_id` (string, required), `tier` (string, required)
+- **Response:** 200 — `{ checkout_url: "https://checkout.stripe.com/..." }`
+
+#### POST /api/billing/upgrade
+
+- **Summary:** Billing Upgrade — directly upgrade an artist's billing tier (admin use)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_id` (string, required), `tier` (string, required)
+- **Response:** 200 — updated billing object
+
+#### POST /api/billing/webhook
+
+- **Summary:** Billing Webhook — Stripe webhook handler for payment events
+- **Auth:** Yes (X-API-Key)
+- **Request body:** raw Stripe webhook payload (Stripe-Signature header required)
+- **Response:** 200 — `{ received: true }`
+
+#### GET /api/billing/history
+
+- **Summary:** Get Billing History — return billing event history for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — array of billing event objects
+
+#### POST /api/avatar/talk
+
+- **Summary:** Avatar Talk — send audio chunks to D-ID avatar for lip-sync video generation
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `agent_id` (string, required), `audio_chunks` (array, required)
+- **Response:** 200 — D-ID talk result with video URL
+
+#### GET /api/avatar/status
+
+- **Summary:** Avatar Status — check if D-ID avatar feature is available
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — `{ available: bool }`

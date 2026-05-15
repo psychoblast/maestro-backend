@@ -2347,13 +2347,93 @@
         }
       }
     },
+    "/api/admin/diagnostics/anthropic-stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Anthropic Stats",
+        "description": "Per-model Anthropic call counters (total, success, retry, fail). Auth required.",
+        "operationId": "admin_anthropic_stats_api_admin_diagnostics_anthropic_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diagnostics/gmail-stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Gmail Stats",
+        "description": "Per-artist Gmail call counters (total, success, retry, fail). Auth required.",
+        "operationId": "admin_gmail_stats_api_admin_diagnostics_gmail_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diagnostics/performance": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Diagnostics Performance",
+        "description": "Per-route p50/p95/p99 latency percentiles. Auth required.\nRolling window of last 1000 requests per route.",
+        "operationId": "admin_diagnostics_performance_api_admin_diagnostics_performance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/diagnostics": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Diagnostics",
+        "description": "Full runtime diagnostics. Requires X-API-Key. Never exposes env var values.",
+        "operationId": "admin_diagnostics_api_admin_diagnostics_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/health/deep": {
       "get": {
         "tags": [
           "admin"
         ],
         "summary": "Admin Health Deep",
-        "description": "Deep health check: DB, scheduler, OAuth token counts, disk usage.",
+        "description": "Readiness check: DB, scheduler, OAuth token counts, disk usage, and\nsecurity posture of the running deploy.\n\nReturns 503 when db_connected=False so Railway restarts on DB failure.",
         "operationId": "admin_health_deep_api_admin_health_deep_get",
         "responses": {
           "200": {
@@ -3496,22 +3576,6 @@
           }
         }
       }
-    },
-    "/send-test-email": {
-      "get": {
-        "summary": "Send Test Email",
-        "operationId": "send_test_email_send_test_email_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -3763,9 +3827,9 @@
             "type": "string",
             "title": "Agent Id"
           },
-          "tts": {
+          "tts_on": {
             "type": "string",
-            "title": "Tts",
+            "title": "Tts On",
             "default": "true"
           }
         },
@@ -3786,9 +3850,9 @@
             "title": "History",
             "default": "[]"
           },
-          "tts": {
+          "tts_on": {
             "type": "string",
-            "title": "Tts",
+            "title": "Tts On",
             "default": "true"
           },
           "artist_id": {
@@ -3812,7 +3876,7 @@
         "properties": {
           "audio": {
             "type": "string",
-            "contentMediaType": "application/octet-stream",
+            "format": "binary",
             "title": "Audio"
           }
         },
@@ -4986,13 +5050,6 @@
           "type": {
             "type": "string",
             "title": "Error Type"
-          },
-          "input": {
-            "title": "Input"
-          },
-          "ctx": {
-            "type": "object",
-            "title": "Context"
           }
         },
         "type": "object",
