@@ -39,7 +39,7 @@
 | R-26 | 🔵 LOW | Buffer integration is mocked — social posts not published | Tommy | Accepted |
 | R-27 | 🔵 LOW | Scheduler not enabled — all timed jobs inactive | Tommy | Accepted |
 | R-28 | 🔵 LOW | Weekly report scheduler hardcoded to UTC Sunday 18:00 | Dev | **Mitigated** — commit `43def81` 2026-05-15 (configurable via WEEKLY_REPORT_DAY/HOUR_UTC/MINUTE) |
-| R-29 | 🔵 LOW | APScheduler interval jobs have no explicit `misfire_grace_time` | Dev | Open |
+| R-29 | 🔵 LOW | APScheduler interval jobs have no explicit `misfire_grace_time` | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 (`pitch_service.py:1057` `misfire_grace_time=300`; `main.py:1212` `misfire_grace_time=120`) |
 | R-30 | 🔵 LOW | Single uvicorn worker — scheduler and requests share one process | Dev | **Partially mitigated** — commit `4607eb4` 2026-05-15 (Option B guard; Option A out of scope) |
 | R-31 | 🔵 LOW | Seed scripts not in Docker image; Railway shell workaround fails | Dev | Open |
 | R-32 | 🟡 MEDIUM | `genres`/`tier`/`type` list-join fields bypass R-23 sanitization in prompt builders | Dev | **Mitigated** — `fix/r32-sanitize-list-join-fields` `05b3274` |
