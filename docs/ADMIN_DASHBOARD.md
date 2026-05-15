@@ -10,26 +10,31 @@ no npm, and no external JS framework.
 
 ## How to access
 
-### In a browser (development — no `PLMKR_API_KEY` set)
+### Development (no `PLMKR_API_KEY` set)
 
 Navigate directly: `http://localhost:8000/admin/dashboard`
 
 When `PLMKR_API_KEY` is not set the `_APIKeyMiddleware` runs in dev-permissive mode — all
-routes are open without a key.
+routes are open without a key. The key-prompt modal appears; you can dismiss it or enter any value.
 
-### In a browser (production — `PLMKR_API_KEY` set)
+### Production (Railway — `PLMKR_API_KEY` set)
 
-The route itself returns 401 without a valid `X-API-Key` header. Two options:
+Navigate directly to your Railway URL: `https://<your-app>.railway.app/admin/dashboard`
 
-1. **Browser extension** (e.g. ModHeader for Chrome) — add `X-API-Key: <your-key>` as a
-   permanent header, then navigate to the URL. The page loads and the JS key-prompt modal
-   pre-fills from `sessionStorage`.
+The HTML shell loads without authentication (R-35 fix: `/admin/dashboard` is in `_SKIP_AUTH_PATHS`).
+On first load the page shows a key-prompt modal. Enter your `PLMKR_API_KEY` value; the JS stores it
+in `sessionStorage` (cleared on tab close) and sends it as `X-API-Key` on all data-fetching
+requests. **No browser extension required.**
 
-2. **Key prompt modal** — on first load the page shows a modal asking for the API key.
-   Enter the key; the JS stores it in `sessionStorage` (cleared on tab close) and uses it
-   as the `X-API-Key` header on all subsequent in-page API fetches. The browser still needed
-   a valid key to serve the HTML — that's handled by the extension or a direct curl → browser
-   workflow.
+#### Security model
+
+- The HTML shell is public. It contains only markup + JS — no env var values, no service names,
+  no secrets. An unauthenticated visitor sees only the key-prompt modal.
+- All 6 JSON data endpoints (`/api/admin/diagnostics`, `/api/admin/diagnostics/performance`,
+  `/api/admin/diagnostics/anthropic-stats`, `/api/admin/diagnostics/gmail-stats`,
+  `/api/admin/diagnostics/scheduler`, `/api/admin/health/deep`) remain fully auth-gated.
+  Data only appears after the correct key is entered.
+- On a 401/403 from any data endpoint, the JS clears the stored key and re-shows the modal.
 
 ---
 
@@ -83,8 +88,8 @@ and security-posture flags. Status shown as green OK / red ERR badge.
 ## Auth flow (JS side)
 
 1. On page load, JS checks `sessionStorage.getItem('plmkr_admin_key')`.
-2. If absent → shows the key-prompt modal.
-3. Every `apiFetch()` call sends the stored key as `X-API-Key`.
+2. If absent → shows the key-prompt modal. User enters the `PLMKR_API_KEY` value.
+3. Every `apiFetch()` call sends the stored key as `X-API-Key` to the JSON endpoints.
 4. On 401 or 403 response → `clearKey()` + `showModal()` — user must re-enter the key.
 
 `/api/admin/health/deep` is in `_SKIP_AUTH_PATHS` and requires no key; `loadHealth()` uses
@@ -94,10 +99,6 @@ bare `fetch()` not `apiFetch()`.
 
 ## Known limitations
 
-- **Browser navigation barrier**: the route requires `X-API-Key` on the page-load GET request,
-  so a browser extension (ModHeader) or a Cloudflare Access tunnel (mTLS) is needed in
-  production. A future `/admin/login` HTML form POST could exchange a password for a
-  session cookie and remove this friction (tracked in RISK_REGISTER.md R-31).
 - **No WebSocket push**: data is polled every 30 s. High-frequency events may be missed in
   the between-poll window.
 - **Version hardcoded**: footer reads `v0.1`. Update when a `PLMKR_VERSION` env var or
@@ -111,16 +112,15 @@ bare `fetch()` not `apiFetch()`.
 
 | File | Purpose |
 |------|---------|
-| `static/admin_dashboard.html` | Full dashboard HTML + CSS + JS (single file, ~600 lines) |
+| `static/admin_dashboard.html` | Full dashboard HTML + CSS + JS (single file) |
 | `admin_service.py` | FastAPI route `GET /admin/dashboard` serving the static file |
-| `tests/test_admin_dashboard.py` | 40 tests covering auth, structure, JS behaviour, and accessibility |
+| `tests/test_admin_dashboard.py` | Tests covering auth, structure, JS behaviour, and accessibility |
 | `docs/API_REFERENCE.md` | Route documented under the `admin` tag |
 
 ---
 
 ## Future ideas
 
-- `/admin/login` form → session cookie (removes browser-extension requirement)
 - WebSocket push for real-time error log streaming
 - Chart.js latency sparklines (CDN import, no build step)
 - Dark/light mode toggle
