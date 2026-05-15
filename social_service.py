@@ -117,7 +117,7 @@ def init_social_db():
                 raise RuntimeError(f"Migration failure on table artists (timezone): {e}") from e
     conn.commit()
     conn.close()
-    print("[Social] SQLite social + report tables ready")
+    log.info("db_ready", extra={"event": "db_ready", "svc": "social_service"})
 
 
 # ── Artist timezone helper ────────────────────────────────────────────────────
@@ -966,14 +966,14 @@ def _get_artists_with_any_activity() -> list[str]:
 async def _generate_all_weekly_reports():
     """Scheduler job: generate weekly report for every active artist (Sunday 18:00 UTC)."""
     artists = _get_artists_with_any_activity()
-    print(f"[REPORT_SCHEDULER] Generating weekly reports for {len(artists)} artist(s)")
+    log.info("report_scheduler_start", extra={"event": "report_scheduler_start", "artist_count": len(artists)})
     for aid in artists:
         try:
             report = await generate_weekly_report(aid)
             score  = report.get("momentum_score", "?")
-            print(f"[REPORT_SCHEDULER] {aid}: report generated — momentum {score}/10")
+            log.info("report_scheduler_result", extra={"event": "report_scheduler_result", "artist_id": aid, "momentum_score": score})
         except Exception as e:
-            print(f"[REPORT_SCHEDULER] {aid}: report failed — {e}")
+            log.error("report_scheduler_error", extra={"event": "report_scheduler_error", "artist_id": aid, "error": str(e)})
 
 
 def init_report_scheduler():
@@ -982,12 +982,12 @@ def init_report_scheduler():
     Called from main.py after init_scheduler(). No-op unless SCHEDULER_ENABLED=true.
     """
     if not _SCHEDULER_ENABLED:
-        print("[REPORT_SCHEDULER] Disabled — SCHEDULER_ENABLED not set")
+        log.info("report_scheduler_disabled", extra={"event": "report_scheduler_disabled", "reason": "SCHEDULER_ENABLED not set"})
         return
     try:
         from pitch_service import _scheduler
         if _scheduler is None:
-            print("[REPORT_SCHEDULER] pitch_service scheduler not running — weekly reports disabled")
+            log.warning("report_scheduler_disabled", extra={"event": "report_scheduler_disabled", "reason": "pitch_service scheduler not running"})
             return
         # Sundays at 18:00 UTC — document as TODO for per-artist timezone support
         _scheduler.add_job(
@@ -1001,8 +1001,8 @@ def init_report_scheduler():
             coalesce=True,
             misfire_grace_time=120,
         )
-        print("[REPORT_SCHEDULER] Weekly reports scheduled — Sundays 18:00 UTC")
+        log.info("report_scheduler_started", extra={"event": "report_scheduler_started", "schedule": "sun_18:00_UTC"})
     except ImportError:
-        print("[REPORT_SCHEDULER] pitch_service not importable — scheduler not registered")
+        log.error("report_scheduler_disabled", extra={"event": "report_scheduler_disabled", "reason": "pitch_service not importable"})
     except Exception as e:
-        print(f"[REPORT_SCHEDULER] Failed to register: {e}")
+        log.error("report_scheduler_error", extra={"event": "report_scheduler_error", "error": str(e)})
