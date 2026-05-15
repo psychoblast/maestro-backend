@@ -1022,6 +1022,11 @@ async def detect_replies(artist_id: str) -> dict:
 
     thread_map  = {p["gmail_thread_id"]: p for p in pitches if p.get("gmail_thread_id")}
     subject_map = {p["subject"].lower(): p for p in pitches}
+    # Pre-compute per-curator sent counts to avoid O(n) inner scan per reply
+    curator_pitch_counts: dict[str, int] = {}
+    for p in pitches:
+        cid = p.get("curator_id", "")
+        curator_pitch_counts[cid] = curator_pitch_counts.get(cid, 0) + 1
 
     inbox  = service.users().messages().list(
         userId="me", maxResults=50, q="in:inbox"
@@ -1029,6 +1034,9 @@ async def detect_replies(artist_id: str) -> dict:
     msgs   = inbox.get("messages", [])
     results["scanned"] = len(msgs)
 
+    # PERF-MAY14: N+1 Gmail API calls — each message fetched individually (up to 50 round-trips).
+    # Suggested fix: use Gmail batch API (googleapiclient.http.BatchHttpRequest) to fetch all
+    # message details in one HTTP request. Medium complexity; defer until inbox scan is a bottleneck.
     for ref in msgs:
         msg     = service.users().messages().get(
             userId="me", id=ref["id"], format="full"
@@ -1055,7 +1063,7 @@ async def detect_replies(artist_id: str) -> dict:
 
         curator = _db_get_curator(pitch["curator_id"])
         if curator:
-            sent_count = len([p for p in pitches if p["curator_id"] == pitch["curator_id"]])
+            sent_count = curator_pitch_counts.get(pitch["curator_id"], 1)
             new_rate   = min(1.0, curator.get("response_rate", 0.0) + 1.0 / max(sent_count, 1))
             _db_upsert_curator({**curator, "response_rate": round(new_rate, 2)})
 
