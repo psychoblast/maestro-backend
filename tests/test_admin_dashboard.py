@@ -2,8 +2,9 @@
 Admin Dashboard — GET /admin/dashboard
 
 Tests:
-- Unauthenticated request (PLMKR_API_KEY set, no header) → 401
+- Unauthenticated request (PLMKR_API_KEY set, no header) → 200 (R-35 fix: shell is public)
 - Authenticated request → 200 text/html with expected HTML structure markers
+- Both return the same HTML shell (no secrets in the shell; data fetched JS-side via key)
 - Expected section IDs present in HTML (all 6 sections)
 - Route appears in OpenAPI schema
 """
@@ -35,16 +36,16 @@ def client(monkeypatch, tmp_path):
 
 # ── Auth tests ────────────────────────────────────────────────────────────────
 
-def test_dashboard_unauthenticated_returns_401(client):
-    """No X-API-Key header → 401 (same middleware as all protected routes)."""
+def test_dashboard_unauthenticated_returns_200(client):
+    """No X-API-Key header → 200. R-35 fix: HTML shell is public; data is auth-gated JS-side."""
     resp = client.get("/admin/dashboard")
-    assert resp.status_code == 401
+    assert resp.status_code == 200
 
 
-def test_dashboard_wrong_key_returns_401(client):
-    """Wrong X-API-Key → 401."""
+def test_dashboard_wrong_key_still_returns_200(client):
+    """Wrong X-API-Key on page-load → still 200. Shell reveals no data; key prompt handles auth."""
     resp = client.get("/admin/dashboard", headers={"X-API-Key": "wrong-key"})
-    assert resp.status_code == 401
+    assert resp.status_code == 200
 
 
 def test_dashboard_authenticated_returns_200(client):
@@ -53,10 +54,45 @@ def test_dashboard_authenticated_returns_200(client):
     assert resp.status_code == 200
 
 
+def test_dashboard_unauthed_and_authed_return_same_html(client):
+    """Unauthenticated and authenticated page-loads return identical HTML (shell has no secrets)."""
+    unauthed = client.get("/admin/dashboard").text
+    authed   = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY}).text
+    assert unauthed == authed
+
+
 def test_dashboard_content_type_html(client):
     """Response Content-Type is text/html."""
-    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    resp = client.get("/admin/dashboard")
     assert "text/html" in resp.headers.get("content-type", "")
+
+
+def test_json_endpoints_still_require_auth(client):
+    """All 6 JSON admin endpoints still return 401 without X-API-Key (R-35: data stays gated)."""
+    protected = [
+        "/api/admin/diagnostics",
+        "/api/admin/diagnostics/performance",
+        "/api/admin/diagnostics/anthropic-stats",
+        "/api/admin/diagnostics/gmail-stats",
+        "/api/admin/diagnostics/scheduler",
+    ]
+    for url in protected:
+        resp = client.get(url)
+        assert resp.status_code == 401, f"{url} should require auth but returned {resp.status_code}"
+
+
+def test_dashboard_shell_contains_no_env_values(client):
+    """Unauthenticated shell HTML contains only 'SET'/'MISSING' placeholders, never actual values."""
+    resp = client.get("/admin/dashboard")
+    html = resp.text
+    # Shell must contain the modal and key storage constant — proves it's the real page
+    assert "key-modal" in html
+    assert "plmkr_admin_key" in html
+    # Env var values are never embedded in the shell (only JS fetches them post-auth)
+    import os
+    test_key = os.environ.get("PLMKR_API_KEY", "")
+    if test_key:
+        assert test_key not in html
 
 
 # ── HTML structure tests ──────────────────────────────────────────────────────
