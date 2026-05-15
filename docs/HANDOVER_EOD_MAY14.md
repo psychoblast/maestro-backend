@@ -1,7 +1,7 @@
 # PLMKR — End-of-Day Handover: May 14, 2026
 
 **Date:** 2026-05-14  
-**Current main HEAD:** `1e98ea8` (updated after Batch 2)  
+**Current main HEAD:** `0086c1e` (updated after Batch 4 — final)  
 **Entity:** Marquis Holdings LLC (NM)  
 **Operator:** Tommy Lam <mypsychoblast@gmail.com>
 
@@ -176,6 +176,139 @@ Full audit of 37 test files (225 tests) completed. All checks PASS:
 - No trivial assertions
 
 Full report: `docs/TEST_HYGIENE_AUDIT_MAY14.md`
+
+---
+
+---
+
+## Batch 3 — Observability Pass (May 14, 2026)
+
+**Starting commit:** `1e98ea8` (end of Batch 2) → **Ending commit:** `a1afbe0`  
+**Test count:** 225 → 259 (+34 tests across A1–A6)
+
+### A1 — Structured logging foundation (`feat/structured-logging`, `398784a`)
+
+- New file: `logging_config.py` — `setup_logging()`, `get_logger()`, `bind_request_id()`, `get_request_id()`, `RingBufferHandler`
+- `_RequestIDMiddleware`: propagates `X-Request-ID` through async context via `ContextVar`
+- JSON formatter when `RAILWAY_ENVIRONMENT` is set; human-readable otherwise
+- Ring buffer (last 200 ERROR entries) feeds `recent_errors` in diagnostics
+- `+7 tests` in `tests/test_structured_logging.py`
+
+### A2 — Admin diagnostics endpoint (`feat/admin-diagnostics-endpoint`, `7124432`)
+
+- New endpoints in `admin_service.py`:
+  - `GET /api/admin/diagnostics` — env snapshot (SET/MISSING only, never values), service status, runtime, volume, recent errors
+  - Auth: requires `X-API-Key` (the endpoint itself is exempt from APIKeyMiddleware bypass list)
+- Env snapshot covers 34 known vars; sentinel leak test confirms values never exposed
+- `+6 tests` in `tests/test_admin_diagnostics.py`
+
+### A3 — Sentry-ready error hooks (`feat/sentry-ready-hooks`, `cf70ea6`)
+
+- New file: `error_reporting.py` — `init_error_reporting()`, `capture_exception()`, `is_enabled()`
+- No-op without `SENTRY_DSN`; graceful if `sentry-sdk` package not installed
+- `requirements.txt` updated: `sentry-sdk[fastapi]>=2.0.0`
+- `.env.example` updated: `SENTRY_DSN` section with `[OPTIONAL]` guard
+- `+6 tests` in `tests/test_error_reporting.py`
+
+### A4 — Request-level performance metrics (`feat/request-timing-middleware`, `547b0e3`)
+
+- `performance_metrics.py` — `_RouteMetrics` with rolling p50/p95/p99 (last 1000 samples per route)
+- `_TimingMiddleware`: adds `Server-Timing: total;dur=<ms>` response header; logs slow requests (>2000ms)
+- New endpoint: `GET /api/admin/diagnostics/performance`
+- `+5 tests` in `tests/test_request_timing_middleware.py`
+
+### A5 — External call observability (`feat/external-call-observability`, `c4e385b`)
+
+- `anthropic_utils.py`: `_ModelStats` counter class; `get_anthropic_stats()` exported; per-call logging (model, attempt, duration_ms, status — never prompt content)
+- `pitch_service.py`: `_GmailStats` counter class; `get_gmail_stats()` exported; `_gmail_execute_with_retry` updated with artist_id tracking
+- New endpoints: `GET /api/admin/diagnostics/anthropic-stats`, `GET /api/admin/diagnostics/gmail-stats`
+- `+9 tests` in `tests/test_external_call_observability.py`
+
+### A6 — Defensive performance audit (`perf/defensive-touches`, `2e1b0fd`)
+
+- `pitch_service.py`: pre-computed `curator_pitch_counts` dict before inbox scan loop — fixes N+1 list-scan (O(n²) → O(n))
+- `social_service.py`: PERF-MAY14 comment on sync `httpx.post()` in async route (deferred — requires Buffer API overhaul)
+- New doc: `docs/PERFORMANCE_AUDIT_MAY14.md` — 1 fix applied, 2 deferred with comments, 3 noted
+
+### Middleware ordering note
+
+Middleware is added LIFO in Starlette. Final execution order:
+`_RequestIDMiddleware → _TimingMiddleware → _APIKeyMiddleware → CORSMiddleware`
+
+### New env vars (Batch 3)
+
+| Var | Guard | Effect |
+|-----|-------|--------|
+| `SENTRY_DSN` | Optional | Enables Sentry error tracking; no-op if unset |
+
+---
+
+## Batch 4 — Documentation & Test Infrastructure (May 14, 2026)
+
+**Starting commit:** `a1afbe0` → **Ending commit:** `0086c1e`  
+**Test count:** 259 → 259 (net neutral — one fix in C1, no new tests added)
+
+### B1 — API reference generation (`docs/api-reference-generation`, `c5e68c4`)
+
+- `docs/openapi.json` regenerated: 79 routes, fresh from `app.openapi()` at `a1afbe0`
+- `docs/API_REFERENCE.md` generated: 91 endpoint entries across 11 tag groups, index table + per-tag detail
+- `tests/test_api_reference_coverage.py`: smoke test that every OpenAPI path appears in the doc
+
+### B2 — Local development guide (`docs/local-dev-guide`, `c0366fd`)
+
+- New doc: `docs/LOCAL_DEVELOPMENT.md` — prerequisites, clone, venv, .env.local setup, uvicorn commands, pytest commands, common gotchas, adding service modules, standing rules, SSH config
+
+### B3 — Deployment runbook (`docs/deployment-runbook-may14`, `f417d95`)
+
+- New doc: `docs/DEPLOYMENT_RUNBOOK_MAY14.md` — authoritative production deploy guide replacing stale `RUNBOOK_MANUAL_SESSION.md`
+- Covers: pre-deploy checklist, required/optional env vars, GCP OAuth setup, Railway vars, persistent volume, Stripe webhook, deploy+verify (boot logs, liveness, deep health, diagnostics), Gmail OAuth per artist, first pitch send, scheduler activation, rollback procedure
+- `RUNBOOK_MANUAL_SESSION.md` marked HISTORICAL with banner
+
+### C1 — Test fixture audit (`chore/test-fixture-audit`, `62d54d6`)
+
+- Grepped all tests for hardcoded `202X-MM-DD` strings (15 findings)
+- **1 maintenance landmine fixed:** `test_pitch_service.py:267` — naive `datetime` string caused `TypeError` in `_get_pitches_needing_followup`, silently skipping the pitch. Fixed to `datetime.now(timezone.utc).isoformat()` so the aware/naive subtraction succeeds and days=0 actually exercises the threshold logic.
+- 14 intentional fixtures documented as correct (query window anchors, domain data, monkeypatched time)
+- New doc: `docs/TEST_FIXTURE_AUDIT_MAY14.md`
+
+### C2 — Test runtime audit (`chore/test-runtime-audit`, `e125b13`)
+
+- Ran `pytest --durations=20`: 259 tests in 155s, slowest 20 all due to `importlib.reload(main)`
+- Root cause: boot-time behavior tests (R-02, R-05, R-10, R-12, R-19, diagnostics, CORS, timing, Stripe) must reload full app — architecture-intrinsic, not fixable without refactoring
+- **1 trivial fix:** `test_r12_send_test_email_removed.py` changed `client` fixture to `scope="module"` — one reload for both tests instead of two, using `tmp_path_factory` + `pytest.MonkeyPatch()`
+- Deferred: `pytest-xdist` parallel execution is highest-ROI future optimization if suite exceeds 5 min
+- New doc: `docs/TEST_RUNTIME_AUDIT_MAY14.md`
+
+### D1 — RISK_REGISTER update (`docs/risk-register-batch3-updates`, `133ad0b`)
+
+- R-20 updated from "ACTUALLY-OPEN" to "Partially mitigated" — dev side complete (diagnostics endpoint, health/deep with DB connectivity check, per-route metrics, Anthropic/Gmail call counters)
+- Tommy action remaining: update `railway.json:healthcheckPath` to `/api/admin/health/deep`
+- Open item count: Dev=0, Tommy=6 (was 7), plus R-20 as partial
+
+---
+
+## End-of-Batch Summary
+
+| Metric | Value |
+|--------|-------|
+| Main HEAD (final) | `0086c1e` |
+| Tests at start of batch 3 | 225 |
+| Tests at end of batch 4 | 259 |
+| New tests added (batch 3) | +34 (A1+7, A2+6, A3+6, A4+5, A5+9, B1+1) |
+| Net test change (batch 4) | 0 (one fix, no adds) |
+| New API endpoints | 4 (`/diagnostics`, `/diagnostics/performance`, `/diagnostics/anthropic-stats`, `/diagnostics/gmail-stats`) |
+| New source files | `logging_config.py`, `error_reporting.py`, `performance_metrics.py` |
+| New doc files | `API_REFERENCE.md`, `LOCAL_DEVELOPMENT.md`, `DEPLOYMENT_RUNBOOK_MAY14.md`, `PERFORMANCE_AUDIT_MAY14.md`, `TEST_FIXTURE_AUDIT_MAY14.md`, `TEST_RUNTIME_AUDIT_MAY14.md` |
+| New env vars | `SENTRY_DSN` (optional) |
+| Performance fixes | 1 applied (pitch inbox N+1 scan) |
+| Performance deferred | 2 with PERF-MAY14 comments |
+| Risk register changes | R-20 moved from ACTUALLY-OPEN to Partially mitigated |
+
+### Tommy's attention required
+
+1. **R-20 (HIGH priority):** Update `railway.json` → `"healthcheckPath": "/api/admin/health/deep"` so Railway can auto-restart on DB failure. The endpoint is now implemented and returns 503 when `db_connected=false`.
+2. **R-02:** Confirm Railway persistent volume at `/data` is created in Railway dashboard (mount path `/data`, 1 GB).
+3. **R-16:** Set `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, `GMAIL_OAUTH_REDIRECT_URI` in Railway Variables before enabling outreach.
 
 ---
 
