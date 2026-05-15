@@ -14,6 +14,8 @@ import uuid
 import hashlib
 import base64
 import sqlite3
+import time as _time
+import threading
 import email.mime.text
 import logging
 from datetime import datetime, timezone, timedelta
@@ -317,20 +319,90 @@ def _get_gmail_service(artist_id: str):
     return build("gmail", "v1", credentials=creds)
 
 
-def _gmail_execute_with_retry(request, max_retries: int = 3):
-    """Execute a Gmail API request, retrying on HTTP 429 with exponential backoff."""
-    import time
+# ── Gmail call observability counters ────────────────────────────────────────
+
+class _GmailStats:
+    def __init__(self):
+        self._lock   = threading.Lock()
+        self.total   = 0
+        self.success = 0
+        self.retry   = 0
+        self.fail    = 0
+
+    def as_dict(self) -> dict:
+        with self._lock:
+            return {
+                "total":   self.total,
+                "success": self.success,
+                "retry":   self.retry,
+                "fail":    self.fail,
+            }
+
+
+_gmail_stats_registry: dict[str, _GmailStats] = {}
+_gmail_stats_lock = threading.Lock()
+
+
+def _get_gmail_stats(artist_id: str) -> _GmailStats:
+    with _gmail_stats_lock:
+        if artist_id not in _gmail_stats_registry:
+            _gmail_stats_registry[artist_id] = _GmailStats()
+        return _gmail_stats_registry[artist_id]
+
+
+def get_gmail_stats() -> dict:
+    """Return per-artist Gmail call counters. Safe to call at any time."""
+    with _gmail_stats_lock:
+        entries = list(_gmail_stats_registry.items())
+    return {aid: s.as_dict() for aid, s in entries}
+
+
+def _gmail_execute_with_retry(request, max_retries: int = 3, artist_id: str = "unknown"):
+    """Execute a Gmail API request, retrying on HTTP 429 with exponential backoff.
+
+    A5: logs per-call metadata. Never logs email content, auth tokens, or addresses.
+    """
     delays = [1, 2, 4]
+    s = _get_gmail_stats(artist_id)
+    with s._lock:
+        s.total += 1
+
     for attempt in range(max_retries):
+        t0 = _time.perf_counter()
         try:
-            return request.execute()
+            result = request.execute()
+            duration_ms = round((_time.perf_counter() - t0) * 1000)
+            with s._lock:
+                s.success += 1
+            log.info(
+                "gmail_call",
+                extra={"artist_id": artist_id, "attempt": attempt + 1,
+                       "duration_ms": duration_ms, "status": "success"},
+            )
+            return result
         except Exception as exc:
+            duration_ms = round((_time.perf_counter() - t0) * 1000)
             status = getattr(getattr(exc, "resp", None), "status", None)
             if str(status) == "429" and attempt < max_retries - 1:
                 wait = delays[attempt]
-                print(f"[GMAIL] 429 rate-limit — retrying in {wait}s (attempt {attempt+1})")
-                time.sleep(wait)
+                with s._lock:
+                    s.retry += 1
+                log.warning(
+                    "gmail_call",
+                    extra={"artist_id": artist_id, "attempt": attempt + 1,
+                           "duration_ms": duration_ms, "status": "retry",
+                           "retry_in_s": wait},
+                )
+                _time.sleep(wait)
                 continue
+            with s._lock:
+                s.fail += 1
+            log.error(
+                "gmail_call",
+                extra={"artist_id": artist_id, "attempt": attempt + 1,
+                       "duration_ms": duration_ms, "status": "fail",
+                       "error": type(exc).__name__},
+            )
             raise
 
 
@@ -348,7 +420,8 @@ async def send_email(artist_id: str, to: str, subject: str, body: str) -> dict:
     raw    = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     t0 = datetime.now(timezone.utc)
     result = _gmail_execute_with_retry(
-        service.users().messages().send(userId="me", body={"raw": raw})
+        service.users().messages().send(userId="me", body={"raw": raw}),
+        artist_id=artist_id,
     )
     latency_ms = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
     log.info(

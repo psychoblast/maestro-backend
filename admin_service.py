@@ -294,6 +294,26 @@ def _scheduler_info() -> dict:
         return {"running": False, "jobs": 0, "next_run_time": None}
 
 
+@router.get("/api/admin/diagnostics/anthropic-stats", tags=["admin"])
+def admin_anthropic_stats():
+    """Per-model Anthropic call counters (total, success, retry, fail). Auth required."""
+    from anthropic_utils import get_anthropic_stats
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "models":    get_anthropic_stats(),
+    }
+
+
+@router.get("/api/admin/diagnostics/gmail-stats", tags=["admin"])
+def admin_gmail_stats():
+    """Per-artist Gmail call counters (total, success, retry, fail). Auth required."""
+    from pitch_service import get_gmail_stats
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "artists":   get_gmail_stats(),
+    }
+
+
 @router.get("/api/admin/diagnostics/performance", tags=["admin"])
 def admin_diagnostics_performance():
     """
