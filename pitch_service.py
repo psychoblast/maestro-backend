@@ -127,7 +127,7 @@ def init_pitch_db():
                 raise RuntimeError(f"Migration failure on table pitches: {e}") from e
     conn.commit()
     conn.close()
-    print("[PITCH] SQLite pitch tables ready")
+    log.info("db_ready", extra={"event": "db_ready", "svc": "pitch_service"})
 
 
 # ── Artist data helpers (routes to Postgres or SQLite matching main.py) ───────
@@ -259,7 +259,7 @@ def gmail_callback(code: str, state: str):
             "scopes":        list(creds.scopes) if creds.scopes else _GMAIL_SCOPES,
         }
         _save_gmail_tokens(artist_id, tokens)
-        print(f"[GMAIL] Tokens saved for artist {artist_id}")
+        log.info("gmail_tokens_saved", extra={"event": "gmail_tokens_saved", "artist_id": artist_id})
         return {"status": "connected", "artist_id": artist_id}
     except ImportError:
         raise HTTPException(status_code=503, detail="google-auth-oauthlib not installed")
@@ -312,7 +312,7 @@ def _get_gmail_service(artist_id: str):
                 "expires_at":   creds.expiry.isoformat() if creds.expiry else None,
             }
             _save_gmail_tokens(artist_id, updated)
-            print(f"[GMAIL] Tokens refreshed for artist {artist_id}")
+            log.info("gmail_tokens_refreshed", extra={"event": "gmail_tokens_refreshed", "artist_id": artist_id})
         except Exception as e:
             raise GmailAuthExpired(f"Token refresh failed: {e}")
 
@@ -1113,32 +1113,32 @@ def init_scheduler():
     """Called from main.py after app startup. No-op unless SCHEDULER_ENABLED=true."""
     global _scheduler
     if not _SCHEDULER_ENABLED:
-        print("[SCHEDULER] Disabled — set SCHEDULER_ENABLED=true to enable inbox polling")
+        log.info("scheduler_disabled", extra={"event": "scheduler_disabled", "reason": "SCHEDULER_ENABLED not set"})
         return
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
     except ImportError:
-        print("[SCHEDULER] apscheduler not installed — polling disabled")
+        log.warning("scheduler_disabled", extra={"event": "scheduler_disabled", "reason": "apscheduler not installed"})
         return
 
     _scheduler = AsyncIOScheduler()
 
     async def _poll_all():
         artists = _get_artists_with_sent_pitches()
-        print(f"[SCHEDULER] Polling {len(artists)} artist(s)")
+        log.info("scheduler_poll_start", extra={"event": "scheduler_poll_start", "artist_count": len(artists)})
         for aid in artists:
             try:
                 result = await detect_replies(aid)
-                print(f"[SCHEDULER] {aid}: {result.get('matched',0)} replies matched")
+                log.info("scheduler_poll_result", extra={"event": "scheduler_poll_result", "artist_id": aid, "matched": result.get("matched", 0)})
             except Exception as e:
-                print(f"[SCHEDULER] Error polling {aid}: {e}")
+                log.error("scheduler_poll_error", extra={"event": "scheduler_poll_error", "artist_id": aid, "error": str(e)})
 
     _scheduler.add_job(
         _poll_all, "interval", hours=_REPLY_POLL_HOURS, id="inbox_poll",
         coalesce=True, misfire_grace_time=300,
     )
     _scheduler.start()
-    print(f"[SCHEDULER] Inbox polling active — every {_REPLY_POLL_HOURS}h")
+    log.info("scheduler_started", extra={"event": "scheduler_started", "poll_interval_hours": _REPLY_POLL_HOURS})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

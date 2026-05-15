@@ -116,10 +116,11 @@ def init_release_db():
         "UPDATE campaign_actions SET status='pending' WHERE status='running'"
     )
     if result.rowcount:
+        log.warning("db_reset_stuck_actions", extra={"reset_count": result.rowcount, "event": "db_reset_stuck_actions"})
         print(f"[Release] Reset {result.rowcount} stuck 'running' action(s) to 'pending' at startup")
     conn.commit()
     conn.close()
-    print("[Release] SQLite release + campaign tables ready")
+    log.info("db_ready", extra={"event": "db_ready", "svc": "release_service"})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

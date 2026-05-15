@@ -109,7 +109,7 @@ def init_booking_db():
                 raise RuntimeError(f"Migration failure on table booking_inquiries: {e}") from e
     conn.commit()
     conn.close()
-    print("[Booking] SQLite booking tables ready")
+    log.info("db_ready", extra={"event": "db_ready", "svc": "booking_service"})
 
 
 # ── Artist data helper (same pattern as pitch_service / pr_service) ───────────
