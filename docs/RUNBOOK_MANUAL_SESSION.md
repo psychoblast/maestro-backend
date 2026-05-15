@@ -1,3 +1,5 @@
+> **HISTORICAL:** Original May 10 deploy runbook. Current authoritative version: [DEPLOYMENT_RUNBOOK_MAY14.md](DEPLOYMENT_RUNBOOK_MAY14.md).
+
 # PLMKR — Manual Session Runbook
 ## Railway Production Deploy: First-Time Setup
 
