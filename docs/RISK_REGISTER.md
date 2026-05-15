@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-15 (Units 1–4 — R-20 closed; integration tests; structured logging; scheduler diagnostics endpoint)
+**Last updated:** 2026-05-15 S2 (Units 1–5 verification; R-32/33/34 detail sections updated from "pending merge" → confirmed on main)
 **Branch:** docs/risk-register-batch3-updates
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4)
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification)
 **Total items:** 34 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5)
 
 ---
@@ -763,7 +763,7 @@ tier   = sanitize_for_prompt(str(curator.get("tier", "C")))
 **Tests:** 6 new tests in `test_r23_prompt_injection_sanitization.py`. Red-green verified.
 
 **Owner:** Dev
-**Status:** Mitigated — pending merge
+**Status:** ✅ MITIGATED — commit `05b3274` on main. Verified 2026-05-15 (S2 Unit 3): `pitch_service.py:751` `genres = [sanitize_for_prompt(g) for g in curator.get("genres", [])]`; `pitch_service.py:752` `tier = sanitize_for_prompt(str(curator.get("tier", "C")))`. Equivalent patterns confirmed in `pr_service.py` and `booking_service.py`.
 
 ---
 
@@ -791,7 +791,7 @@ retry sleep is fixed here. Migrating to `AsyncAnthropic` client is out of scope.
 Red-green verified.
 
 **Owner:** Dev
-**Status:** Mitigated — pending merge
+**Status:** ✅ MITIGATED — commit `0e89372` on main. Verified 2026-05-15 (S2 Unit 2): `anthropic_utils.py:135` uses `await asyncio.sleep(sleep_secs)`; all 11 call sites confirmed `async def`. `client.messages.create()` remains synchronous (Anthropic SDK v1.x limitation); retry sleep is the only blocking point fixed.
 
 ---
 
@@ -823,7 +823,7 @@ wrapped = (
 (3/4 fail on main code).
 
 **Owner:** Dev
-**Status:** Mitigated — pending merge
+**Status:** ✅ MITIGATED — commit `1a80956` on main. Verified 2026-05-15 (S2 Unit 4): `pitch_service.py:947-957` wraps reply body in delimited prompt with explicit ignore instruction. `pr_service.py:604` (`_classify_pr_reply`) and `booking_service.py:626` (`_classify_booking_reply`) confirmed same pattern.
 
 ---
 
