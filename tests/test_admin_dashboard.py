@@ -170,3 +170,92 @@ def test_dashboard_responsive_media_query(client):
     """CSS includes a max-width media query for responsive layout."""
     resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
     assert "@media" in resp.text and "max-width" in resp.text
+
+
+# ── Unit 3: Data sections — per-endpoint URL + rendering structure ────────────
+
+def _html(client):
+    return client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY}).text
+
+
+def test_section_diagnostics_fetches_correct_endpoint(client):
+    """loadDiagnostics() fetches /api/admin/diagnostics."""
+    html = _html(client)
+    assert "loadDiagnostics" in html
+    assert "'/api/admin/diagnostics'" in html or '"/api/admin/diagnostics"' in html
+
+
+def test_section_performance_fetches_correct_endpoint(client):
+    """loadPerformance() fetches /api/admin/diagnostics/performance."""
+    html = _html(client)
+    assert "loadPerformance" in html
+    assert "/api/admin/diagnostics/performance" in html
+
+
+def test_section_anthropic_fetches_correct_endpoint(client):
+    """loadAnthropic() fetches /api/admin/diagnostics/anthropic-stats."""
+    html = _html(client)
+    assert "loadAnthropic" in html
+    assert "/api/admin/diagnostics/anthropic-stats" in html
+
+
+def test_section_gmail_fetches_correct_endpoint(client):
+    """loadGmail() fetches /api/admin/diagnostics/gmail-stats."""
+    html = _html(client)
+    assert "loadGmail" in html
+    assert "/api/admin/diagnostics/gmail-stats" in html
+
+
+def test_section_scheduler_fetches_correct_endpoint(client):
+    """loadScheduler() fetches /api/admin/diagnostics/scheduler."""
+    html = _html(client)
+    assert "loadScheduler" in html
+    assert "/api/admin/diagnostics/scheduler" in html
+
+
+def test_section_health_fetches_correct_endpoint(client):
+    """loadHealth() fetches /api/admin/health/deep."""
+    html = _html(client)
+    assert "loadHealth" in html
+    assert "/api/admin/health/deep" in html
+
+
+def test_performance_table_sortable_headers(client):
+    """Performance table has sortable column headers (data-col attribute)."""
+    html = _html(client)
+    assert "data-col" in html
+
+
+def test_anthropic_and_gmail_have_sum_row(client):
+    """Anthropic and Gmail tables include a sum-row for totals."""
+    html = _html(client)
+    assert "sum-row" in html
+
+
+def test_error_handling_uses_sectionError(client):
+    """Each section catch block calls sectionError()."""
+    html = _html(client)
+    # sectionError must appear multiple times (one per section)
+    assert html.count("sectionError") >= 6
+
+
+def test_health_shows_ok_or_err_css_class(client):
+    """Health section JS references health-ok and health-err CSS classes."""
+    html = _html(client)
+    assert "health-ok" in html
+    assert "health-err" in html
+
+
+def test_refreshAll_calls_all_loaders(client):
+    """refreshAll() invokes all 6 loader functions."""
+    html = _html(client)
+    for fn in ["loadDiagnostics()", "loadPerformance()", "loadAnthropic()",
+               "loadGmail()", "loadScheduler()", "loadHealth()"]:
+        assert fn in html, f"refreshAll does not call {fn}"
+
+
+def test_env_snapshot_comment_no_values(client):
+    """Code comment or variable name signals that env values are never shown."""
+    html = _html(client)
+    # The JS checks 'SET'/'MISSING' — never the value itself
+    assert "'SET'" in html or '"SET"' in html
