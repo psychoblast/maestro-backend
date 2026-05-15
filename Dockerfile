@@ -13,6 +13,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# R-18: pre-download Whisper base model at build time so cold starts skip the ~140 MB fetch.
+# Model is cached to /root/.cache/whisper/ inside this image layer.
+RUN python -c "import whisper; whisper.load_model('base')"
+
 # Copy application code and static assets
 COPY main.py anthropic_utils.py .
 COPY pitch_service.py pr_service.py booking_service.py \
