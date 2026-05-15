@@ -19,6 +19,9 @@ from typing import Optional
 from logging_config import setup_logging, get_logger, bind_request_id
 setup_logging()
 
+from error_reporting import init_error_reporting, capture_exception
+init_error_reporting()
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
@@ -996,6 +999,7 @@ async def _generic_error_handler(request: Request, exc: Exception):
         extra={"path": str(request.url.path), "error": str(exc)},
         exc_info=exc,
     )
+    capture_exception(exc, path=str(request.url.path), request_id=request_id)
     return JSONResponse(
         status_code=500,
         content={"error": type(exc).__name__, "detail": str(exc), "request_id": request_id},
