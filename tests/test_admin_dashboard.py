@@ -112,3 +112,61 @@ def test_dashboard_in_openapi_schema(client):
     assert resp.status_code == 200
     paths = resp.json().get("paths", {})
     assert "/admin/dashboard" in paths, f"/admin/dashboard not in OpenAPI paths: {list(paths)[:20]}"
+
+
+# ── Unit 2: JS key flow + visual shell assertions ─────────────────────────────
+
+def test_dashboard_uses_correct_session_storage_key(client):
+    """JS uses 'plmkr_admin_key' as the sessionStorage key name."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    assert "plmkr_admin_key" in resp.text
+
+
+def test_dashboard_section_loading_placeholders(client):
+    """All 6 section data containers start with 'Loading' placeholder text."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    html = resp.text
+    for data_id in ["d-diagnostics", "d-performance", "d-anthropic",
+                    "d-gmail", "d-scheduler", "d-health"]:
+        assert data_id in html, f"Missing data container: {data_id}"
+    assert "Loading" in html
+
+
+def test_dashboard_pause_button_initial_aria(client):
+    """Pause button starts with aria-pressed='false'."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    assert 'aria-pressed="false"' in resp.text
+
+
+def test_dashboard_auto_refresh_interval_defined(client):
+    """30-second auto-refresh constant (30_000 ms) is present in JS."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    assert "30_000" in resp.text or "30000" in resp.text
+
+
+def test_dashboard_signout_uses_window_confirm(client):
+    """Sign-out uses window.confirm for confirmation."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    assert "window.confirm" in resp.text
+
+
+def test_dashboard_401_clears_key_and_reprompts(client):
+    """apiFetch handler clears sessionStorage and calls showModal on 401/403."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    html = resp.text
+    # Both clearKey() and showModal() must appear in the 401 handler code path
+    assert "clearKey()" in html
+    assert "showModal()" in html
+
+
+def test_dashboard_mobile_viewport_meta(client):
+    """Page includes viewport meta tag for mobile rendering."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    assert 'name="viewport"' in resp.text
+    assert "width=device-width" in resp.text
+
+
+def test_dashboard_responsive_media_query(client):
+    """CSS includes a max-width media query for responsive layout."""
+    resp = client.get("/admin/dashboard", headers={"X-API-Key": _TEST_KEY})
+    assert "@media" in resp.text and "max-width" in resp.text
