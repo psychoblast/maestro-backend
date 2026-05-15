@@ -43,6 +43,7 @@ _GMAIL_SCOPES   = [
     "https://www.googleapis.com/auth/gmail.readonly",
 ]
 _SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
+_SCHEDULER_DRY_RUN = os.environ.get("SCHEDULER_ENABLED", "").lower() == "dry_run"
 _REPLY_POLL_HOURS  = int(os.environ.get("REPLY_POLL_HOURS", "6"))
 _ANTHROPIC_KEY     = os.environ.get("ANTHROPIC_API_KEY", "")
 DAILY_PITCH_QUOTA  = int(os.environ.get("DAILY_PITCH_QUOTA", "50"))
@@ -1103,16 +1104,31 @@ async def api_scan_inbox(artist_id: str):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Unit 1.8 — APScheduler (opt-in via SCHEDULER_ENABLED=true)
+# Unit 1.8 — APScheduler (opt-in via SCHEDULER_ENABLED=true or SCHEDULER_ENABLED=dry_run)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _scheduler = None
 
 
+async def _poll_all():
+    """APScheduler inbox-poll job. Logs 'would_have_fired' in dry_run mode instead of executing."""
+    if _SCHEDULER_DRY_RUN:
+        log.info("would_have_fired", extra={"event": "would_have_fired", "job_id": "inbox_poll", "dry_run": True})
+        return
+    artists = _get_artists_with_sent_pitches()
+    log.info("scheduler_poll_start", extra={"event": "scheduler_poll_start", "artist_count": len(artists)})
+    for aid in artists:
+        try:
+            result = await detect_replies(aid)
+            log.info("scheduler_poll_result", extra={"event": "scheduler_poll_result", "artist_id": aid, "matched": result.get("matched", 0)})
+        except Exception as e:
+            log.error("scheduler_poll_error", extra={"event": "scheduler_poll_error", "artist_id": aid, "error": str(e)})
+
+
 def init_scheduler():
-    """Called from main.py after app startup. No-op unless SCHEDULER_ENABLED=true."""
+    """Called from main.py after app startup. No-op unless SCHEDULER_ENABLED=true or dry_run."""
     global _scheduler
-    if not _SCHEDULER_ENABLED:
+    if not (_SCHEDULER_ENABLED or _SCHEDULER_DRY_RUN):
         log.info("scheduler_disabled", extra={"event": "scheduler_disabled", "reason": "SCHEDULER_ENABLED not set"})
         return
 
@@ -1134,23 +1150,13 @@ def init_scheduler():
         return
 
     _scheduler = AsyncIOScheduler()
-
-    async def _poll_all():
-        artists = _get_artists_with_sent_pitches()
-        log.info("scheduler_poll_start", extra={"event": "scheduler_poll_start", "artist_count": len(artists)})
-        for aid in artists:
-            try:
-                result = await detect_replies(aid)
-                log.info("scheduler_poll_result", extra={"event": "scheduler_poll_result", "artist_id": aid, "matched": result.get("matched", 0)})
-            except Exception as e:
-                log.error("scheduler_poll_error", extra={"event": "scheduler_poll_error", "artist_id": aid, "error": str(e)})
-
     _scheduler.add_job(
         _poll_all, "interval", hours=_REPLY_POLL_HOURS, id="inbox_poll",
         coalesce=True, misfire_grace_time=300,
     )
     _scheduler.start()
-    log.info("scheduler_started", extra={"event": "scheduler_started", "poll_interval_hours": _REPLY_POLL_HOURS})
+    _mode = "dry_run" if _SCHEDULER_DRY_RUN else "live"
+    log.info("scheduler_started", extra={"event": "scheduler_started", "poll_interval_hours": _REPLY_POLL_HOURS, "mode": _mode})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
