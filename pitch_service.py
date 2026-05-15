@@ -1115,6 +1115,18 @@ def init_scheduler():
     if not _SCHEDULER_ENABLED:
         log.info("scheduler_disabled", extra={"event": "scheduler_disabled", "reason": "SCHEDULER_ENABLED not set"})
         return
+
+    # R-30: guard against multi-worker deployments. APScheduler runs in-process; multiple
+    # uvicorn workers would each start their own scheduler, firing duplicate jobs.
+    web_concurrency = int(os.environ.get("WEB_CONCURRENCY", "1") or "1")
+    if web_concurrency > 1:
+        log.critical("scheduler_disabled", extra={
+            "event":       "scheduler_disabled",
+            "reason":      "WEB_CONCURRENCY > 1 — scheduler skipped to prevent duplicate job runs",
+            "concurrency": web_concurrency,
+        })
+        return
+
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
     except ImportError:

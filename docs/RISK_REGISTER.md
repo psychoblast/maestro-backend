@@ -700,10 +700,17 @@ With the current seed data (`data/curators_seed.json`), all values are controlle
 **Likelihood:** Low at current traffic levels.
 **Impact:** Low — brief unresponsiveness during scheduler runs; recovers automatically.
 
-**Mitigation:** Acceptable for MVP. Post-launch: split the scheduler into a separate Railway service, or use a task queue (Celery, ARQ) to decouple from the request process.
+**Mitigation (Option B — done 2026-05-15 S2 Unit 9):** Guard added to `pitch_service.init_scheduler()`: if `WEB_CONCURRENCY > 1`, logs CRITICAL and returns without starting APScheduler. This prevents duplicate job runs if uvicorn is accidentally launched with `--workers N`.
+
+**Option A (proper long-term fix):** Split the scheduler into a separate Railway service (a background worker dyno). This requires:
+1. A second Railway service in the same project with `CMD python3 scheduler_worker.py`.
+2. `scheduler_worker.py` calls `init_pitch_db()` + `init_scheduler()` only.
+3. The web service is started with `--workers N` (e.g. `WEB_CONCURRENCY=4`) for horizontal scaling.
+4. Both services share the Railway persistent volume at `/data`.
+Option A is out of scope for v1 (requires Railway service topology changes and a new scheduler entrypoint).
 
 **Owner:** Dev
-**Status:** Accepted (v1 architecture)
+**Status:** Partially mitigated (Option B guard — 2026-05-15 S2 Unit 9). `pitch_service.py:init_scheduler()` guards against `WEB_CONCURRENCY > 1`. Option A (separate process) is the proper fix for production scale.
 
 ---
 
