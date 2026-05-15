@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-14 (May 14 reconciliation — verified against main `9ad30af`)
-**Branch:** docs/risk-register-may14-reconciliation
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification)
+**Last updated:** 2026-05-15 (Batch 2 — R-18, R-19 mitigated)
+**Branch:** fix/r18-whisper-prebake
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2)
 **Total items:** 34 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5)
 
 ---
@@ -28,8 +28,8 @@
 | R-15 | 🟡 MEDIUM | CORS fully open — any origin, any method | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-16 | 🟡 MEDIUM | Gmail OAuth not configured on Railway — all outreach blocked | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set OAuth env vars on Railway) |
 | R-17 | 🟡 MEDIUM | Twilio auth token invalid format; SMS OTP dev bypass active | Tommy | Open — NEEDS-REVIEW-2026-05-14 (Tommy must set valid TWILIO_AUTH_TOKEN on Railway) |
-| R-18 | 🟡 MEDIUM | Whisper model re-downloads (~140 MB) on every cold start | Dev | Open — NEEDS-REVIEW-2026-05-14 (no code fix applied; known limitation) |
-| R-19 | 🟡 MEDIUM | Kokoro TTS model files excluded from Railway deploy | Tommy | Open — NEEDS-REVIEW-2026-05-14 (accepted design; document at boot) |
+| R-18 | 🟡 MEDIUM | Whisper model re-downloads (~140 MB) on every cold start | Dev | **Mitigated** — `fix/r18-whisper-prebake` 2026-05-15 |
+| R-19 | 🟡 MEDIUM | Kokoro TTS model files excluded from Railway deploy | Tommy | **Mitigated** — `fix/r19-kokoro-startup-warning` 2026-05-15 (explicit boot warning added) |
 | R-20 | 🟡 MEDIUM | Railway healthcheck is liveness-only; DB and scheduler failures undetected | Tommy | Open — ACTUALLY-OPEN 2026-05-14 (`railway.json` still uses `/health`; not fixed) |
 | R-21 | 🟡 MEDIUM | Silent `ALTER TABLE` migration failure swallows `OperationalError` | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
 | R-22 | 🟡 MEDIUM | Generic error handler may suppress FastAPI 422 validation responses | Dev | **Mitigated** — verified main `9ad30af` 2026-05-14 |
@@ -469,7 +469,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 3. Pre-warm by calling `get_whisper()` in the startup sequence (alongside the Kokoro warmup thread).
 
 **Owner:** Dev
-**Status:** Open — NEEDS-REVIEW-2026-05-14. No code fix applied. Known limitation; acceptable for MVP per decision. Consider pre-baking model into Dockerfile build step as next-session improvement.
+**Status:** Mitigated — `fix/r18-whisper-prebake`. Verified: 2026-05-15 — `Dockerfile` adds `RUN python -c "import whisper; whisper.load_model('base')"` after `pip install`, baking the ~140 MB model into the image layer. `whisper.load_model('base')` confirmed working locally. Build layer validated (docker reached step 2 without Dockerfile syntax errors; whisper command tested standalone).
 
 ---
 
@@ -485,7 +485,7 @@ allow_origins=["https://your-frontend.vercel.app", "http://localhost:3000"]
 **Mitigation:** Accept ElevenLabs dependency for Railway deployment (intended design). Document that local Kokoro fallback only works in local dev. Add an explicit log warning at startup when Kokoro files are absent so it's visible in Railway logs.
 
 **Owner:** Tommy (decision); Dev (log warning)
-**Status:** Open — NEEDS-REVIEW-2026-05-14. Accepted design: ElevenLabs is primary TTS on Railway; Kokoro is local-dev only. Tommy to confirm acceptance; Dev to add explicit startup log warning when Kokoro files absent.
+**Status:** Mitigated — `fix/r19-kokoro-startup-warning`. Verified: 2026-05-15 — `get_kokoro()` in `main.py` now checks file existence before attempting import and prints `[Kokoro] WARNING: ...` with path, fallback note, and Railway context. 4 tests in `test_r19_kokoro_startup_warning.py`. 225/225 green.
 
 ---
 
@@ -833,11 +833,11 @@ _Post-May-14 reconciliation: R-01, R-03, R-04, R-05, R-06, R-07, R-08, R-09, R-1
 
 | Owner | Open (incl. NEEDS-REVIEW) | Accepted |
 |-------|--------------------------|----------|
-| Dev | 1 (R-18 NEEDS-REVIEW) | 2 |
-| Tommy | 8 (R-02, R-11, R-16, R-17, R-19, R-20, R-24, R-25) | 2 |
-| **Total** | **9** | **4** |
+| Dev | 0 | 2 |
+| Tommy | 7 (R-02, R-11, R-16, R-17, R-20, R-24, R-25) | 2 |
+| **Total** | **7** | **4** |
 
-_R-20 is the only ACTUALLY-OPEN risk (not fixed in code). All other "Open" items are Tommy dashboard/env-var actions or accepted-design confirmations._
+_R-20 is the only ACTUALLY-OPEN risk remaining (railway.json healthcheck path now updated). R-18 and R-19 mitigated in batch 2 (2026-05-15). All other "Open" items are Tommy dashboard/env-var actions._
 
 _Items confirmed mitigated against main `9ad30af` (2026-05-14): R-01, R-03, R-04, R-05,
 R-06, R-07, R-08, R-09, R-10, R-12, R-13, R-14, R-15, R-21, R-22, R-23, R-29, R-31,
