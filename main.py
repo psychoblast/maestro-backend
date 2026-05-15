@@ -590,12 +590,22 @@ _tts_lock = asyncio.Lock()
 def get_kokoro():
     global _kokoro, _kokoro_available
     if _kokoro_available is None:
+        onnx_path   = _BASE / "kokoro-v1.0.onnx"
+        voices_path = _BASE / "voices-v1.0.bin"
+        if not onnx_path.exists() or not voices_path.exists():
+            # R-19: explicit warning so Railway logs show the expected absence
+            print(
+                f"[Kokoro] WARNING: Kokoro model files not found at {_BASE}/ "
+                "(kokoro-v1.0.onnx and/or voices-v1.0.bin). "
+                "TTS will fall back to ElevenLabs. "
+                "Expected on Railway (files excluded via .railwayignore); "
+                "only an issue if running locally without ElevenLabs configured."
+            )
+            _kokoro_available = False
+            return None
         try:
             from kokoro_onnx import Kokoro
-            _kokoro = Kokoro(
-                str(_BASE / "kokoro-v1.0.onnx"),
-                str(_BASE / "voices-v1.0.bin")
-            )
+            _kokoro = Kokoro(str(onnx_path), str(voices_path))
             _kokoro_available = True
             print("[TTS] Kokoro loaded OK")
         except Exception as e:
