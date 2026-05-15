@@ -7,6 +7,7 @@ Same architecture as pr_service.py — self-contained, no circular imports.
 Tables always live in SQLite. Buffer tokens stored in artist profile.
 """
 
+import asyncio
 import os
 import re
 import json
@@ -17,6 +18,8 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlencode
+
+import httpx
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
@@ -39,6 +42,9 @@ _BUFFER_REDIRECT_URI  = os.environ.get("BUFFER_REDIRECT_URI", "")
 _BUFFER_AUTH_URL      = "https://bufferapp.com/oauth2/authorize"
 _BUFFER_TOKEN_URL     = "https://api.bufferapp.com/1/oauth2/token.json"
 _BUFFER_POST_URL      = "https://api.bufferapp.com/1/updates/create.json"
+# R-26: feature flag for real Buffer HTTP client (BUFFER_LIVE=false default — safe)
+_BUFFER_API_KEY       = os.environ.get("BUFFER_API_KEY", "")
+_BUFFER_LIVE          = os.environ.get("BUFFER_LIVE", "false").lower() == "true"
 
 _SCHEDULER_ENABLED = os.environ.get("SCHEDULER_ENABLED", "").lower() == "true"
 _SCHEDULER_DRY_RUN = os.environ.get("SCHEDULER_ENABLED", "").lower() == "dry_run"
@@ -444,6 +450,65 @@ def buffer_status(artist_id: str):
     return {"connected": bool(tokens.get("access_token")), "artist_id": artist_id}
 
 
+async def _buffer_post_real(
+    access_token: str,
+    content: str,
+    profile_ids: list[str],
+    media_url: str = "",
+    scheduled_at: Optional[str] = None,
+) -> dict:
+    """POST to Buffer API with 429 retry (max 2 attempts) and 10s timeout."""
+    payload: dict = {
+        "text":           content,
+        "profile_ids[]":  profile_ids,
+        "access_token":   access_token,
+    }
+    if scheduled_at:
+        dt = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
+        payload["scheduled_at"] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    if media_url:
+        payload["media[link]"] = media_url
+
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            resp = await client.post(_BUFFER_POST_URL, data=payload)
+
+        if resp.status_code == 429:
+            if attempt < max_attempts:
+                wait = 2 ** attempt
+                log.warning("buffer_rate_limited", extra={
+                    "event": "buffer_rate_limited", "attempt": attempt, "wait_s": wait,
+                })
+                await asyncio.sleep(wait)
+                continue
+            log.error("buffer_rate_limit_exhausted", extra={
+                "event": "buffer_rate_limit_exhausted", "attempts": attempt,
+            })
+            raise RuntimeError("Buffer API rate limit exceeded after retries")
+
+        if resp.status_code != 200:
+            log.error("buffer_post_error", extra={
+                "event": "buffer_post_error", "status": resp.status_code, "body": resp.text[:200],
+            })
+            raise RuntimeError(f"Buffer API returned {resp.status_code}")
+
+        try:
+            data = resp.json()
+        except Exception:
+            log.error("buffer_json_error", extra={
+                "event": "buffer_json_error", "body": resp.text[:200],
+            })
+            raise RuntimeError("Buffer API returned non-JSON response")
+
+        log.info("buffer_post_queued", extra={
+            "event": "buffer_post_queued", "update_id": data.get("id"),
+        })
+        return data
+
+    raise RuntimeError("Buffer post failed after max attempts")  # unreachable but satisfies type checker
+
+
 async def _buffer_schedule_post(
     artist_id: str,
     content: str,
@@ -451,39 +516,47 @@ async def _buffer_schedule_post(
     media_url: str = "",
     scheduled_at: Optional[str] = None,
 ) -> dict:
-    """
-    Schedule a post via Buffer API.
-    MOCKED — real Buffer API call is structured but not executed to avoid
-    accidental posts during dev. Enable by removing the mock guard below.
+    """Schedule a post via Buffer API.
+
+    Routing logic (R-26):
+      BUFFER_LIVE=false (default) or BUFFER_API_KEY unset → mock response (safe)
+      SCHEDULER_ENABLED=dry_run                           → log would_have_posted, mock response
+      BUFFER_LIVE=true and BUFFER_API_KEY set             → real Buffer HTTP call
     """
     tokens = _load_buffer_tokens(artist_id)
     if not tokens.get("access_token"):
         raise BufferNotConnected(f"Artist {artist_id} has not connected Buffer")
 
-    # ── MOCK: return simulated Buffer response ───────────────────────────────
-    # To enable real posting: remove this block and uncomment the httpx call below.
-    return {
-        "id":        str(uuid.uuid4()),
-        "status":    "buffer_queued",
-        "mocked":    True,
-        "text":      content[:60] + ("…" if len(content) > 60 else ""),
-    }
+    if not (_BUFFER_LIVE and _BUFFER_API_KEY):
+        log.info("buffer_post_mocked", extra={
+            "event": "buffer_post_mocked", "artist_id": artist_id, "reason": "BUFFER_LIVE not enabled",
+        })
+        return {
+            "id":     str(uuid.uuid4()),
+            "status": "buffer_queued",
+            "mocked": True,
+            "text":   content[:60] + ("…" if len(content) > 60 else ""),
+        }
 
-    # ── Real Buffer API call (disabled during dev) ───────────────────────────
-    # import httpx
-    # payload = {
-    #     "text":        content,
-    #     "profile_ids[]": profile_ids,
-    #     "access_token":  tokens["access_token"],
-    # }
-    # if scheduled_at:
-    #     from datetime import datetime
-    #     dt    = datetime.fromisoformat(scheduled_at.replace("Z", "+00:00"))
-    #     payload["scheduled_at"] = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-    # if media_url:
-    #     payload["media[link]"] = media_url
-    # resp = httpx.post(_BUFFER_POST_URL, data=payload, timeout=15)
-    # return resp.json()
+    if _SCHEDULER_DRY_RUN:
+        log.info("would_have_posted", extra={
+            "event": "would_have_posted", "artist_id": artist_id, "dry_run": True,
+        })
+        return {
+            "id":     str(uuid.uuid4()),
+            "status": "buffer_queued",
+            "mocked": True,
+            "dry_run": True,
+            "text":   content[:60] + ("…" if len(content) > 60 else ""),
+        }
+
+    return await _buffer_post_real(
+        access_token=tokens["access_token"],
+        content=content,
+        profile_ids=profile_ids,
+        media_url=media_url,
+        scheduled_at=scheduled_at,
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
