@@ -294,6 +294,19 @@ def _scheduler_info() -> dict:
         return {"running": False, "jobs": 0, "next_run_time": None}
 
 
+@router.get("/api/admin/diagnostics/performance", tags=["admin"])
+def admin_diagnostics_performance():
+    """
+    Per-route p50/p95/p99 latency percentiles. Auth required.
+    Rolling window of last 1000 requests per route.
+    """
+    from performance_metrics import get_all_percentiles
+    return {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "routes":    get_all_percentiles(),
+    }
+
+
 @router.get("/api/admin/diagnostics", tags=["admin"])
 def admin_diagnostics():
     """
