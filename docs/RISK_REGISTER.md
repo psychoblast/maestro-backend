@@ -1,8 +1,8 @@
 # PLMKR Risk Register
 **Scope:** Code and infrastructure risks only. Operational, business, and vendor-relationship risks are out of scope.
-**Last updated:** 2026-05-15 S5 (R-35 mitigated; dashboard polish + runbook; 364/364 GREEN tests)
-**Branch:** main (via feat/deferred-risks-may15-s3-unit5-eod-handover)
-**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification), Unit K (May 15 S2 Units 6–9 implementation), Unit L (May 15 S3 deferred risks R-31/R-27/R-26), Unit M (May 15 S4 admin dashboard)
+**Last updated:** 2026-05-15 S8 final (no new risks; 421/421 GREEN tests; all backend phases code-complete)
+**Branch:** main (via feat/phase3-4-finish-may15-s8-unit6-eod-handover)
+**Sources:** Unit A (doc review), Unit B (code sweep), Unit C (infra audit), Unit D (Tier 4 post-merge sweep), Unit E (Tier 5 fix session), Unit F (May 14 code verification), Unit G (May 15 batch 2), Unit H (May 14 batch 3 observability), Unit I (May 15 hardening Units 1–4), Unit J (May 15 S2 Units 1–5 verification), Unit K (May 15 S2 Units 6–9 implementation), Unit L (May 15 S3 deferred risks R-31/R-27/R-26), Unit M (May 15 S4 admin dashboard), Unit N (May 15 S8 Phase 3+4 — no new risks)
 **Total items:** 35 (31 original + R-32, R-33, R-34 from Tier 4 audit — all mitigated in Tier 5; R-35 from S4)
 
 ---

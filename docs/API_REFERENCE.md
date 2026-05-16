@@ -926,3 +926,53 @@ Sorted alphabetically by path.
 - **Summary:** Avatar Status — check if D-ID avatar feature is available
 - **Auth:** Yes (X-API-Key)
 - **Response:** 200 — `{ available: bool }`
+
+---
+
+### Phase 4 — iOS / Push Notification Backend
+
+#### POST /api/devices/register
+
+- **Summary:** Register Device — register an iOS or Android device token for push notifications
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_id` (string, required), `platform` ("ios"|"android", required), `token` (string, min 8 chars, required), `app_version` (string, optional)
+- **Response:** 201 — `{ id, artist_id, platform, token, app_version }`
+- **Notes:** Idempotent — duplicate (artist_id, platform, token) tuples upsert rather than error; `app_version` updated on re-register
+
+#### GET /api/devices
+
+- **Summary:** List Devices — list registered device tokens for an artist
+- **Auth:** Yes (X-API-Key)
+- **Query params:** `artist_id` (string, required)
+- **Response:** 200 — `{ devices: [...] }`
+
+#### POST /api/push/send
+
+- **Summary:** Push Send — send push notification to all registered devices for an artist (internal)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_id` (string, required), `title` (string, required), `body` (string, required), `data` (object, optional, default `{}`)
+- **Response:** 200 — `{ sent: int, errors: [...], results: [...] }`
+- **Notes:** APNs (iOS) and FCM (Android) clients are stubs behind `APNS_LIVE` / `FCM_LIVE` feature flags (default false); returns `mocked: true` until flags are enabled
+
+#### GET /api/app/config
+
+- **Summary:** App Config — return versioned app configuration, feature flags, kill-switches, and support URLs
+- **Auth:** Yes (X-API-Key)
+- **Response:** 200 — `{ schema_version, current_version: {ios, android}, min_version: {ios, android}, feature_flags, kill_switches, support_urls }`
+- **Notes:** App should cache with a TTL (e.g., 1 hour); kill_switches allow emergency feature disable without a release
+
+#### POST /api/app/version-check
+
+- **Summary:** Version Check — app sends its version; backend responds with update status
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `platform` ("ios"|"android", required), `current_version` (semver string, required)
+- **Response:** 200 — `{ status: "ok"|"soft_update"|"hard_update_required", message, current_version, latest_version, min_version }`
+- **Notes:** `hard_update_required` means version is below the minimum floor; `soft_update` means a newer version is available but not required
+
+#### POST /api/iap/validate-receipt
+
+- **Summary:** IAP Validate Receipt — validate Apple in-app purchase receipt (stub)
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_id` (string), `receipt_data` (base64 string), `product_id` (string), `transaction_id` (string)
+- **Response:** 200 — `{ valid: bool, mocked: bool, artist_id, product_id, transaction_id, note }`
+- **Notes:** Stub behind `IAP_LIVE` flag (default false); Stripe remains the primary billing rail; this endpoint exists for App Store compliance only
