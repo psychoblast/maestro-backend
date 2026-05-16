@@ -1051,6 +1051,10 @@ app.include_router(_booking_router)
 from social_service import router as _social_router, init_social_db, init_report_scheduler
 app.include_router(_social_router)
 
+# ── Phase 4 — iOS backend foundation (push, app config, version check, IAP) ───
+from phase4_service import router as _phase4_router, init_phase4_db
+app.include_router(_phase4_router)
+
 # ── Admin — Stats + deep health ───────────────────────────────────────────────
 from admin_service import router as _admin_router
 app.include_router(_admin_router)
@@ -1260,6 +1264,7 @@ init_booking_db()
 init_social_db()
 init_report_scheduler()
 init_release_db()
+init_phase4_db()
 
 # Wire campaign executor into scheduler (every 1h)
 # Runs in both "true" (live) and "dry_run" modes; execute_all_due_campaign_actions()
