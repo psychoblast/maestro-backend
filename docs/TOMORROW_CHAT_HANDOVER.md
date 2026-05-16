@@ -20,13 +20,26 @@ PLMKR is a release-engineering SaaS platform for independent artists. The backen
 - **Frontend:** `~/Desktop/ReveNation/` — **OFF LIMITS** for any PLMKR session. Different product (RÊVE NATION), different entity (Mind Vision LLC), different repo.
 - **Git author:** Tommy Lam `<mypsychoblast@gmail.com>` (placeholder; swap to Marquis-aligned email when that exists)
 
-## Current state at end of May 15, 2026 (after Session 5)
+## Current state at end of May 15, 2026 (after Session 6)
 
-- **main HEAD:** see `git log --oneline -1` — multiple S5 merges on top of S4
-- **Tag:** `v0.1-eod-2026-05-15-s5`
-- **Test suite:** 364/364 GREEN (`python3 -m pytest -q` → 364 passed ~340 s)
-- **Risk register:** 35 items total. R-35 newly mitigated (S5). 6 open items — all Tommy/Railway-gated, no code blockers.
-- **Deploy status:** Local dev fully functional. Railway deploy BLOCKED — R-02 (volume) and R-11 (APP_BASE_URL) must be resolved first. All code is ready to deploy.
+- **main HEAD:** see `git log --oneline -1` — S6 merges on top of S5
+- **Tag:** `v0.1-eod-2026-05-15-s6`
+- **Test suite:** 374/374 GREEN (`python3 -m pytest -q` → 374 passed ~280 s)
+- **Risk register:** 35 items total. No new risks or closures in S6. 7 open items — all Tommy/Railway-gated, no code blockers.
+- **Deploy status:** Local dev fully functional. Railway deploy BLOCKED — R-02 (volume) and R-11 (APP_BASE_URL) must be resolved first.
+
+## MASTER PLAN — where we are
+
+```
+Phase 0 — Foundation (16 voice agents, billing, auth)        ✅ CODE-COMPLETE
+Phase 1 — Email actions (Marcus curator-pitching + Gmail)    🟡 CODE-COMPLETE (see gaps below)
+Phase 2 — PR & booking actions                               ❌ NOT STARTED
+Phase 3 — Social & reports                                   🟡 PARTIAL (social_service.py built)
+Phase 4 — iOS & App Store                                    ❌ NOT STARTED
+```
+
+Phase 1 is **code-complete minus two polish items** (see Phase 1 audit below). The blocker is
+Tommy setting Gmail OAuth env vars on Railway (R-16), not code.
 
 ## What was accomplished May 15
 
@@ -48,48 +61,51 @@ Admin dashboard `GET /admin/dashboard` built (5 units, 40 tests). HTML shell, 6 
 auto-refresh, key-prompt modal, accessibility (ARIA), responsive CSS. R-35 identified (browser
 nav barrier). Test count 311 → 351.
 
-### Session 5 (S5 — current session)
+### Session 5 (S5 — evening)
 
 **Unit 1 — R-35 CLOSED** (`feat/may15-s5-unit1-r35-dashboard-unauth`, commit `57ac62e`):
   `/admin/dashboard` added to `_SKIP_AUTH_PATHS`. Shell now public; data endpoints auth-gated.
-  No browser extension needed. 3 new auth tests.
 
-**Unit 2 — Dashboard polish** (`feat/may15-s5-unit2-dashboard-polish`):
-  4 of 6 items: empty-state messages (.empty-state class), click-to-copy error rows
-  (navigator.clipboard + #copy-toast), sticky table headers (.table-wrap), raw JSON toggle
-  per section (_rawStore + .json-toggle-btn). 10 new tests.
+**Unit 2 — Dashboard polish:** empty-state messages, click-to-copy error rows, sticky table
+  headers, raw JSON toggle per section. 10 new tests.
 
-**Unit 3 — RUNBOOK_DASHBOARD.md** (`feat/may15-s5-unit3-runbook-dashboard`):
-  7 operational symptoms with diagnosis + action steps. First-time setup section.
+**Unit 3 — RUNBOOK_DASHBOARD.md:** 7 operational symptoms with diagnosis + action steps.
 
-**Unit 4 — EOD housekeeping** (current):
-  R-35 closed in risk register, HANDOVER_EOD_MAY15_S5.md created, TOMORROW_CHAT_HANDOVER.md
-  updated, tag v0.1-eod-2026-05-15-s5.
+**Unit 4 — EOD housekeeping.** Test count: 351 → 364.
 
-Test count: 351 → **364**. Delta S5: +13.
+### Session 6 (S6 — late evening)
 
-## New env vars introduced (none in S5)
+**Unit 1 — Phase 1 State Audit (read-only):** `docs/PHASE_1_AUDIT_MAY15.md` produced.
+  Phase 1 is ~85% production-ready. Two gaps found: compound-genre LIKE bug + thin inbox-test coverage.
 
-No new env vars in S5. All env vars still documented in `.env.example`.
+**Unit 2 — Gap closure:**
+  - Fixed `_db_list_curators` compound-genre LIKE bug. "indie pop" now correctly matches
+    curators whose genres JSON contains "indie" and "pop" as separate tokens.
+  - Added 10 direct unit tests for `_classify_reply()` and `detect_replies()` (including
+    R-34 prompt-injection guard verification).
+
+**Unit 3 — Seed scripts:**
+  - `scripts/seed_curators.py` — 50 curators from `data/curators_seed.json`, idempotent, production guard.
+  - `scripts/seed_test_pitch_data.py` — 3 artists, 3 curators, 4 pitches (draft/sent/replied), 2 interactions.
+  - `docs/SEED_DATA.md` — usage + schema + purge SQL.
+
+Test count: 364 → **374**. No risks closed. No new risks.
+
+## Phase 1 remaining gaps (non-blocking, from audit)
+
+1. **Curator scoring algorithm** — `_db_list_curators` orders by `tier ASC, response_rate DESC`
+   but has no weighted genre overlap scoring or recency penalty for `last_pitched_at`. Polish item.
+2. **`_generate_followup()` unit tests** — low priority; logic is straightforward.
+3. **Gmail OAuth callback full-flow test** — blocking for live Gmail, not for local dev.
 
 ## What's blocking next deploy (all Tommy / Railway work)
 
-1. **R-02 — Railway persistent volume** (HIGH PRIORITY): Upgrade to Hobby ($5/mo) then:
-   Railway → Service → Settings → Volumes → Add Volume (`plmkr-data`, mount `/data`, 1 GB).
-   Without this, SQLite DB is wiped on every redeploy.
-
-2. **R-11 — Set APP_BASE_URL on Railway** (REQUIRED before any deploy): App calls `sys.exit(1)`
-   at boot if unset. Set `APP_BASE_URL=https://<your-service>.up.railway.app` in Railway Variables.
-
-3. **Part A — Google Cloud OAuth setup** (~30 min): GCP Console → enable Gmail API → OAuth
-   consent screen → create OAuth 2.0 Client ID → copy Client ID + Secret. (R-16)
-
-4. **R-16 — Railway Variables**: After Part A: set `GMAIL_OAUTH_CLIENT_ID`,
-   `GMAIL_OAUTH_CLIENT_SECRET`, `GMAIL_OAUTH_REDIRECT_URI` in Railway Variables.
-
-5. **R-17 — Valid TWILIO_AUTH_TOKEN**: Obtain 32-char lowercase hex token from Twilio console.
-
-6. **R-24/R-25** (LOW — after R-02/R-16): Smoke-test live Railway DB + Gmail send.
+1. **R-02 — Railway persistent volume** (HIGH): Upgrade to Hobby ($5/mo), create `/data` volume (1 GB).
+2. **R-11 — Set APP_BASE_URL on Railway** (REQUIRED): `APP_BASE_URL=https://<your-service>.up.railway.app`
+3. **R-16 — Gmail OAuth** (~30 min setup): GCP Console → enable Gmail API → OAuth 2.0 Client → set
+   `GMAIL_OAUTH_CLIENT_ID`, `GMAIL_OAUTH_CLIENT_SECRET`, `GMAIL_OAUTH_REDIRECT_URI` on Railway.
+4. **R-17 — Valid TWILIO_AUTH_TOKEN**: 32-char lowercase hex from Twilio console.
+5. **R-24/R-25** (LOW — after R-02/R-16): Smoke-test live Railway DB + Gmail send.
 
 ## Standing rules for any PLMKR session
 
@@ -98,19 +114,20 @@ No new env vars in S5. All env vars still documented in `.env.example`.
   Replace with `<REDACTED>`. Pipe through `sed`. Overrides any user request to display credentials.
 - **Branches:** Feature branches only — never commit to main. Always `git merge --no-ff`.
 - **Verification:** Before any task done: grep, commit, full suite GREEN, nothing uncommitted.
-- **Test count floor:** 364/364 GREEN. Drop below = STOP and report.
+- **Test count floor:** 374/374 GREEN. Drop below = STOP and report.
 - **No real external API calls:** Mock all external HTTP at transport layer. TestClient only.
 - **Do NOT push to origin** — Tommy pushes manually.
 - **Docker:** `--no-cache` when changing `requirements.txt` or `Dockerfile`.
 
 ## Key files to read at start of any new chat
 
-1. `docs/HANDOVER_EOD_MAY15_S5.md` — S5 session record (R-35 closed, 4 polish items, runbook)
-2. `docs/RISK_REGISTER.md` — 35 items; 6 open (all Tommy/Railway-gated)
-3. `docs/ADMIN_DASHBOARD.md` — dashboard access guide + security model
-4. `docs/RUNBOOK_DASHBOARD.md` — operational runbook (7 symptoms)
-5. `docs/LOGGING.md` — structured logging convention
-6. `.env.example` — every env var the codebase reads
+1. `docs/HANDOVER_EOD_MAY15_S6.md` — S6 session record (Phase 1 audit + gap closure + seeds)
+2. `docs/PHASE_1_AUDIT_MAY15.md` — full Phase 1 audit findings (A-F sections)
+3. `docs/RISK_REGISTER.md` — 35 items; 7 open (all Tommy/Railway-gated)
+4. `docs/ADMIN_DASHBOARD.md` — dashboard access guide + security model
+5. `docs/RUNBOOK_DASHBOARD.md` — operational runbook (7 symptoms)
+6. `docs/SEED_DATA.md` — seed script usage + purge SQL
+7. `.env.example` — every env var the codebase reads
 
 ## Things the new Claude won't auto-figure-out
 
@@ -118,14 +135,17 @@ No new env vars in S5. All env vars still documented in `.env.example`.
 - **`extra={"module": ...}` is a reserved LogRecord field** — raises `KeyError` at runtime. Use `"svc"` instead.
 - **caplog doesn't capture structured logger output during module reload** — monkey-patch the logger directly.
 - **apscheduler is NOT installed in the test environment** — use log-capture, not apscheduler patching.
-- **APP_BASE_URL hard-fails on Railway** — Tommy MUST set this before any deploy.
-- **`/admin/dashboard` is now in `_SKIP_AUTH_PATHS`** (R-35 fix, S5) — HTML shell is public. All 6 JSON data endpoints remain auth-gated. This is intentional.
-- **`loadAnthropic()` and `loadGmail()` entry points corrected in S5** — now use `d.models` and `d.artists` respectively instead of `Object.entries(d)` on the whole response.
+- **APP_BASE_URL hard-fails on Railway** — Tommy MUST set this before any deploy. The code hard-fails intentionally.
+- **`/admin/dashboard` is in `_SKIP_AUTH_PATHS`** (R-35 fix, S5) — HTML shell is public. All 6 JSON data endpoints remain auth-gated. This is intentional.
+- **`loadAnthropic()` and `loadGmail()` entry points corrected in S5** — now use `d.models` and `d.artists` respectively.
+- **Compound-genre LIKE fix (S6):** `_db_list_curators` now tokenises genre strings into individual tokens before building LIKE clauses. "indie pop" matches curators with genres ["indie","pop"]. This is the correct behaviour.
+- **seed scripts are in `scripts/`** — not root. The root `seed_curators.py` is the old version (no production guard). Use `scripts/seed_curators.py` going forward.
+- **Test IDs prefixed `test-`** — all records from `seed_test_pitch_data.py` are prefixed `test-` for easy identification.
 - **RÊVE NATION confusion:** `~/Desktop/ReveNation/` is a separate product for a different entity. Do not touch during PLMKR sessions.
 - **`static/admin_dashboard.html` is the complete dashboard** — one file, ~700 lines. No build step.
 
 ## Today's goal
 
-[Tommy fills in — e.g. "upgrade Railway plan and create /data volume (R-02)", "set APP_BASE_URL on Railway then do a test deploy", "implement GCP OAuth setup for Gmail (R-16)", "browser-test the dashboard on Railway"]
+[Tommy fills in — e.g. "set up Gmail OAuth on GCP + Railway (R-16)", "create Railway volume R-02 + set APP_BASE_URL R-11 + test deploy", "build Phase 2 PR outreach service", "build curator scoring algorithm (Phase 1 polish)"]
 
 ---END PASTE---
