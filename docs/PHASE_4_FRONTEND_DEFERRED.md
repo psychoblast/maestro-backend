@@ -20,7 +20,7 @@ The backend foundation for Phase 4 is complete. All endpoints are in `phase4_ser
 |----------|---------|
 | `POST /api/devices/register` | Artist registers iOS/Android device token |
 | `GET  /api/devices` | List registered tokens for an artist |
-| `POST /api/notifications/send` | Internal — other services call this to push alerts |
+| `POST /api/push/send` | Internal — other services call this to push alerts |
 | `GET  /api/app/config` | Returns version requirements, feature flags, kill-switches, support URLs |
 | `POST /api/app/version-check` | App sends its version; backend replies: ok / soft_update / hard_update_required |
 | `POST /api/iap/validate-receipt` | Apple receipt validation stub for App Store compliance |

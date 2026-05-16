@@ -141,7 +141,7 @@ def test_register_device_duplicate_upserts(p4):
 
 def test_send_notification_no_devices(client):
     """No registered devices → sent=0, no error."""
-    r = client.post("/api/notifications/send", json={
+    r = client.post("/api/push/send", json={
         "artist_id": "artist-nodevices",
         "title": "New pitch reply!",
         "body": "A curator replied to your pitch.",
@@ -175,7 +175,7 @@ def test_send_notification_dispatches_to_registered_devices(p4):
     req = p4.NotificationSendRequest(
         artist_id="artist-push", title="Test", body="Push body", data={}
     )
-    result = asyncio.run(p4.send_notification(req))
+    result = asyncio.run(p4.push_send(req))
     assert result["sent"] == 2
     platforms = {r["platform"] for r in result["results"]}
     assert "ios" in platforms
