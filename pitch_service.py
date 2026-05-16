@@ -489,7 +489,12 @@ def _db_list_curators(genre: str = "", tier: str = "") -> list[dict]:
     if tier:
         q += " AND tier=?";  params.append(tier)
     if genre:
-        q += " AND genres LIKE ?";  params.append(f"%{genre}%")
+        # Tokenise compound genres ("indie pop" → ["indie", "pop"]) so that a
+        # curator whose genres JSON contains "indie" and "pop" as separate tokens
+        # is matched even when the artist genre string uses a compound form.
+        tokens = [t.strip() for t in genre.replace(",", " ").split() if t.strip()]
+        for token in tokens:
+            q += " AND genres LIKE ?";  params.append(f"%{token}%")
     q += " ORDER BY tier ASC, response_rate DESC"
     cur.execute(q, params)
     rows = cur.fetchall()
