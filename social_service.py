@@ -568,6 +568,7 @@ _PLATFORM_LIMITS = {
     "instagram": 2200,
     "tiktok":    2200,
     "facebook":  1000,
+    "linkedin":  3000,
 }
 
 _PLATFORM_STYLE = {
@@ -575,6 +576,7 @@ _PLATFORM_STYLE = {
     "instagram": "warm and visual, lead with emotion, use 3-5 relevant hashtags at end, emojis ok",
     "tiktok":    "energetic, trend-aware, speak to Gen Z/Millennial, hook is everything, casual",
     "facebook":  "slightly longer form, storytelling tone, community-focused, less hashtags",
+    "linkedin":  "professional but human, music industry angle, milestone-focused, no hashtag overload (max 3), first-person narrative",
 }
 
 _RILEY_SYSTEM = (
