@@ -133,3 +133,35 @@ def test_batch_posts_generates_correct_count(ss):
             result = asyncio.run(ss.schedule_posts(req))
     assert result["generated"] == 4  # 2 platforms × 2 posts each
     assert result["scheduled_via_buffer"] == 0
+
+
+# ── LinkedIn platform tests ───────────────────────────────────────────────────
+
+def test_linkedin_in_platform_limits(ss):
+    """LinkedIn is registered with a 3000-char limit."""
+    assert "linkedin" in ss._PLATFORM_LIMITS
+    assert ss._PLATFORM_LIMITS["linkedin"] == 3000
+
+
+def test_linkedin_in_platform_style(ss):
+    """LinkedIn has a platform style description."""
+    assert "linkedin" in ss._PLATFORM_STYLE
+    assert "professional" in ss._PLATFORM_STYLE["linkedin"].lower()
+
+
+def test_generate_social_post_linkedin_enforces_limit(ss):
+    """LinkedIn posts are capped at 3000 chars."""
+    long_content = "A" * 4000
+    mock_resp = MagicMock()
+    mock_resp.content = [MagicMock(text=(
+        f'{{"content":"{long_content}","suggested_media_prompt":"Studio shot",'
+        '"optimal_posting_window":"Wednesday 9am ET"}'
+    ))]
+    with patch("anthropic.Anthropic") as mock_anthropic:
+        mock_anthropic.return_value.messages.create.return_value = mock_resp
+        result = asyncio.run(ss.generate_social_post(
+            {"artist_name": "Test Artist", "genre": "indie"},
+            "linkedin",
+            {"news": "Signed to a major distributor"},
+        ))
+    assert len(result["content"]) <= 3000
