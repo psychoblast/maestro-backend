@@ -1022,7 +1022,144 @@ async def generate_weekly_report(
     log.info("weekly_report_generated", extra={"artist_id": artist_id,
              "action": "weekly_report", "result": "ok",
              "momentum_score": report["momentum_score"]})
+    # Attempt email delivery — GmailNotConnected is non-fatal (report already saved)
+    try:
+        await _email_weekly_report(artist_id, report, artist)
+    except Exception as e:
+        log.warning("report_email_skipped", extra={
+            "event": "report_email_skipped", "artist_id": artist_id, "reason": str(e),
+        })
     return report
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Unit 3.8.1 — Weekly report email delivery
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _build_report_html(report: dict, artist_name: str) -> str:
+    """Build an inline HTML email body for the weekly report."""
+    week_start = report.get("week_start", "")[:10]
+    week_end   = report.get("week_end",   "")[:10]
+    headline   = report.get("headline",   "Weekly update")
+    score      = report.get("momentum_score", 5)
+    insights   = report.get("insights",   "").replace("\n", "<br>")
+    recs       = report.get("recommendations", "").replace("\n", "<br>")
+    highlights = report.get("highlights", [])
+    summary    = report.get("summary", {})
+
+    pitches = summary.get("pitches", {})
+    pr      = summary.get("pr_outreach", {})
+    booking = summary.get("booking", {})
+    social  = summary.get("social", {})
+
+    highlights_html = "".join(f"<li>{h}</li>" for h in highlights) if highlights else "<li>No highlights this week</li>"
+
+    empty_state = (
+        pitches.get("sent", 0) + pr.get("sent", 0) +
+        booking.get("sent", 0) + social.get("posted", 0) == 0
+    )
+
+    if empty_state:
+        insights = (
+            "This is your first week with Playmaker — no outreach activity yet, but that's OK! "
+            "Your agents are ready. Connect Gmail, add curators, and schedule your first pitch batch."
+        )
+        recs = (
+            "1. Complete Gmail OAuth setup so your agents can send on your behalf.\n"
+            "2. Ask Marcus to pitch 5-10 curators to get your first batch out.\n"
+            "3. Set a weekly cadence — 3 pitches, 1 PR outreach, 4 social posts is a solid start."
+        )
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f9fafb;margin:0;padding:24px}}
+  .card{{background:#fff;border-radius:12px;padding:32px;max-width:600px;margin:0 auto;box-shadow:0 1px 4px rgba(0,0,0,.08)}}
+  h1{{font-size:20px;color:#111;margin:0 0 4px}}
+  .week{{font-size:13px;color:#6b7280;margin:0 0 24px}}
+  .score{{display:inline-block;background:#f3f4f6;border-radius:8px;padding:4px 12px;font-size:14px;font-weight:600;color:#374151}}
+  .metric-row{{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}}
+  .metric{{background:#f9fafb;border-radius:8px;padding:12px 16px;flex:1;min-width:100px}}
+  .metric-label{{font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:.5px}}
+  .metric-value{{font-size:22px;font-weight:700;color:#111;margin-top:2px}}
+  h2{{font-size:14px;font-weight:600;color:#374151;margin:24px 0 8px;text-transform:uppercase;letter-spacing:.5px}}
+  ul{{margin:0;padding-left:20px}}
+  li{{color:#374151;margin:4px 0;font-size:14px}}
+  p{{color:#374151;font-size:14px;line-height:1.6;margin:0 0 12px}}
+  .footer{{font-size:12px;color:#9ca3af;text-align:center;margin-top:32px}}
+</style></head>
+<body><div class="card">
+  <h1>{headline}</h1>
+  <div class="week">{week_start} → {week_end} &nbsp;|&nbsp; <span class="score">Momentum {score}/10</span></div>
+  <div class="metric-row">
+    <div class="metric"><div class="metric-label">Pitches sent</div><div class="metric-value">{pitches.get('sent',0)}</div></div>
+    <div class="metric"><div class="metric-label">Replies</div><div class="metric-value">{pitches.get('replied',0)}</div></div>
+    <div class="metric"><div class="metric-label">PR outreach</div><div class="metric-value">{pr.get('sent',0)}</div></div>
+    <div class="metric"><div class="metric-label">Bookings</div><div class="metric-value">{booking.get('sent',0)}</div></div>
+    <div class="metric"><div class="metric-label">Posts live</div><div class="metric-value">{social.get('posted',0)}</div></div>
+  </div>
+  <h2>Highlights</h2><ul>{highlights_html}</ul>
+  <h2>Analysis</h2><p>{insights}</p>
+  <h2>Next week</h2><p>{recs}</p>
+  <div class="footer">Playmaker · {artist_name} · Week of {week_start}</div>
+</div></body></html>"""
+
+
+def _build_report_plain(report: dict, artist_name: str) -> str:
+    """Plain-text fallback for the weekly report email."""
+    week_start = report.get("week_start", "")[:10]
+    week_end   = report.get("week_end",   "")[:10]
+    headline   = report.get("headline",   "Weekly update")
+    score      = report.get("momentum_score", 5)
+    insights   = report.get("insights",   "")
+    recs       = report.get("recommendations", "")
+    summary    = report.get("summary", {})
+    pitches    = summary.get("pitches", {})
+    pr         = summary.get("pr_outreach", {})
+    booking    = summary.get("booking", {})
+    social     = summary.get("social", {})
+
+    return (
+        f"PLAYMAKER — Weekly Report\n"
+        f"{artist_name} | {week_start} → {week_end} | Momentum: {score}/10\n\n"
+        f"{headline}\n\n"
+        f"METRICS\n"
+        f"  Pitches sent:  {pitches.get('sent', 0)}\n"
+        f"  Replies:       {pitches.get('replied', 0)}\n"
+        f"  PR outreach:   {pr.get('sent', 0)}\n"
+        f"  Bookings:      {booking.get('sent', 0)}\n"
+        f"  Posts live:    {social.get('posted', 0)}\n\n"
+        f"ANALYSIS\n{insights}\n\n"
+        f"NEXT WEEK\n{recs}\n"
+    )
+
+
+async def _email_weekly_report(artist_id: str, report: dict, artist: dict):
+    """
+    Send the weekly report to the artist's email via Gmail.
+    Raises GmailNotConnected if Gmail not linked — caller handles gracefully.
+    """
+    from pitch_service import send_email, GmailNotConnected
+    artist_email = artist.get("email", "")
+    if not artist_email:
+        raise ValueError(f"No email address on artist profile for {artist_id}")
+
+    artist_name = artist.get("artist_name", "Artist")
+    week_start  = report.get("week_start", "")[:10]
+    subject     = f"Your Playmaker Weekly Report — {week_start}"
+    html_body   = _build_report_html(report, artist_name)
+    plain_body  = _build_report_plain(report, artist_name)
+
+    await send_email(
+        artist_id=artist_id,
+        to=artist_email,
+        subject=subject,
+        body=html_body,
+    )
+    log.info("report_email_sent", extra={
+        "event": "report_email_sent", "artist_id": artist_id,
+        "to": artist_email, "week_start": week_start,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
