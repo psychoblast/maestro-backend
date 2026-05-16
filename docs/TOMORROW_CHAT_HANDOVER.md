@@ -20,13 +20,13 @@ PLMKR is a release-engineering SaaS platform for independent artists. The backen
 - **Frontend:** `~/Desktop/ReveNation/` — **OFF LIMITS** for any PLMKR session. Different product (RÊVE NATION), different entity (Mind Vision LLC), different repo.
 - **Git author:** Tommy Lam `<mypsychoblast@gmail.com>` (placeholder; swap to Marquis-aligned email when that exists)
 
-## Current state at end of May 15, 2026 (after Session 7)
+## Current state at end of May 15, 2026 (after Session 8 — FINAL)
 
-- **main HEAD:** see `git log --oneline -1` — S7 merges on top of S6
-- **Tag:** `v0.1-eod-2026-05-15-s7`
-- **Test suite:** 394/394 GREEN (`python3 -m pytest -q` → 394 passed ~210 s)
-- **Risk register:** 35 items total. No new risks or closures in S7. 7 open items — all Tommy/Railway-gated, no code blockers.
-- **Deploy status:** Local dev fully functional. Railway deploy BLOCKED — R-02 (volume) and R-11 (APP_BASE_URL) must be resolved first.
+- **main HEAD:** see `git log --oneline -1` — S8 merges on top of S7
+- **Tag:** `v0.1-eod-2026-05-15-s8-final`
+- **Test suite:** 421/421 GREEN (`python3 -m pytest -q` → 421 passed ~390 s)
+- **Risk register:** 35 items total. No new risks in S8. 6 open items — all Tommy/Railway-gated, no code blockers.
+- **Deploy status:** Local dev fully functional. Railway deploy BLOCKED — R-02 (volume) must be resolved first; R-11 (APP_BASE_URL) and R-16 (Gmail OAuth) after that.
 
 ## MASTER PLAN — where we are
 
@@ -34,12 +34,13 @@ PLMKR is a release-engineering SaaS platform for independent artists. The backen
 Phase 0 — Foundation (16 voice agents, billing, auth)        ✅ CODE-COMPLETE
 Phase 1 — Email actions (Marcus curator-pitching + Gmail)    ✅ CODE-COMPLETE (Gmail OAuth blocked on Railway)
 Phase 2 — PR & booking actions (Quinn + Avery)               ✅ CODE-COMPLETE (same Railway blocker)
-Phase 3 — Social & reports                                   🟡 PARTIAL (social_service.py built)
-Phase 4 — iOS & App Store                                    ❌ NOT STARTED
+Phase 3 — Social & reports (Riley)                           ✅ CODE-COMPLETE (S8)
+Phase 4 — iOS backend (push, config, version, IAP stubs)     ✅ CODE-COMPLETE (S8)
+Phase 4 — iOS frontend (React Native)                        ❌ DEFERRED (separate session, ~/Desktop/ReveNation/)
 ```
 
-Phase 1 and Phase 2 are both **code-complete**. The blocker is Tommy setting up Railway volume
-(R-02) and Gmail OAuth env vars (R-16) — not code.
+All backend phases are **code-complete**. The blocker is Tommy setting up Railway volume (R-02)
+and Gmail OAuth env vars (R-16) — not code. Phase 4 frontend (React Native) is a separate session.
 
 ## What was accomplished May 15
 
@@ -117,6 +118,34 @@ Test count: 364 → **374**. No risks closed. No new risks.
 
 Test count: 374 → **394**. No risks closed. No new risks. Phase 2 is code-complete.
 
+### Session 8 (S8 — final session of May 15)
+
+**Goal:** Close Phase 3 to code-complete. Build Phase 4 backend foundation.
+
+**Unit 1 — Phase 3 Audit:** `docs/PHASE_3_AUDIT_MAY15.md`. Phase 3 ~95% pre-built; 3 gaps.
+
+**Unit 2 — LinkedIn platform:** Added to `_PLATFORM_LIMITS` (3000 chars) and `_PLATFORM_STYLE`.
+  3 new tests.
+
+**Unit 3 — Report email delivery:** `_build_report_html()`, `_build_report_plain()`,
+  `_email_weekly_report()` — wired into `generate_weekly_report()` after save.
+  Empty-state HTML when all activity counts are zero. 7 new tests.
+
+**Unit 4 — Phase 4 backend foundation:** `phase4_service.py` (260 lines).
+  `POST /api/devices/register`, `GET /api/devices`, `POST /api/push/send`,
+  `GET /api/app/config`, `POST /api/app/version-check`, `POST /api/iap/validate-receipt`.
+  All live clients behind `APNS_LIVE`/`FCM_LIVE`/`IAP_LIVE` flags (default false).
+  17 new tests. main.py wired. .env.example updated.
+
+**Unit 5 — Phase 4 deferral doc:** `docs/PHASE_4_FRONTEND_DEFERRED.md` — 8 frontend work areas,
+  estimated 4-7 sessions to App Store, entry point for React Native session.
+
+**Unit 6 — EOD handover:** Fixed route conflict (`/api/notifications/send` → `/api/push/send`
+  to avoid Expo conflict in main.py). API_REFERENCE.md updated with all 5 Phase 4 routes.
+  `docs/HANDOVER_EOD_MAY15_S8.md` + `docs/END_OF_DAY_MAY15.md` written.
+
+Test count: 394 → **421**. No new risks. Phase 3 + Phase 4 backend code-complete.
+
 ## Phase 1 remaining gaps (non-blocking, from audit)
 
 1. **Curator scoring algorithm** — `_db_list_curators` orders by `tier ASC, response_rate DESC`
@@ -127,6 +156,14 @@ Test count: 374 → **394**. No risks closed. No new risks. Phase 2 is code-comp
 ## Phase 2 remaining gaps
 
 None. Phase 2 is **code-complete**. The same Railway blockers (R-02, R-16) apply before live use.
+
+## Phase 3 remaining gaps
+
+None. Phase 3 is **code-complete** (social_service.py + LinkedIn + report email delivery + HTML template + empty-state).
+
+## Phase 4 remaining gaps (backend)
+
+None. Phase 4 backend is **code-complete**. Feature flags (`APNS_LIVE`, `FCM_LIVE`, `IAP_LIVE`) are all `false` — live clients are stubs until the certs/keys are available. Frontend (React Native) is a separate session — see `docs/PHASE_4_FRONTEND_DEFERRED.md`.
 
 ## What's blocking next deploy (all Tommy / Railway work)
 
@@ -144,21 +181,21 @@ None. Phase 2 is **code-complete**. The same Railway blockers (R-02, R-16) apply
   Replace with `<REDACTED>`. Pipe through `sed`. Overrides any user request to display credentials.
 - **Branches:** Feature branches only — never commit to main. Always `git merge --no-ff`.
 - **Verification:** Before any task done: grep, commit, full suite GREEN, nothing uncommitted.
-- **Test count floor:** 394/394 GREEN. Drop below = STOP and report.
+- **Test count floor:** 421/421 GREEN. Drop below = STOP and report.
 - **No real external API calls:** Mock all external HTTP at transport layer. TestClient only.
 - **Do NOT push to origin** — Tommy pushes manually.
 - **Docker:** `--no-cache` when changing `requirements.txt` or `Dockerfile`.
 
 ## Key files to read at start of any new chat
 
-1. `docs/HANDOVER_EOD_MAY15_S7.md` — S7 session record (Phase 2 audit + gap closure + seeds)
-2. `docs/PHASE_2_STATUS_MAY15.md` — full Phase 2 status (A-K all ✅ after S7)
-3. `docs/PHASE_1_AUDIT_MAY15.md` — Phase 1 audit findings (A-F sections)
-4. `docs/RISK_REGISTER.md` — 35 items; 7 open (all Tommy/Railway-gated)
-5. `docs/ADMIN_DASHBOARD.md` — dashboard access guide + security model
-6. `docs/RUNBOOK_DASHBOARD.md` — operational runbook (7 symptoms)
+1. `docs/HANDOVER_EOD_MAY15_S8.md` — S8 final session record (Phase 3 + Phase 4 backend complete)
+2. `docs/END_OF_DAY_MAY15.md` — full 8-session day summary, test progression, risk table
+3. `docs/PHASE_4_FRONTEND_DEFERRED.md` — Phase 4 React Native spec (if doing frontend work)
+4. `docs/PHASE_2_STATUS_MAY15.md` — Phase 2 status (A-K all ✅)
+5. `docs/RISK_REGISTER.md` — 35 items; 6 open (all Tommy/Railway-gated)
+6. `docs/ADMIN_DASHBOARD.md` — dashboard access guide + security model
 7. `docs/SEED_DATA.md` — seed script usage + purge SQL (curators, PR contacts, venues)
-8. `.env.example` — every env var the codebase reads
+8. `.env.example` — every env var the codebase reads (includes Phase 4 flags)
 
 ## Things the new Claude won't auto-figure-out
 
@@ -177,9 +214,13 @@ None. Phase 2 is **code-complete**. The same Railway blockers (R-02, R-16) apply
 - **`test_batch_pr/booking_gmail_not_connected` tests** require `patch("pitch_service._check_and_increment_quota")` — the `daily_send_quota` table is created by pitch_service's init, not by pr/booking service fixtures.
 - **Phase 2 uses shared Gmail auth** — `pr_service` and `booking_service` both import `send_email`, `GmailNotConnected`, `GmailAuthExpired`, `_check_and_increment_quota` from `pitch_service`. No new OAuth routes.
 - **`POST /api/inbox/scan-all`** lives in `booking_service` — single Gmail auth → pitch + PR + booking reply detection in sequence.
+- **Phase 4 route naming:** `POST /api/push/send` (NOT `/api/notifications/send` — that path is taken by the Expo-based notif system in main.py). Duplicate operation ID will silently break OpenAPI if you restore the old name.
+- **Phase 4 test fixture** uses a minimal FastAPI app with just `phase4_service.router` — never import `main` in phase4 tests (causes `PermissionError: /data` at module load time).
+- **`phase4_service.push_send`** is the function name (renamed from `send_notification` to avoid operation ID conflict with main.py's `send_notification`).
+- **Report email delivery is non-fatal:** `GmailNotConnected` in `_email_weekly_report()` is caught with a warning log; the report is always saved to DB regardless.
 
 ## Today's goal
 
-[Tommy fills in — e.g. "set up Gmail OAuth on GCP + Railway (R-16)", "create Railway volume R-02 + set APP_BASE_URL R-11 + test deploy", "build Phase 3 social scheduling completion", "build Phase 4 iOS", "curator scoring algorithm (Phase 1 polish)"]
+[Tommy fills in — e.g. "create Railway volume R-02 + set APP_BASE_URL R-11 + test deploy", "set up Gmail OAuth on GCP + Railway (R-16)", "Phase 4 iOS frontend React Native session", "curator scoring algorithm (Phase 1 polish)", "onboard first artist + seed curator data + send first pitch"]
 
 ---END PASTE---

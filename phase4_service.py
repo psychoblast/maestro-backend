@@ -184,8 +184,8 @@ class NotificationSendRequest(BaseModel):
     data:      dict = {}
 
 
-@router.post("/api/notifications/send", tags=["phase4"])
-async def send_notification(req: NotificationSendRequest):
+@router.post("/api/push/send", tags=["phase4"])
+async def push_send(req: NotificationSendRequest):
     """
     Send push notification to all registered devices for an artist.
     APNs and FCM clients are stubs behind APNS_LIVE / FCM_LIVE flags (default false).
