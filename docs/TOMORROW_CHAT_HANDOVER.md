@@ -22,7 +22,7 @@ PLMKR is a release-engineering SaaS platform for independent artists. The backen
 
 ## Current state at end of May 15, 2026 (after Session 8 — FINAL)
 
-- **main HEAD:** see `git log --oneline -1` — S8 merges on top of S7
+- **main HEAD:** `66e12cf` — [merge] feat/phase3-4-finish-may15-s8-unit6-eod-handover
 - **Tag:** `v0.1-eod-2026-05-15-s8-final`
 - **Test suite:** 421/421 GREEN (`python3 -m pytest -q` → 421 passed ~390 s)
 - **Risk register:** 35 items total. No new risks in S8. 6 open items — all Tommy/Railway-gated, no code blockers.
@@ -188,14 +188,17 @@ None. Phase 4 backend is **code-complete**. Feature flags (`APNS_LIVE`, `FCM_LIV
 
 ## Key files to read at start of any new chat
 
-1. `docs/HANDOVER_EOD_MAY15_S8.md` — S8 final session record (Phase 3 + Phase 4 backend complete)
-2. `docs/END_OF_DAY_MAY15.md` — full 8-session day summary, test progression, risk table
-3. `docs/PHASE_4_FRONTEND_DEFERRED.md` — Phase 4 React Native spec (if doing frontend work)
-4. `docs/PHASE_2_STATUS_MAY15.md` — Phase 2 status (A-K all ✅)
-5. `docs/RISK_REGISTER.md` — 35 items; 6 open (all Tommy/Railway-gated)
-6. `docs/ADMIN_DASHBOARD.md` — dashboard access guide + security model
-7. `docs/SEED_DATA.md` — seed script usage + purge SQL (curators, PR contacts, venues)
-8. `.env.example` — every env var the codebase reads (includes Phase 4 flags)
+1. `docs/TOMORROW_CHAT_HANDOVER.md` — this file; paste into new chat first
+2. `docs/HANDOVER_EOD_MAY15_S8.md` — S8 final session record (Phase 3 + Phase 4 backend complete)
+3. `docs/END_OF_DAY_MAY15.md` — full 8-session day summary, test progression, risk table
+4. `docs/PHASE_1_AUDIT_MAY15.md` — Phase 1 audit findings (A-F; curator scoring gap, followup tests)
+5. `docs/PHASE_2_STATUS_MAY15.md` — Phase 2 status (A-K all ✅)
+6. `docs/PHASE_3_AUDIT_MAY15.md` — Phase 3 audit findings (A-H; 3 gaps, all closed in S8)
+7. `docs/PHASE_4_FRONTEND_DEFERRED.md` — Phase 4 React Native spec (if doing frontend work)
+8. `docs/RISK_REGISTER.md` — 35 items; 6 open (all Tommy/Railway-gated)
+9. `docs/ADMIN_DASHBOARD.md` — dashboard access guide + security model
+10. `docs/SEED_DATA.md` — seed script usage + purge SQL (curators, PR contacts, venues)
+11. `.env.example` — every env var the codebase reads (includes Phase 4 flags)
 
 ## Things the new Claude won't auto-figure-out
 
