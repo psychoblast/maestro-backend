@@ -230,3 +230,48 @@ GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for t
 ### Entity gate result
 
 GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (prior toolchain and prior owning-entity names). Broader sweep (sibling product names, scrubbed rubric codenames, numbered-agent routing, prior constitution/feedback-corpus paths, CISAC) also clean; the only broad-sweep matches were the benign substring "reve" inside "revenue", which is not a provenance marker.
+
+---
+
+## phase2/royalty-doctor — Royalty Recovery Agent (Doc)
+
+**Build date:** 2026-06-20
+
+### What was built
+
+**Mode A — Knowledge + Doctrine:**
+- 5 scrubbed knowledge files in `skills/maestro-royalty-doctor/knowledge/`, re-homed by reading the Royalty Recovery source and creating new PLMKR-owned originals (never copied):
+  - `recovery-doctrine.md` — identity & mission, recovery posture ("the royalty statement is not a check"; "the unpaid dollar is the most expensive dollar"; "lag is not loss"; "recovery is built on evidence"), what-it-does/does-not (scope-fence routing table), DNA & decision biases, seven hard refusals, eight-item judgment doctrine (Pipeline-First Diagnosis with IN TRANSIT/STUCK/UNDERPAID, statement verification, NOT EVALUABLE protocol with absent-vs-unverified, anti-fabrication symmetry, nine-mode revenue-leak taxonomy, black-box/unmatched-pool logic, audit-window discipline, NOT QUOTABLE), source tiers (A/B/C/[PLMKR-DEFAULT]), MEASURED/SOURCED/JUDGED classification, communication style
+  - `recovery-rubric.md` — Seven-Dimension Royalty Recovery Readiness Model (registration_integrity 0.20, statement_verification 0.18, black_box_recovery_readiness 0.16, pipeline_coverage 0.14, audit_readiness 0.12, collection_timing_discipline 0.10, recovery_documentation 0.10 → Σ=1.00), four hard gates (HG-1 no data → NOT EVALUABLE, HG-2 fabricated figure, HG-3 lag misdiagnosed, HG-4 expired window → TIME-CRITICAL), letter-grade anchors, provisional composite formula (0.0–10.0), Recovery Posture tiers, four-tier Recovery Plan, anti-fake-precision mechanics, required output elements
+  - `royalty-pipeline-mechanics.md` — US two-pipeline streaming flow (master/performance/mechanical), performance collection pipeline (writer's vs publisher's share), label accounting cycle (reserve/recoupment), collection timelines map (all Tier C), nine-mode pipeline failure taxonomy, unmatched-pool + reserve-release practitioner insight
+  - `statement-analysis.md` — statement architecture (label + publisher), line-item interpretation, twelve-category anomaly-detection checklist, accounting-window analysis (lag vs suspicious), controlled-composition clause accounting, the soft audit as first-response tool, domain anti-patterns
+  - `output-templates.md` — four templates (Royalty Recovery Audit, Statement Anomaly Report, Registration Gap Report, Black-Box/Historical Recovery Plan) with NOT EVALUABLE / NOT ESTIMABLE / NOT QUOTABLE discipline, lag-before-loss enforcement, and the execution-routing advisory footer
+- `MANIFEST.json` with 5-file load order
+- `SKILL.md` enriched: Doc persona retained verbatim (voice greeting intact); added recovery posture, Pipeline-First Diagnosis, the registration/statement/gap audit framework upgraded with the revenue-leak taxonomy, audit-window discipline, the judgment discipline block (NOT EVALUABLE / anti-fabrication / lag-before-loss / unrecouped≠owed / black-box≠theft / source-tier / scope fences), and the seven-dimension recovery-readiness lens
+
+**Mode B — Structured Assessment Route:**
+- `royalty_doctor_loader.py` — manifest-driven context loader, mirrors `ink_and_air_loader.py` exactly (knowledge header: "PLMKR ROYALTY RECOVERY KNOWLEDGE BASE")
+- `POST /api/agents/royalty-doctor/assess` — `ROYALTY_DOCTOR_MOCK_MODE=true` by default; canned realistic seven-dimension PROVISIONAL Royalty Recovery Audit (composite 6.4/10, all four hard gates CLEAR, recovery_posture NOTABLE_LEAKAGE) with a three-entry Leak Map, four-tier Recovery Plan, recoverable amounts labeled NOT ESTIMABLE, and the routing advisory footer — zero live Anthropic calls. Identity bound from `artist_name`; scores recovery state (not valuation); recovery posture is descriptive leakage severity (never a go/no-go); threshold/retention language framed as industry convention.
+- Models: `RoyaltyCatalogInput`, `RoyaltyDoctorAssessRequest`
+- Documented in `docs/API_REFERENCE.md`
+
+**Tests added:**
+- `tests/test_royalty_doctor_loader.py` — 8 loader tests (empty manifest, load order, graceful skip, unknown ID, skill+knowledge combination, preloaded skill text, no-knowledge fallback, entity gate)
+- `tests/test_royalty_doctor_assess.py` — 23 route tests (200 mock, structure, identity binding, 7 dimensions, weights sum to 1.0, 4 hard gates, composite PROVISIONAL, composite range 0–10, composite matches weighted sum, recovery-posture validity, advisory footer, recovery-plan tiers, leak-map evidence, catalog_name binding, template-not-mutated, catalog fields, entity wall, recoverable NOT ESTIMABLE, 422 missing artist_name, 422 missing catalog, no-key mock still 200, live-mode no-key 503, all-gates-CLEAR for healthy catalog)
+
+### Commit hashes and tags
+
+| Commit | Hash | Tag |
+|--------|------|-----|
+| Mode A — knowledge + SKILL.md | `46cc5bb` | `phase2-royalty-doctor-A` |
+| Mode B — loader + route + tests + API doc | `e7c0932` | `phase2-royalty-doctor-B` |
+
+### Test count
+
+- New tests added: 31 (8 loader + 23 assess)
+- Prior floor entering this session: 582
+- Total after royalty-doctor: 613 (net +31; floor did not drop)
+
+### Entity gate result
+
+GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (`agent-?os|mindvision|mindvisionllc`). Broader sweep (nexus, scrubbed rubric codenames, prior constitution paths, sibling product names) also clean; the only broad-sweep matches were the benign substring "reve" inside "revenue" and "prevent", which are not provenance markers. The loader smoke test (`assert_no_forbidden_terms` over the assembled real knowledge) passes.
