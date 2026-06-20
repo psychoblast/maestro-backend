@@ -1,0 +1,53 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Lex-Cipher legal knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "legal-doctrine",
+      "path": "skills/maestro-lex-cipher/knowledge/legal-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Domain constraint (drafts/flags never advises), DNA, anti-patterns, red-flag review sequence, deal-type classification tree, NOT EVALUABLE protocol, anti-fabrication source tiers, infringement framework, chain-of-title classification, escalation and territorial rules"
+    },
+    {
+      "id": "deal-quality-rubric",
+      "path": "skills/maestro-lex-cipher/knowledge/deal-quality-rubric.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Eight-dimension deal/document quality rubric, letter-grade anchors, four hard gates, provisional composite formula, risk classification, unlock condition"
+    },
+    {
+      "id": "contract-architecture",
+      "path": "skills/maestro-lex-cipher/knowledge/contract-architecture.md",
+      "role": "deal-knowledge",
+      "required": true,
+      "description": "Clause-level legal mechanics by agreement type: recording, publishing/songwriter, management, licensing, live/touring, business entities, and adjacent commercial/employment/NDA agreements"
+    },
+    {
+      "id": "copyright-ip-international",
+      "path": "skills/maestro-lex-cipher/knowledge/copyright-ip-international.md",
+      "role": "copyright-ip-knowledge",
+      "required": true,
+      "description": "Two-copyright model, territorial copyright basics, preliminary infringement framework, chain of title and work-for-hire, trademark mechanics, international deal mechanics, dispute-resolution ladder, currency discipline"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-lex-cipher/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Four output templates: Contract/Deal Review, Copyright Infringement Preliminary Analysis, IP Chain-of-Title Checklist, Business Entity Identification — each with the mandatory counsel footer and negotiation-routing discipline"
+    }
+  ],
+  "load_order": [
+    "legal-doctrine",
+    "deal-quality-rubric",
+    "contract-architecture",
+    "copyright-ip-international",
+    "output-templates"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, prior toolchain names, or entity names from source material.",
+    "mock_mode": "The assessment route defaults to LEX_CIPHER_MOCK_MODE=true — no live Anthropic calls during testing.",
+    "domain_constraint": "Drafts and flags — never advises. Every risk-touching output routes to qualified entertainment counsel."
+  }
+}
