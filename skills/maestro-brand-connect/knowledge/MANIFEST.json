@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Brand Connect knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "scoring-rubric",
+      "path": "skills/maestro-brand-connect/knowledge/scoring-rubric.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "8-dimension Deal Quality Score rubric — weights, anchors, hard gates (Dim-3 Partner Quality, Dim-5 Risk & Exposure), composite formula"
+    },
+    {
+      "id": "partnership-strategy",
+      "path": "skills/maestro-brand-connect/knowledge/partnership-strategy.md",
+      "role": "strategy-doctrine",
+      "required": true,
+      "description": "Partnership value-creation logic, strategic fit assessment, artist brand partnership taxonomy, audience alignment by genre, alliance lifecycle"
+    },
+    {
+      "id": "deal-economics",
+      "path": "skills/maestro-brand-connect/knowledge/deal-economics.md",
+      "role": "economic-doctrine",
+      "required": true,
+      "description": "Deal economic structures, net economics vs. headline consideration, kill fee standards, payment schedule assessment, Dim-2 application for artist brand deals"
+    },
+    {
+      "id": "deal-structure-and-terms",
+      "path": "skills/maestro-brand-connect/knowledge/deal-structure-and-terms.md",
+      "role": "structure-doctrine",
+      "required": true,
+      "description": "Time/scope/optionality axes, exclusivity standards, IP ownership, creative approval standards, foreclosing term identification, Dim-5 hard gate analysis"
+    },
+    {
+      "id": "partner-due-diligence",
+      "path": "skills/maestro-brand-connect/knowledge/partner-due-diligence.md",
+      "role": "diligence-doctrine",
+      "required": true,
+      "description": "5-domain partner due diligence framework, credibility scoring, disqualifying vs. uncertain boundary, music artist brand partnership diligence patterns"
+    },
+    {
+      "id": "brand-platform-deals",
+      "path": "skills/maestro-brand-connect/knowledge/brand-platform-deals.md",
+      "role": "deal-type-doctrine",
+      "required": false,
+      "description": "Brand partnership strategic rationale tests, co-marketing structures, DSP/platform deal assessment, reputational risk assessment"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-brand-connect/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Three output templates: Deal Quality Assessment Memo, Partnership Brief, Contract Red Flag Checklist"
+    }
+  ],
+  "load_order": [
+    "scoring-rubric",
+    "partnership-strategy",
+    "deal-economics",
+    "deal-structure-and-terms",
+    "partner-due-diligence",
+    "brand-platform-deals",
+    "output-templates"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to BRAND_CONNECT_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
