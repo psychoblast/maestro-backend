@@ -138,3 +138,49 @@ GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for a
 ### Entity gate result
 
 GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for all provenance marker patterns (prior toolchain and entity names). Broader sweep (rêve, nexus, gate-evidence, constitution, master_plan, core/, verticals/, numbered-agent routing) also clean.
+
+---
+
+## phase2/tour-commander — Tour & Live
+
+**Agent slug:** tour-commander
+**Build date:** 2026-06-20
+
+### What was built
+
+**Mode A — Knowledge + Doctrine:**
+- 5 scrubbed knowledge files in `skills/maestro-tour-commander/knowledge/`:
+  - `tour-doctrine.md` — identity & mission, DNA ("model first, route second, commit third"), operating philosophy, decision biases, eight hard refusals, eight-item judgment doctrine (tour format, offer evaluation, break-even, routing build, NOT EVALUABLE protocol, anti-fabrication, ticketing price-point, international trigger), source tiers (A/B/C/default), MEASURED/SOURCED/JUDGED classification, PLMKR scope-fence routing
+  - `campaign-quality-rubric.md` — Eight-Dimension Tour Campaign Quality model (routing_logic 0.20, financial_model_integrity 0.20, offer_evaluation_quality 0.15, production_readiness 0.15, ticketing_strategy 0.12, international_readiness 0.08, merch_planning 0.06, settlement_process 0.04 → Σ=1.00), four hard gates (HG-1..HG-4), grade anchors, provisional composite formula (0.0–4.3), five-tier descriptive risk classification, anti-fake-precision, action profile
+  - `tour-operations.md` — routing & logistics (anchor-first protocol, efficiency tests, distance-vs-revenue, travel mode tree, day-off, dead legs), tour economics & P&L (structure, break-even, artist-to-gross, tour support, profit-center ranking), production management (rider architecture, advance protocol, stage plot, provision tiers, venue evaluation)
+  - `live-business-ecosystem.md` — booking-agency dynamics, venue tier ladder & promoter ecosystem, offer/deal taxonomy + split-point + settlement + red-flag table, ticketing strategy, tour merchandise, festivals & special events, international touring (territory readiness, work permits, withholding, FX)
+  - `output-templates.md` — four templates (Tour Routing Assessment, Offer Evaluation Report, Tour P&L Pre-Model, Festival Strategy Assessment) with NOT EVALUABLE / NOT FABRICABLE rules and scope-fence handoffs
+- `MANIFEST.json` with 5-file load order
+- `SKILL.md` enriched: Miles persona retained verbatim; added DNA, philosophy, hard refusals, condensed judgment doctrine, NOT EVALUABLE / anti-fabrication discipline + source tiers, eight-dimension campaign awareness, elevated operational sections (budget, advancing, settlement, routing, carnet, merch), tier-aware depth, PLMKR scope fences
+
+**Mode B — Structured Assessment Route:**
+- `tour_commander_loader.py` — manifest-driven context loader, mirrors `lex_cipher_loader.py` / `ar_scout_loader.py` exactly (knowledge header: "PLMKR TOUR & LIVE KNOWLEDGE BASE")
+- `POST /api/agents/tour-commander/assess` — `TOUR_COMMANDER_MOCK_MODE=true` by default; canned eight-dimension PROVISIONAL assessment (composite 3.1/4.3, all four hard gates CLEAR, risk NOTABLE_GAPS) with an action profile and the operational-advisory footer, and zero live Anthropic calls. Identity bound from `artist_name`; scores PLANNING STATE not box-office outcome; risk classification is descriptive severity (never a go/no-go); threshold language framed as industry convention.
+- Models: `TourCampaignInput`, `TourCommanderAssessRequest`
+- Documented in `docs/API_REFERENCE.md`
+
+**Tests added:**
+- `tests/test_tour_commander_loader.py` — 8 loader tests (empty manifest, load order, graceful skip, unknown ID, skill+knowledge combination, preloaded skill text, no-knowledge fallback, entity gate)
+- `tests/test_tour_commander_assess.py` — 19 route tests (200 mock, structure, identity binding, 8 dimensions, weights sum to 1.0, 4 hard gates, composite PROVISIONAL, composite range 0.0–4.3, risk classification validity, advisory footer present, tour_type binding, template-not-mutated, campaign fields, entity wall, 422 missing artist_name, 422 missing campaign, action-profile priorities valid, no-key mock still 200, live-mode no-key 503)
+
+### Commit hashes and tags
+
+| Commit | Hash | Tag |
+|--------|------|-----|
+| Mode A — knowledge + SKILL.md | `2055f33` | `phase2-tour-commander-A` |
+| Mode B — loader + route + tests + API doc | `355084e` | `phase2-tour-commander-B` |
+
+### Test count
+
+- New tests added: 27 (8 loader + 19 assess)
+- Prior floor entering this session: 526
+- Total after tour-commander: 553 (net +27; floor did not drop)
+
+### Entity gate result
+
+GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (prior toolchain and prior owning-entity names). Broader sweep (sibling product names, scrubbed rubric codenames, numbered-agent routing, prior feedback-corpus paths) also clean; the only broad-sweep match was the benign pytest term "fixtures", which is not a provenance marker.
