@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "PLMKR A&R Scout knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "scoring-rubric",
+      "path": "skills/maestro-ar-scout/knowledge/scoring-rubric.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Five-Pillar scoring rubric, verdict ladder, hard gates, risk assessment framework"
+    },
+    {
+      "id": "song-evaluation",
+      "path": "skills/maestro-ar-scout/knowledge/song-evaluation.md",
+      "role": "evaluation-method",
+      "required": true,
+      "description": "Three-Axis evaluation model, commercial ceiling tiers, audio grounding principles, structural evaluation frameworks"
+    },
+    {
+      "id": "artist-development",
+      "path": "skills/maestro-ar-scout/knowledge/artist-development.md",
+      "role": "development-doctrine",
+      "required": true,
+      "description": "Development arc model, identity development, trajectory assessment, investment case framework, waterfall release model, career stage classification, coach mode"
+    },
+    {
+      "id": "global-ar-systems",
+      "path": "skills/maestro-ar-scout/knowledge/global-ar-systems.md",
+      "role": "territory-context",
+      "required": false,
+      "description": "Territory-specific A&R knowledge: K-pop, LatAm, Afrobeats, UK, Japan, India, SEA, Germany, France, MENA, Canada — crossover sequencing strategy"
+    },
+    {
+      "id": "output-template",
+      "path": "skills/maestro-ar-scout/knowledge/output-template.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Four output templates: Signing Evaluation Memo, Watch-List Entry, Development Review, Coach-Mode Feedback"
+    }
+  ],
+  "load_order": [
+    "scoring-rubric",
+    "song-evaluation",
+    "artist-development",
+    "global-ar-systems",
+    "output-template"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to AR_SCOUT_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}

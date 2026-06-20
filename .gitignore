@@ -25,3 +25,4 @@ write_video.py
 # Working documents — not versioned
 *.docx
 .openapi_tmp/
+SESSION_LOG.md
