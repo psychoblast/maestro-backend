@@ -28,6 +28,7 @@ from grid_prophet_loader import build_grid_prophet_system_prompt
 from sync_agent_loader import build_sync_agent_system_prompt
 from brand_connect_loader import build_brand_connect_system_prompt
 from lex_cipher_loader import build_lex_cipher_system_prompt
+from tour_commander_loader import build_tour_commander_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -53,6 +54,8 @@ SYNC_AGENT_MOCK_MODE     = os.environ.get("SYNC_AGENT_MOCK_MODE",     "true").lo
 BRAND_CONNECT_MOCK_MODE  = os.environ.get("BRAND_CONNECT_MOCK_MODE",  "true").lower() != "false"
 # Legal (Lex-Cipher) assessment mock mode — default ON so no live Anthropic calls during testing
 LEX_CIPHER_MOCK_MODE     = os.environ.get("LEX_CIPHER_MOCK_MODE",     "true").lower() != "false"
+# Tour & Live (Tour-Commander) assessment mock mode — default ON so no live Anthropic calls during testing
+TOUR_COMMANDER_MOCK_MODE = os.environ.get("TOUR_COMMANDER_MOCK_MODE", "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -3769,5 +3772,270 @@ INSTRUCTIONS:
         "agreement":       req.agreement.model_dump(),
         "assessment_text": assessment_text,
         "counsel_footer":  _LEX_CIPHER_COUNSEL_FOOTER,
+        "model":           MODEL_SONNET,
+    }
+
+
+# ── TOUR-COMMANDER — Tour Campaign Quality Assessment ─────────────────────────
+
+class TourCampaignInput(BaseModel):
+    """Structured description of the tour campaign under review.
+
+    The agent scores what is PRESENT and flags what is ABSENT — absence of a
+    required planning step (a break-even model, a confirmed anchor, a production
+    advance) is itself evaluable as a gap. These flags describe the campaign's
+    planning state; they are not predictions of box-office outcome.
+    """
+    campaign_name:                    str  = ""
+    tour_type:                        str  = "headline"   # headline|support|festival_run|one_off|international
+    markets_count:                    int  = 0
+    has_international_dates:           bool = False
+    # Dimension 1 — Routing Logic
+    anchor_dates_confirmed:           bool = False
+    routing_efficiency_ratio:         Optional[float] = None   # show days / total tour days
+    dead_legs_analyzed:               bool = False
+    # Dimension 2 — Financial Model Integrity
+    break_even_model_exists:          bool = False
+    modeled_before_routing:           bool = False
+    sensitivity_scenarios_modeled:    bool = False            # 70/85/100% capacity
+    # Dimension 3 — Offer Evaluation Quality
+    offers_evaluated_against_framework: bool = False
+    split_points_analyzed:            Optional[bool] = None
+    red_flag_clauses_identified:      bool = False
+    # Dimension 4 — Production Readiness
+    rider_complete:                   bool = False
+    production_advance_completed:     bool = False
+    advance_lead_weeks:               Optional[int] = None
+    # Dimension 5 — Ticketing Strategy
+    price_points_market_analyzed:     bool = False
+    tier_structure_defined:           bool = False            # GA + mid + VIP
+    secondary_market_monitored:       bool = False
+    # Dimension 6 — International Readiness
+    work_permits_confirmed:           Optional[bool] = None
+    withholding_modeled:              Optional[bool] = None
+    territory_streaming_signal:       Optional[bool] = None
+    # Dimension 7 — Merch Planning
+    merch_planned:                    bool = False
+    hall_fees_documented:             bool = False
+    # Dimension 8 — Settlement Process
+    settlement_review_process:        bool = False
+    red_flag_clauses:                 list[str] = []          # named red-flag clauses present in offers
+
+class TourCommanderAssessRequest(BaseModel):
+    artist_id:        str = ""
+    artist_name:      str
+    artist_territory: str = "unknown"
+    campaign:         TourCampaignInput
+    additional_notes: str = ""
+
+_TOUR_COMMANDER_ADVISORY_FOOTER = (
+    "Operational assessment only — not legal, tax, or immigration advice. "
+    "Route contracts and work permits to qualified counsel; route detailed "
+    "financial modeling to the finance function."
+)
+
+_TOUR_COMMANDER_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist_name": None,   # filled at runtime
+    "campaign": None,      # filled at runtime
+    "operating_principle": "Model first, route second, commit third. Scores planning state — not box-office outcome.",
+    "assessment": {
+        "tour_type": None,  # filled at runtime
+        "dimensions": {
+            "routing_logic": {
+                "grade": "B", "numeric": 3.0, "weight": 0.20, "confidence": "MEDIUM",
+                "rationale": "Anchor-first protocol evident and dead legs analyzed; routing efficiency ratio sits in the adequate band rather than the efficient band. Sequence is defensible but carries some geography-driven fill dates.",
+                "sub_signals": "anchors confirmed SOURCED · dead legs analyzed SOURCED · efficiency ratio MEASURED (adequate band) · market sequence JUDGED",
+                "not_evaluable": []
+            },
+            "financial_model_integrity": {
+                "grade": "A-", "numeric": 3.7, "weight": 0.20, "confidence": "HIGH",
+                "rationale": "A complete break-even model exists and was built before routing was locked, with 70/85/100% sensitivity scenarios. One expense category is estimated without a firm basis.",
+                "sub_signals": "break-even model SOURCED · modeled before routing SOURCED · sensitivity scenarios SOURCED · one expense estimate JUDGED",
+                "not_evaluable": []
+            },
+            "offer_evaluation_quality": {
+                "grade": "B", "numeric": 3.0, "weight": 0.15, "confidence": "MEDIUM",
+                "rationale": "Offers evaluated against the framework with red-flag clauses identified; split-point reachability checked on most but not all backend offers. No below-threshold offer accepted without rationale.",
+                "sub_signals": "framework applied SOURCED · red-flags identified SOURCED · split-point analysis AMBIGUOUS (partial)",
+                "not_evaluable": []
+            },
+            "production_readiness": {
+                "grade": "B+", "numeric": 3.3, "weight": 0.15, "confidence": "HIGH",
+                "rationale": "Rider complete and appropriate to deal level; production advance completed with adequate lead time. Minor discrepancies expected to resolve before show week.",
+                "sub_signals": "rider complete SOURCED · advance completed SOURCED · advance lead MEASURED (≥2 weeks)",
+                "not_evaluable": []
+            },
+            "ticketing_strategy": {
+                "grade": "B-", "numeric": 2.7, "weight": 0.12, "confidence": "MEDIUM",
+                "rationale": "Tier structure defined and secondary market monitored, but pricing is applied with limited market-by-market analysis. Accessible GA floor maintained.",
+                "sub_signals": "tier structure SOURCED · secondary monitored SOURCED · market-by-market price analysis AMBIGUOUS",
+                "not_evaluable": []
+            },
+            "international_readiness": {
+                "grade": "B-", "numeric": 2.7, "weight": 0.08, "confidence": "MEDIUM",
+                "rationale": "International leg has a confirmed work-permit pathway and a territory streaming signal; withholding tax is not yet fully modeled in the P&L. Treat permit and tax specifics as routed to counsel.",
+                "sub_signals": "work permit pathway SOURCED · territory streaming signal SOURCED · withholding modeling AMBIGUOUS",
+                "not_evaluable": ["definitive withholding rates and treaty relief — route to the finance function and qualified tax counsel"]
+            },
+            "merch_planning": {
+                "grade": "B", "numeric": 3.0, "weight": 0.06, "confidence": "MEDIUM",
+                "rationale": "Merch planned and on track for tour start; hall fees documented for most venues. Per-market inventory plan is partial.",
+                "sub_signals": "merch planned SOURCED · hall fees documented SOURCED (most venues) · per-market inventory JUDGED",
+                "not_evaluable": []
+            },
+            "settlement_process": {
+                "grade": "B", "numeric": 3.0, "weight": 0.04, "confidence": "MEDIUM",
+                "rationale": "A line-by-line settlement review process is in place against the deal memo with a dispute protocol. Tour-wide tracking is being maintained.",
+                "sub_signals": "review process SOURCED · dispute protocol SOURCED · tour-wide tracking JUDGED",
+                "not_evaluable": []
+            }
+        },
+        "hard_gates": {
+            "break_even_gate":       "CLEAR — break-even model built before routing commitment (HG-1 not triggered)",
+            "anchor_dates_gate":     "CLEAR — top anchor markets confirmed before secondary routing fill (HG-2 not triggered)",
+            "work_permit_gate":      "CLEAR — work-permit pathway confirmed for the international leg (HG-3 not triggered)",
+            "production_advance_gate": "CLEAR — production advance completed ≥2 weeks before every show (HG-4 not triggered)"
+        },
+        "composite": {
+            "value": 3.1,
+            "formula": "(3.0×0.20)+(3.7×0.20)+(3.0×0.15)+(3.3×0.15)+(2.7×0.12)+(2.7×0.08)+(3.0×0.06)+(3.0×0.04)",
+            "scale": "0.0–4.3 (letter-grade numeric)",
+            "label": "PROVISIONAL",
+            "band": "Adequate campaign — gaps that reduce efficiency or upside",
+            "unlock_condition": "≥30 outcome-checked tour-campaign evaluations"
+        },
+        "risk_classification": "NOTABLE_GAPS",
+        "red_flags": [],
+        "action_profile": [
+            {"priority": "PRIORITY", "item": "Tighten the routing efficiency ratio into the efficient band by reviewing geography-driven fill dates against the distance-vs-revenue test."},
+            {"priority": "OPTIMIZE", "item": "Add market-by-market price analysis before on-sale; the tier structure is set but pricing is not yet market-calibrated."},
+            {"priority": "OPTIMIZE", "item": "Complete withholding-tax modeling for the international leg with the finance function before the P&L is treated as final."}
+        ],
+        "not_evaluable": [
+            "Box-office outcome — this assessment scores the campaign's planning state from structured flags, not realized ticket sales. Settlement data closes the loop after the shows."
+        ],
+        "next_best_action": "Run the distance-vs-revenue test on every geography-driven fill date to lift the routing efficiency ratio, then finalize withholding-tax modeling on the international leg before locking the P&L. Route any work-permit and contract specifics to qualified counsel.",
+        "advisory_footer": _TOUR_COMMANDER_ADVISORY_FOOTER
+    },
+    "mock_note": "TOUR_COMMANDER_MOCK_MODE=true — this is a canned assessment. Set TOUR_COMMANDER_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/tour-commander/assess", tags=["tour-commander"])
+async def tour_commander_assess(req: TourCommanderAssessRequest):
+    """
+    Tour campaign quality assessment for a PLMKR artist's touring plan.
+
+    The agent scores the eight-dimension Tour Campaign Quality Rubric (routing
+    logic, financial-model integrity, offer-evaluation quality, production
+    readiness, ticketing strategy, international readiness, merch planning,
+    settlement process), states the four hard gates, computes a PROVISIONAL
+    composite, and classifies campaign risk severity. It scores PLANNING STATE —
+    not box-office outcome — and routes contracts, permits, and detailed
+    financial modeling to the appropriate functions and qualified counsel.
+
+    Artist identity is bound from the request payload (artist_name from the
+    touring context), NOT from the Playmaker account profile, to prevent
+    account-name vs. credited-artist mismatches.
+
+    When TOUR_COMMANDER_MOCK_MODE=true (default), returns a canned scored
+    assessment without calling the Anthropic API. Set TOUR_COMMANDER_MOCK_MODE=false
+    with a valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if TOUR_COMMANDER_MOCK_MODE:
+        result = dict(_TOUR_COMMANDER_MOCK_ASSESSMENT)
+        result["artist_name"] = req.artist_name
+        result["campaign"]    = req.campaign.model_dump()
+        # shallow-copy the assessment block so per-request fields don't mutate the template
+        assessment = dict(result["assessment"])
+        assessment["tour_type"] = req.campaign.tour_type
+        result["assessment"] = assessment
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set TOUR_COMMANDER_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_tour_commander_system_prompt(skills_dir=SKILLS_DIR)
+
+    c = req.campaign
+
+    intl_line = (
+        "International dates in scope — HG-3 applies."
+        if c.has_international_dates else
+        "No international dates — HG-3 NOT APPLICABLE; Dimension 6 NOT APPLICABLE."
+    )
+
+    user_prompt = f"""You are performing a PLMKR tour campaign quality assessment. You score PLANNING STATE — not box-office outcome. Use the eight-dimension Tour Campaign Quality Rubric, the four hard gates, and the Tour Routing Assessment template from your knowledge base.
+
+ARTIST IDENTITY (use this — not any account name):
+- Credited artist name: {req.artist_name}
+- Artist territory: {req.artist_territory}
+
+CAMPAIGN UNDER REVIEW (structured planning-state flags — not realized sales):
+- Campaign name: {c.campaign_name or 'NOT NAMED'}
+- Tour type: {c.tour_type}
+- Markets in scope: {c.markets_count}
+- {intl_line}
+- Anchor dates confirmed before fill: {'YES' if c.anchor_dates_confirmed else 'NO — HG-2 candidate'}
+- Routing efficiency ratio (show days ÷ total days): {c.routing_efficiency_ratio if c.routing_efficiency_ratio is not None else 'NOT STATED'}
+- Dead legs analyzed: {'YES' if c.dead_legs_analyzed else 'NO'}
+- Break-even model exists: {'YES' if c.break_even_model_exists else 'NO — HG-1 candidate'}
+- Break-even modeled before routing lock: {'YES' if c.modeled_before_routing else 'NO — HG-1 candidate'}
+- Sensitivity scenarios (70/85/100%) modeled: {'YES' if c.sensitivity_scenarios_modeled else 'NO'}
+- Offers evaluated against the framework: {'YES' if c.offers_evaluated_against_framework else 'NO'}
+- Split points analyzed: {c.split_points_analyzed if c.split_points_analyzed is not None else 'NOT STATED'}
+- Red-flag clauses identified: {'YES' if c.red_flag_clauses_identified else 'NO'}
+- Rider complete: {'YES' if c.rider_complete else 'NO'}
+- Production advance completed: {'YES' if c.production_advance_completed else 'NO — HG-4 candidate'}
+- Production advance lead (weeks before show): {c.advance_lead_weeks if c.advance_lead_weeks is not None else 'NOT STATED'}
+- Price points set with market analysis: {'YES' if c.price_points_market_analyzed else 'NO'}
+- Tier structure (GA/mid/VIP) defined: {'YES' if c.tier_structure_defined else 'NO'}
+- Secondary market monitored: {'YES' if c.secondary_market_monitored else 'NO'}
+- Work permits confirmed (international): {c.work_permits_confirmed if c.work_permits_confirmed is not None else 'NOT STATED'}
+- Withholding tax modeled: {c.withholding_modeled if c.withholding_modeled is not None else 'NOT STATED'}
+- Territory streaming signal: {c.territory_streaming_signal if c.territory_streaming_signal is not None else 'NOT STATED'}
+- Merch planned: {'YES' if c.merch_planned else 'NO'}
+- Hall fees documented: {'YES' if c.hall_fees_documented else 'NO'}
+- Settlement review process in place: {'YES' if c.settlement_review_process else 'NO'}
+- Named red-flag clauses present: {', '.join(c.red_flag_clauses) if c.red_flag_clauses else 'None named'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST IDENTITY above.
+2. Score all 8 rubric dimensions. For each: letter grade, numeric equivalent, weight, sub-signal classification (MEASURED/SOURCED/JUDGED/NOT EVALUABLE), confidence band (HIGH/MEDIUM/LOW with reasons), and a 1–3 sentence rationale describing the planning state — not a box-office prediction. If the campaign has no international dates, mark Dimension 6 NOT APPLICABLE.
+3. State all four hard gates (HG-1 Break-Even Before Commitment, HG-2 Anchor Before Fill, HG-3 Work-Permit Pathway, HG-4 Production Advance): CLEAR / TRIGGERED / NOT APPLICABLE with reason.
+4. Compute the PROVISIONAL COMPOSITE on the 0.0–4.3 letter-grade numeric scale per the rubric formula. Label it PROVISIONAL and state the unlock condition. Treat any threshold figure as industry convention, not a recommendation.
+5. Classify campaign risk severity descriptively (LOW_RISK / NOTABLE_GAPS / SIGNIFICANT_GAPS / HIGH_FINANCIAL_RISK / CRITICAL_RISK). This labels severity — it is NOT a recommendation to proceed, hold, or cancel.
+6. List named red-flag clauses present: clause, what it does, and routing. Name the deficiency only.
+7. Mark NOT EVALUABLE items and name the minimum data required. Never quote a guarantee, production cost, or P&L figure without a Tier A/B source.
+8. Provide an Action Profile (IMMEDIATE / PRIORITY / OPTIMIZE / MAINTAIN) and a single NEXT BEST ACTION. Route contracts and permits to qualified counsel and detailed modeling to the finance function.
+9. End with the advisory footer: "{_TOUR_COMMANDER_ADVISORY_FOOTER}"
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Tour assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist_name":     req.artist_name,
+        "campaign":        req.campaign.model_dump(),
+        "assessment_text": assessment_text,
+        "advisory_footer": _TOUR_COMMANDER_ADVISORY_FOOTER,
         "model":           MODEL_SONNET,
     }
