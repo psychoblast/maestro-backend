@@ -23,10 +23,12 @@ log = get_logger("main")
 from error_reporting import init_error_reporting, capture_exception
 init_error_reporting()
 
+from ar_scout_loader import build_ar_scout_system_prompt
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse as _RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -34,8 +36,11 @@ from pydantic import BaseModel
 import anthropic
 import httpx
 
-ANTHROPIC_API_KEY  = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_AVAILABLE = bool(ANTHROPIC_API_KEY)
+
+# A&R assessment mock mode — default ON so no live Anthropic calls during testing
+AR_SCOUT_MOCK_MODE  = os.environ.get("AR_SCOUT_MOCK_MODE", "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -2418,6 +2423,466 @@ async def avatar_talk(payload: AvatarTalkRequest):
 async def avatar_status():
     """Check if D-ID avatar feature is available."""
     return {"available": D_ID_AVAILABLE}
+
+
+# ── A&R Deep Assessment ────────────────────────────────────────────────────────
+
+class ArScoutArtistInput(BaseModel):
+    """Artist-level fields for the assessment. Name is taken from release/track
+    metadata, NOT from the Playmaker account profile, to prevent account-name
+    vs. credited-artist mismatches."""
+    name:             str
+    genre:            str
+    stage:            str   = "emerging"   # emerging|developing|established|superstar
+    territory:        str   = "unknown"
+    monthly_listeners: Optional[int]   = None
+    save_rate:        Optional[float]  = None  # 0.0–1.0
+    release_count:    int   = 0
+    manager:          Optional[str]    = None
+    label:            Optional[str]    = None
+
+class ArScoutTrackInput(BaseModel):
+    title:            str
+    bpm:              Optional[float]  = None
+    duration_sec:     Optional[float]  = None
+    lufs:             Optional[float]  = None
+    intro_length_sec: Optional[float]  = None
+    genre:            Optional[str]    = None
+    features:         list[str]        = []
+    release_date:     Optional[str]    = None  # YYYY-MM-DD if already released
+
+class ArScoutAssessRequest(BaseModel):
+    artist_id:       str         = ""   # Playmaker account id (for context; identity from artist field)
+    artist:          ArScoutArtistInput
+    track:           ArScoutTrackInput
+    evaluation_stage: str        = "watching"  # watching|approach|due_diligence|internal_pitch
+    additional_notes: str        = ""
+
+_AR_SCOUT_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist": None,   # filled at runtime
+    "track": None,    # filled at runtime
+    "evaluation_stage": None,
+    "assessment": {
+        "pillars": {
+            "music_quality":        {"grade": "B+", "numeric": 8.0, "confidence": "PARTIAL",
+                                     "evaluable": ["emotional_impact (JUDGED)", "hook_speed (JUDGED)", "vocal_performance (JUDGED)"],
+                                     "not_evaluable": ["production_quality — no audio analysis; confidence capped at PARTIAL",
+                                                       "dynamic_progression — no audio analysis",
+                                                       "chorus_lift — no audio analysis"]},
+            "artist_identity":      {"grade": "B",  "numeric": 7.0, "confidence": "PARTIAL",
+                                     "evaluable": ["authenticity (JUDGED)", "uniqueness (JUDGED)", "storytelling (JUDGED)"],
+                                     "not_evaluable": ["interview_personality — no live/interview material",
+                                                       "fan_connection — no platform analytics provided"]},
+            "audience_market":      {"grade": "C+", "numeric": 6.0, "confidence": "LOW",
+                                     "evaluable": ["release_count (SOURCED)"],
+                                     "not_evaluable": ["save_rate — not provided",
+                                                       "monthly_listener_growth — no trajectory data",
+                                                       "repeat_listening — no analytics provided"]},
+            "execution_team":       {"grade": "C",  "numeric": 5.0, "confidence": "PARTIAL",
+                                     "evaluable": ["release_consistency (SOURCED)"],
+                                     "not_evaluable": ["manager_quality — manager not identified",
+                                                       "responsiveness — NOT EVALUABLE without direct contact",
+                                                       "financial_discipline — NOT EVALUABLE without direct relationship"]},
+            "commercial_opportunity":{"grade": "B-", "numeric": 6.5, "confidence": "PARTIAL",
+                                      "evaluable": ["playlist (JUDGED)", "sync (JUDGED)"],
+                                      "not_evaluable": ["radio — format fit requires measured audio data",
+                                                        "international — territory data not provided"]}
+        },
+        "composite": {
+            "value": 6.7,
+            "formula": "(8.0×0.30) + (7.0×0.25) + (6.0×0.20) + (5.0×0.15) + (6.5×0.10)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked evaluations in feedback/outcomes/"
+        },
+        "hard_gates": {
+            "gate1_production_floor": "CLEAR — production not evaluable without audio, but no hard-fail signal present",
+            "gate2_identity_floor":   "CLEAR — identity signals present and evaluable",
+            "gate3_no_commercial_lane":"CLEAR — at least one commercial pathway identifiable",
+            "gate4_execution_floor":  "CLEAR — execution signals present; team gaps noted"
+        },
+        "verdict": "DEVELOP",
+        "verdict_rationale": "Composite 6.7 falls in 6.5–7.9 range. Trajectory data is NOT EVALUABLE (no analytics provided), defaulting to DEVELOP split. Execution & Team grade C — team gaps require active development investment before pipeline advancement.",
+        "trajectory": {
+            "monthly_listener_growth": "NOT EVALUABLE — no analytics provided",
+            "save_rate_trend":         "NOT EVALUABLE — no release history provided",
+            "repeat_listening":        "NOT EVALUABLE",
+            "release_consistency":     "Neutral — release count noted but cadence not evaluable from input",
+            "trajectory_grade":        "Weak (data absent — defaults to DEVELOP split)"
+        },
+        "unfair_advantage": {
+            "identified": [],
+            "assessment": "None identified from available materials. Direct working-relationship evidence would be required to assess elite work ethic or exceptional live show."
+        },
+        "career_ceiling": {
+            "tier": "National",
+            "confidence": "Low",
+            "reason": "Genre and stage suggest national ceiling is achievable; insufficient trajectory data to support International claim. Confidence LOW — capped by NOT EVALUABLE audience signals.",
+            "catalyst_for_next_tier": "Documented positive save-rate trend across 2+ releases + at least one editorial playlist add would move confidence to Medium for International ceiling."
+        },
+        "risk_assessment": {
+            "execution":       {"level": "Medium", "reason": "No manager identified; release cadence history not evaluable from input."},
+            "financial":       {"level": "Medium", "reason": "Investment case realistic at National ceiling; recoupment plausible with consistent release cadence."},
+            "reputation":      {"level": "Low",    "reason": "No known controversies or brand risks identified from available materials."},
+            "team":            {"level": "High",   "reason": "Manager not identified; team qualification for development phase NOT EVALUABLE."},
+            "legal":           {"level": "Medium", "reason": "IP ownership and deal encumbrances not confirmed from available materials."},
+            "burnout":         {"level": "Low",    "reason": "No evidence of creative or personal overextension from available materials."},
+            "ai_displacement": {"level": "Medium", "reason": "Genre-specific differentiation not yet fully established; identity moat requires further development."},
+            "trend_dependency":{"level": "Medium", "reason": "Genre trajectory not assessed — insufficient market data in input."}
+        },
+        "five_year_test": {
+            "question": "If this artist debuts today, could they still matter five years from now after trends change, algorithms change, and AI-generated music becomes ubiquitous?",
+            "answer":   "CONDITIONAL — the identity signals present are promising but insufficiently documented. If the artist establishes an ownable sonic and narrative identity before the first major release (identity clarity test from artist-development.md), and executes a consistent waterfall release cadence, the foundation for a 5-year career is buildable. Specific condition: artist must be able to articulate their identity in one sentence without genre clichés before proceeding to Phase 2. Until that condition clears, the five-year case rests on potential, not demonstrated differentiation."
+        },
+        "owner_input_pending": "Identity and Execution assessment based on available materials only — direct relationship signals (responsiveness, financial discipline, professionalism) NOT EVALUABLE at this stage.",
+        "remediation_priorities": [
+            "Identify and engage a manager with demonstrated development-to-breakthrough track record — Hard Gate 4 risk zone until team is in place.",
+            "Provide platform analytics (Spotify for Artists / Apple Music) for save-rate, monthly listener trajectory, and repeat-listening data — three pillars currently at LOW or PARTIAL confidence.",
+            "Run the identity clarity test: can the artist articulate who they are in one sentence without genre clichés? If not, identity development precedes release.",
+        ]
+    },
+    "model": "claude-sonnet-4-6",
+    "mock_note": "AR_SCOUT_MOCK_MODE=true — this is a canned assessment. Set AR_SCOUT_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+def _render_ar_scorecard_html(assessment: dict, artist: dict, track: dict) -> str:
+    """Render an A&R assessment dict as a standalone HTML scorecard page."""
+    pillar_color = {
+        "A+": "#16a34a", "A": "#22c55e", "A-": "#4ade80",
+        "B+": "#84cc16", "B": "#a3e635", "B-": "#d9f99d",
+        "C+": "#facc15", "C": "#fbbf24", "C-": "#f59e0b",
+        "D+": "#f97316", "D": "#ef4444", "D-": "#dc2626",
+        "F":  "#991b1b",
+    }
+    verdict_color = {
+        "PASS": "#991b1b", "WATCH": "#b45309", "DEVELOP": "#1d4ed8",
+        "PURSUE": "#7c3aed", "GREENLIGHT": "#15803d", "SIGN IMMEDIATELY": "#065f46",
+    }
+
+    pillars      = assessment.get("pillars", {})
+    composite    = assessment.get("composite", {})
+    verdict      = assessment.get("verdict", "UNKNOWN")
+    ceiling      = assessment.get("career_ceiling", {})
+    risks        = assessment.get("risk_assessment", {})
+    fyt          = assessment.get("five_year_test", {})
+    trajectory   = assessment.get("trajectory", {})
+    unfair_adv   = assessment.get("unfair_advantage", {})
+    remediation  = assessment.get("remediation_priorities", [])
+    hard_gates   = assessment.get("hard_gates", {})
+
+    pillar_rows = ""
+    pillar_names = {
+        "music_quality": "Music Quality (0.30)",
+        "artist_identity": "Artist Identity & Brand (0.25)",
+        "audience_market": "Audience & Market (0.20)",
+        "execution_team": "Execution & Team (0.15)",
+        "commercial_opportunity": "Commercial Opportunity (0.10)",
+    }
+    for key, label in pillar_names.items():
+        p = pillars.get(key, {})
+        grade = p.get("grade", "?")
+        color = pillar_color.get(grade, "#6b7280")
+        conf  = p.get("confidence", "?")
+        not_ev = "; ".join(p.get("not_evaluable", [])[:2]) or "—"
+        pillar_rows += f"""
+        <tr>
+          <td style="padding:8px 12px;font-weight:600;">{label}</td>
+          <td style="padding:8px 12px;text-align:center;">
+            <span style="background:{color};color:#fff;padding:3px 10px;border-radius:4px;font-weight:700;">{grade}</span>
+          </td>
+          <td style="padding:8px 12px;font-size:0.85em;color:#6b7280;">{conf}</td>
+          <td style="padding:8px 12px;font-size:0.82em;color:#9ca3af;">{not_ev}</td>
+        </tr>"""
+
+    gate_rows = ""
+    gate_labels = {
+        "gate1_production_floor": "Gate 1 — Production Floor",
+        "gate2_identity_floor":   "Gate 2 — Identity Floor",
+        "gate3_no_commercial_lane":"Gate 3 — No Commercial Lane",
+        "gate4_execution_floor":  "Gate 4 — Execution & Team Floor",
+    }
+    for k, label in gate_labels.items():
+        v = hard_gates.get(k, "NOT ASSESSED")
+        triggered = "TRIGGERED" in v.upper()
+        color = "#991b1b" if triggered else "#15803d"
+        badge = "TRIGGERED" if triggered else "CLEAR"
+        gate_rows += f"""
+        <tr>
+          <td style="padding:6px 12px;font-size:0.9em;">{label}</td>
+          <td style="padding:6px 12px;">
+            <span style="background:{color};color:#fff;padding:2px 8px;border-radius:3px;font-size:0.8em;font-weight:700;">{badge}</span>
+          </td>
+          <td style="padding:6px 12px;font-size:0.82em;color:#6b7280;">{v[:80]}{'…' if len(v)>80 else ''}</td>
+        </tr>"""
+
+    risk_rows = ""
+    risk_level_color = {"Low": "#15803d", "Medium": "#b45309", "High": "#991b1b"}
+    for cat, data in risks.items():
+        level  = data.get("level", "?")
+        reason = data.get("reason", "")
+        color  = risk_level_color.get(level, "#6b7280")
+        risk_rows += f"""
+        <tr>
+          <td style="padding:6px 12px;font-size:0.9em;text-transform:capitalize;">{cat.replace('_',' ')}</td>
+          <td style="padding:6px 12px;">
+            <span style="background:{color};color:#fff;padding:2px 8px;border-radius:3px;font-size:0.8em;font-weight:700;">{level}</span>
+          </td>
+          <td style="padding:6px 12px;font-size:0.82em;color:#6b7280;">{reason}</td>
+        </tr>"""
+
+    remediation_items = "".join(
+        f'<li style="margin-bottom:8px;">{item}</li>'
+        for item in remediation
+    )
+
+    v_color = verdict_color.get(verdict, "#374151")
+    comp_val = composite.get("value", "?")
+    comp_label = composite.get("label", "")
+
+    unfair_list = unfair_adv.get("identified", [])
+    unfair_note = unfair_adv.get("assessment", "")
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PLMKR A&R Assessment — {artist.get('name','?')}</title>
+<style>
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;margin:0;padding:24px;}}
+  .card{{background:#1e293b;border-radius:12px;padding:24px;margin-bottom:20px;border:1px solid #334155;}}
+  h1{{font-size:1.6em;margin:0 0 4px;}}
+  h2{{font-size:1.1em;color:#94a3b8;margin:0 0 16px;font-weight:500;}}
+  h3{{font-size:1em;color:#64748b;margin:0 0 12px;text-transform:uppercase;letter-spacing:.05em;}}
+  table{{width:100%;border-collapse:collapse;}}
+  tr:nth-child(even){{background:rgba(255,255,255,.03);}}
+  .verdict{{font-size:2em;font-weight:800;padding:8px 20px;border-radius:8px;display:inline-block;color:#fff;}}
+  .comp{{font-size:1.4em;font-weight:700;}}
+  .provisional{{font-size:0.75em;color:#94a3b8;font-weight:400;}}
+  .badge{{display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.8em;font-weight:700;}}
+  ul{{margin:0;padding-left:20px;color:#cbd5e1;}}
+  p{{color:#cbd5e1;line-height:1.6;margin:0;}}
+  .meta{{color:#64748b;font-size:0.85em;}}
+</style>
+</head>
+<body>
+<div style="max-width:900px;margin:0 auto;">
+
+<div class="card">
+  <h1>PLMKR A&R Assessment</h1>
+  <h2>Signing Evaluation Memo — {artist.get('name','?')}</h2>
+  <div class="meta">Track: "{track.get('title','?')}" &nbsp;|&nbsp; Stage: {artist.get('stage','?')} &nbsp;|&nbsp; Genre: {artist.get('genre','?')} &nbsp;|&nbsp; Territory: {artist.get('territory','?')}</div>
+</div>
+
+<div class="card" style="display:flex;gap:32px;align-items:center;">
+  <div>
+    <h3>Verdict</h3>
+    <div class="verdict" style="background:{v_color};">{verdict}</div>
+  </div>
+  <div>
+    <h3>Provisional Composite</h3>
+    <div class="comp">{comp_val}</div>
+    <div class="provisional">{comp_label} — unlock condition: ≥30 outcome-checked evaluations in feedback/outcomes/</div>
+  </div>
+  <div>
+    <h3>Career Ceiling</h3>
+    <div style="font-size:1.3em;font-weight:700;">{ceiling.get('tier','?')}</div>
+    <div class="meta">Confidence: {ceiling.get('confidence','?')}</div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Pillar Scores (Five-Pillar Model)</h3>
+  <table>
+    <thead><tr style="color:#64748b;font-size:0.8em;text-transform:uppercase;">
+      <th style="text-align:left;padding:6px 12px;">Pillar</th>
+      <th style="padding:6px 12px;">Grade</th>
+      <th style="text-align:left;padding:6px 12px;">Confidence</th>
+      <th style="text-align:left;padding:6px 12px;">Key NOT EVALUABLE items</th>
+    </tr></thead>
+    <tbody>{pillar_rows}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Hard Gates</h3>
+  <table>
+    <thead><tr style="color:#64748b;font-size:0.8em;text-transform:uppercase;">
+      <th style="text-align:left;padding:6px 12px;">Gate</th>
+      <th style="padding:6px 12px;">Status</th>
+      <th style="text-align:left;padding:6px 12px;">Note</th>
+    </tr></thead>
+    <tbody>{gate_rows}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Trajectory Assessment</h3>
+  <table>
+    {''.join(f'<tr><td style="padding:6px 12px;color:#94a3b8;font-size:0.9em;">{k.replace("_"," ").title()}</td><td style="padding:6px 12px;font-size:0.9em;">{v}</td></tr>' for k,v in trajectory.items())}
+  </table>
+</div>
+
+<div class="card">
+  <h3>Unfair Advantage Assessment</h3>
+  <p>{unfair_note}</p>
+  {'<ul>' + ''.join(f'<li>{a}</li>' for a in unfair_list) + '</ul>' if unfair_list else ''}
+</div>
+
+<div class="card">
+  <h3>Risk Assessment</h3>
+  <table>
+    <thead><tr style="color:#64748b;font-size:0.8em;text-transform:uppercase;">
+      <th style="text-align:left;padding:6px 12px;">Category</th>
+      <th style="padding:6px 12px;">Level</th>
+      <th style="text-align:left;padding:6px 12px;">Reason</th>
+    </tr></thead>
+    <tbody>{risk_rows}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h3>Five-Year Test</h3>
+  <p style="font-style:italic;color:#94a3b8;margin-bottom:12px;">{fyt.get('question','')}</p>
+  <p>{fyt.get('answer','')}</p>
+</div>
+
+<div class="card">
+  <h3>Career Ceiling Rationale</h3>
+  <p><strong style="color:#e2e8f0;">{ceiling.get('tier','?')}</strong> — {ceiling.get('reason','')}</p>
+  {f'<p style="margin-top:10px;color:#64748b;font-size:0.88em;"><strong>Catalyst for next tier:</strong> {ceiling.get("catalyst_for_next_tier","—")}</p>' if ceiling.get("catalyst_for_next_tier") else ''}
+</div>
+
+<div class="card">
+  <h3>Remediation Priorities</h3>
+  <ol>{remediation_items}</ol>
+</div>
+
+<div class="card" style="text-align:center;color:#475569;font-size:0.8em;">
+  PLMKR A&R Assessment &nbsp;|&nbsp; Rubric v1.0 — Five-Pillar Model &nbsp;|&nbsp; Composite: PROVISIONAL (unlock ≥30 evaluated outcomes)
+</div>
+
+</div>
+</body>
+</html>"""
+
+
+@app.get("/api/agents/ar-scout/assess/demo", tags=["ar-scout"])
+async def ar_scout_assess_demo():
+    """
+    Render a mocked A&R scored assessment as a standalone HTML scorecard.
+    Demonstrates the pilot end-to-end without any live API calls.
+    """
+    sample_artist = {
+        "name": "Jordan Voss", "genre": "R&B / Soul", "stage": "emerging",
+        "territory": "Canada", "monthly_listeners": 28000, "save_rate": 0.062,
+        "release_count": 4, "manager": None, "label": None,
+    }
+    sample_track = {
+        "title": "Still Waters", "bpm": 88.0, "duration_sec": 213.0,
+        "lufs": None, "intro_length_sec": 14.0,
+        "genre": None, "features": [], "release_date": None,
+    }
+    import main as _m
+    mock_result = dict(_m._AR_SCOUT_MOCK_ASSESSMENT)
+    mock_result["artist"] = sample_artist
+    mock_result["track"]  = sample_track
+
+    html = _render_ar_scorecard_html(mock_result["assessment"], sample_artist, sample_track)
+    return HTMLResponse(content=html)
+
+
+@app.post("/api/agents/ar-scout/assess", tags=["ar-scout"])
+async def ar_scout_assess(req: ArScoutAssessRequest):
+    """
+    Deep A&R assessment for a PLMKR artist + track.
+
+    Artist identity is bound from the request payload (artist.name from release/
+    track metadata), NOT from the Playmaker account profile, to prevent
+    account-name vs. credited-artist mismatches.
+
+    When AR_SCOUT_MOCK_MODE=true (default), returns a canned scored assessment
+    without calling the Anthropic API. Set AR_SCOUT_MOCK_MODE=false with a
+    valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if AR_SCOUT_MOCK_MODE:
+        result = dict(_AR_SCOUT_MOCK_ASSESSMENT)
+        result["artist"] = req.artist.model_dump()
+        result["track"]  = req.track.model_dump()
+        result["evaluation_stage"] = req.evaluation_stage
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set AR_SCOUT_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_ar_scout_system_prompt(skills_dir=SKILLS_DIR)
+
+    # Build the structured user prompt with every field explicitly labeled
+    artist = req.artist
+    track  = req.track
+
+    user_prompt = f"""You are performing a PLMKR A&R deep assessment. Use the scoring rubric, song evaluation framework, and output templates from your knowledge base to produce a complete Signing Evaluation Memo.
+
+EVALUATION STAGE: {req.evaluation_stage}
+
+ARTIST PROFILE (from release/track metadata — use this for artist identity, not any account profile name):
+- Credited artist name: {artist.name}
+- Primary genre: {artist.genre}
+- Career stage: {artist.stage}
+- Primary territory: {artist.territory}
+- Monthly listeners: {artist.monthly_listeners if artist.monthly_listeners is not None else 'NOT PROVIDED — mark as NOT EVALUABLE'}
+- Save rate (most recent release): {f'{artist.save_rate:.1%}' if artist.save_rate is not None else 'NOT PROVIDED — mark as NOT EVALUABLE'}
+- Total release count: {artist.release_count}
+- Manager: {artist.manager or 'NOT IDENTIFIED — flag as Hard Gate 4 risk'}
+- Label: {artist.label or 'Independent / not identified'}
+
+TRACK DETAILS:
+- Track title: {track.title}
+- BPM: {track.bpm if track.bpm is not None else 'NOT PROVIDED — mark Hook Speed and DSP Friendliness as NOT EVALUABLE from measured data'}
+- Duration: {f'{track.duration_sec:.0f}s ({track.duration_sec/60:.1f} min)' if track.duration_sec is not None else 'NOT PROVIDED'}
+- Integrated LUFS: {track.lufs if track.lufs is not None else 'NOT PROVIDED — mark Production Quality as NOT EVALUABLE from measured data; confidence cap applies'}
+- Intro length to hook/vocal: {f'{track.intro_length_sec:.0f}s' if track.intro_length_sec is not None else 'NOT PROVIDED — skip risk assessment requires this; mark as NOT EVALUABLE'}
+- Track genre (if different from artist genre): {track.genre or 'same as artist genre'}
+- Features / collaborators: {', '.join(track.features) if track.features else 'none'}
+- Release date: {track.release_date or 'unreleased'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST PROFILE above (credited artist name), not any other name or account reference.
+2. For every sub-signal, explicitly state whether it is MEASURED, SOURCED, or JUDGED, and whether it is EVALUABLE or NOT EVALUABLE based on the data provided above.
+3. If a measured audio field (LUFS, BPM, intro length) is NOT PROVIDED, mark it NOT EVALUABLE — do not estimate or infer it.
+4. Apply the Anti-Fake-Precision mechanics from the scoring rubric: no probability percentages, no fabricated comparables, no invented unfair advantages.
+5. Do not use any retention/threshold language as sourced data claims — frame all benchmarks as industry convention (Tier B estimates), never as verified data.
+6. Produce the complete 8-element Signing Evaluation Memo format from the output template.
+7. End with a JSON-compatible structured scorecard block labelled STRUCTURED_SCORECARD_JSON containing: verdict, composite_value, pillar_grades (dict), career_ceiling, and top_3_remediation_priorities (list).
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=8000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"A&R assessment failed: {str(e)}")
+
+    return {
+        "status":           "ok",
+        "mock":             False,
+        "artist":           req.artist.model_dump(),
+        "track":            req.track.model_dump(),
+        "evaluation_stage": req.evaluation_stage,
+        "assessment_text":  assessment_text,
+        "model":            MODEL_SONNET,
+    }
 
 
 

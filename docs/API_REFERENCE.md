@@ -976,3 +976,19 @@ Sorted alphabetically by path.
 - **Request body:** `artist_id` (string), `receipt_data` (base64 string), `product_id` (string), `transaction_id` (string)
 - **Response:** 200 — `{ valid: bool, mocked: bool, artist_id, product_id, transaction_id, note }`
 - **Notes:** Stub behind `IAP_LIVE` flag (default false); Stripe remains the primary billing rail; this endpoint exists for App Store compliance only
+
+
+#### POST /api/agents/ar-scout/assess
+
+- **Summary:** A&R Deep Assessment — structured scoring of an artist + track using the PLMKR Five-Pillar rubric
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist` (object: name, genre, stage, territory, monthly_listeners, save_rate, release_count, manager, label), `track` (object: title, bpm, duration_sec, lufs, intro_length_sec, genre, features, release_date), `evaluation_stage` (string: watching|approach|due_diligence|internal_pitch), `additional_notes` (string)
+- **Response:** 200 — `{ status, mock: bool, artist, track, evaluation_stage, assessment: { pillars, composite, hard_gates, verdict, trajectory, unfair_advantage, career_ceiling, risk_assessment, five_year_test, remediation_priorities } }`
+- **Notes:** `AR_SCOUT_MOCK_MODE=true` (default) returns a canned PROVISIONAL assessment without any Anthropic API call. Artist identity is bound from `artist.name` in the request payload (release/track metadata), NOT from the Playmaker account profile.
+
+#### GET /api/agents/ar-scout/assess/demo
+
+- **Summary:** A&R Assessment Demo — renders a standalone HTML scorecard page using the mocked assessment pipeline
+- **Auth:** No
+- **Response:** 200 — HTML page showing a complete scored assessment with pillar grades, verdict, hard gates, trajectory, risk table, five-year test, and remediation priorities
+- **Notes:** Entry point for the A&R pilot; always uses mock mode (no Anthropic call). Demonstrates the full mocked end-to-end: sample artist → assembled prompt → canned response → rendered scorecard.
