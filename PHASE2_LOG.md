@@ -184,3 +184,49 @@ GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for a
 ### Entity gate result
 
 GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (prior toolchain and prior owning-entity names). Broader sweep (sibling product names, scrubbed rubric codenames, numbered-agent routing, prior feedback-corpus paths) also clean; the only broad-sweep match was the benign pytest term "fixtures", which is not a provenance marker.
+
+---
+
+## phase2/ink-and-air — Music Publishing
+
+**Agent slug:** ink-and-air (Reed — Music Publisher)
+**Build date:** 2026-06-20
+
+### What was built
+
+**Mode A — Knowledge + Doctrine:**
+- 5 scrubbed knowledge files in `skills/maestro-ink-and-air/knowledge/`, re-homed by reading the Music Publishing source and creating new PLMKR-owned originals (never copied):
+  - `publishing-doctrine.md` — identity & mission, asset-management posture ("the unpaid dollar is the most expensive dollar"), DNA/philosophy, decision biases, seven hard refusals, eleven-item judgment doctrine (deal-type selection, registration triage, audit trigger + cost/benefit gate, NOT EVALUABLE, anti-fabrication symmetry, nine-category revenue-leak taxonomy, writer-vs-publisher economics, sample/interpolation complexity bands, writer income-mix, NOT QUOTABLE, opportunity-scan checklist), source tiers (A/B/C/[PLMKR-DEFAULT]), MEASURED/SOURCED/JUDGED classification, scope fences
+  - `catalog-health-rubric.md` — Ten-Dimension Catalog Health Model (registration_completeness 0.15, collection_coverage 0.15, royalty_recovery_readiness 0.13, identifier_completeness 0.12, ownership_clarity 0.12, licensing_readiness 0.12, territorial_coverage 0.08, metadata_quality 0.07, audit_status 0.04, legal_exposure 0.02 → Σ=1.00), four hard gates (HG-1..HG-4), anti-fake-precision mechanics, letter-grade anchors, provisional composite formula (0.0–10.0), Asset-Recovery Frame, Action Profile tiers, NOT QUOTABLE discipline
+  - `publishing-fundamentals.md` — two-copyright architecture, automatic subsistence, term, divisibility/transfer, work-made-for-hire, territoriality & registration (ISWC/IPI), songwriter splits, publishing-deal structures (admin/co-pub/full/WFH + red-flag table), PROs & performance royalties, mechanical royalties (The MLC, CRB Phonorecords IV rates)
+  - `royalty-and-catalog-systems.md` — global collection & sub-publishing, royalty accounting & audits, neighboring rights (SoundExchange 50/45/5), termination & reversion (Section 203/304), catalog valuation & transactions (NPS, multiples, due diligence), sync clearance (rights side), AI training-rights landscape
+  - `output-templates.md` — five templates (Catalog Health Evaluation, Revenue Leak Report, Publishing Deal Evaluation, Clearance Complexity Assessment, Opportunity Scan) with NOT EVALUABLE / NOT ESTIMABLE / NOT QUOTABLE discipline and scope-fence handoffs
+- `MANIFEST.json` with 5-file load order
+- `SKILL.md` enriched: Reed persona retained verbatim (voice-friendly greeting intact); added frontmatter, DNA, hard refusals, condensed judgment doctrine, NOT EVALUABLE / anti-fabrication / source-tier discipline, two-copyright bedrock, collection-infrastructure map, ten-dimension catalog-health lens, tier-aware depth, PLMKR scope fences
+
+**Mode B — Structured Assessment Route:**
+- `ink_and_air_loader.py` — manifest-driven context loader, mirrors `lex_cipher_loader.py` / `tour_commander_loader.py` exactly (knowledge header: "PLMKR PUBLISHING & RIGHTS KNOWLEDGE BASE")
+- `POST /api/agents/ink-and-air/assess` — `INK_AND_AIR_MOCK_MODE=true` by default; canned ten-dimension PROVISIONAL Catalog Health assessment (composite 6.5/10, all four hard gates CLEAR, risk NOTABLE_GAPS) with Asset-Recovery Frame answer, four-tier Action Profile, and the rights-infrastructure advisory footer, and zero live Anthropic calls. Identity bound from `artist_name`; scores rights-infrastructure state (not valuation); risk classification is descriptive severity (never a go/no-go); threshold language framed as industry convention.
+- Models: `CatalogRightsInput`, `InkAndAirAssessRequest`
+- Documented in `docs/API_REFERENCE.md`
+
+**Tests added:**
+- `tests/test_ink_and_air_loader.py` — 8 loader tests (empty manifest, load order, graceful skip, unknown ID, skill+knowledge combination, preloaded skill text, no-knowledge fallback, entity gate)
+- `tests/test_ink_and_air_assess.py` — 21 route tests (200 mock, structure, identity binding, 10 dimensions, weights sum to 1.0, 4 hard gates, composite PROVISIONAL, composite range 0.0–10.0, composite matches weighted sum, risk classification validity, advisory footer present, action-profile tiers, catalog_name binding, template-not-mutated, catalog fields, entity wall, 422 missing artist_name, 422 missing catalog, no-key mock still 200, live-mode no-key 503, all-gates-CLEAR for healthy catalog)
+
+### Commit hashes and tags
+
+| Commit | Hash | Tag |
+|--------|------|-----|
+| Mode A — knowledge + SKILL.md | `863ca40` | `phase2-ink-and-air-A` |
+| Mode B — loader + route + tests + API doc | `d5cd011` | `phase2-ink-and-air-B` |
+
+### Test count
+
+- New tests added: 29 (8 loader + 21 assess)
+- Prior floor entering this session: 553
+- Total after ink-and-air: 582 (net +29; floor did not drop)
+
+### Entity gate result
+
+GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (prior toolchain and prior owning-entity names). Broader sweep (sibling product names, scrubbed rubric codenames, numbered-agent routing, prior constitution/feedback-corpus paths, CISAC) also clean; the only broad-sweep matches were the benign substring "reve" inside "revenue", which is not a provenance marker.
