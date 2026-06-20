@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Sync Agent knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "scoring-rubric",
+      "path": "skills/maestro-sync-agent/knowledge/scoring-rubric.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Four-dimension scoring rubric, hard gates, verdict ladder, PROVISIONAL composite doctrine"
+    },
+    {
+      "id": "buyer-psychology",
+      "path": "skills/maestro-sync-agent/knowledge/buyer-psychology.md",
+      "role": "buyer-intelligence",
+      "required": true,
+      "description": "Gatekeeper buying psychology, music supervisor psychology, brief anatomy, funded-vs-fishing doctrine, honest-pass discipline"
+    },
+    {
+      "id": "clearance-workflow",
+      "path": "skills/maestro-sync-agent/knowledge/clearance-workflow.md",
+      "role": "clearance-doctrine",
+      "required": true,
+      "description": "Clearance chain rule, canonical workflow, status taxonomy, one-stop doctrine, turnaround norms by buyer class"
+    },
+    {
+      "id": "licensing-deal-logic",
+      "path": "skills/maestro-sync-agent/knowledge/licensing-deal-logic.md",
+      "role": "deal-doctrine",
+      "required": true,
+      "description": "Six dials of a license, negotiation structures, fee tiering, quote posture doctrine, gratis-use doctrine"
+    },
+    {
+      "id": "output-template",
+      "path": "skills/maestro-sync-agent/knowledge/output-template.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Five output templates: Brief-Fit Scorecard, Fee Quote Sheet, Pitch Email Draft, Clearance Chain Map, Turnaround Tracker"
+    }
+  ],
+  "load_order": [
+    "scoring-rubric",
+    "buyer-psychology",
+    "clearance-workflow",
+    "licensing-deal-logic",
+    "output-template"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, toolchain identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to SYNC_AGENT_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
