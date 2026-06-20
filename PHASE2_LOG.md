@@ -47,3 +47,48 @@
 ### Entity gate result
 
 GATE_CLEAN — staged additions contain zero hits for provenance marker patterns patterns.
+
+---
+
+## sync-agent (Sync Licensing)
+
+**Agent slug:** sync-agent
+**Build date:** 2026-06-20
+
+### What was built
+
+**Mode A — Knowledge + Doctrine:**
+- 5 scrubbed knowledge files in `skills/maestro-sync-agent/knowledge/`:
+  - `scoring-rubric.md` — Four-dimension rubric (brief_fit 40%, clearance_complexity 25%, turnaround_feasibility 20%, fee_tier 15%), composite formula Σ(weight × score × 20) → 0–100, three hard gates, PITCH/HOLD/PASS verdict ladder, prediction-logging hook
+  - `buyer-psychology.md` — Gatekeeper buying psychology, music supervisor operating reality, brief anatomy (7 parts), funded-vs-fishing doctrine, honest-pass discipline
+  - `clearance-workflow.md` — Chain rule, canonical 7-step workflow, status taxonomy (CLEARED/CLEARABLE/PENDING/BLOCKED/UNKNOWN), one-stop doctrine, recursive chains, turnaround norms by buyer class, structural-ineligibility binding
+  - `licensing-deal-logic.md` — Six dials of every license, negotiation structures (anchoring/options/MFN/package), pricing logic, fee tiering (ESTIMATE), quote posture doctrine, sync deal terms, gratis-use doctrine
+  - `output-template.md` — Five templates: Brief-Fit Scorecard, Fee Quote Sheet, Pitch Email Draft, Clearance Chain Map, Turnaround Tracker; anti-bloat module classification
+- `MANIFEST.json` with 5-file load order
+- `SKILL.md` enriched: six dials, clearance status vocabulary, brief anatomy, funded-vs-fishing, supervisor psychology, turnaround feasibility table, one-stop doctrine, quote posture doctrine, four-dimension rubric summary, fee-floor schedule, tier-aware response depth
+
+**Mode B — Structured Assessment Route:**
+- `sync_agent_loader.py` — manifest-driven context loader, mirrors `ar_scout_loader.py` and `grid_prophet_loader.py` pattern exactly
+- `POST /api/agents/sync-agent/assess` — SYNC_AGENT_MOCK_MODE=true by default; canned four-dimension PROVISIONAL assessment (composite 82/100, all hard gates CLEAR, verdict PITCH) with no live Anthropic calls
+- Models: `SyncAgentTrackInput`, `SyncAgentBriefInput`, `SyncAgentAssessRequest`
+
+**Tests added:**
+- `tests/test_sync_agent_loader.py` — 8 loader tests (empty manifest, load order, graceful skip, unknown ID, skill+knowledge combination, preloaded skill text, no-knowledge fallback, entity gate)
+- `tests/test_sync_agent_assess.py` — 15 route tests (200 mock, structure, identity binding, 4 dimensions, weights sum to 1.0, verdict validity, composite PROVISIONAL, composite range, 3 hard gates, track fields, entity wall, 422 missing artist_name, 422 missing track, no-key mock still 200, live-mode no-key 503)
+
+### Commit hashes and tags
+
+| Commit | Hash | Tag |
+|--------|------|-----|
+| Mode A — knowledge + SKILL.md | `0f1c946` | `phase2-sync-agent-A` |
+| Mode B — loader + route + tests | `25b12e2` | `phase2-sync-agent-B` |
+
+### Test count
+
+- New tests added: 23 (8 loader + 15 assess)
+- Prior floor entering this session: 477
+- Total after sync-agent: 500 (net +23 from 477 baseline; floor must not drop)
+
+### Entity gate result
+
+GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for all provenance marker patterns (prior toolchain and entity names).
