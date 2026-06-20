@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Production (producer-connect) knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "production-doctrine",
+      "path": "skills/maestro-producer-connect/knowledge/production-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Beat's identity & mission, the lane/scope fences, eight-principle doctrine, decision biases, communication style, and the judgment discipline (evidence classification MEASURED/SOURCED/JUDGED/AMBIGUOUS/ABSENT/NOT EVALUABLE, measurement-vs-claim anti-fabrication, currency discipline, the production-to-co-write flag-and-defer boundary, hard-refusal anti-patterns, scope fences)"
+    },
+    {
+      "id": "production-readiness-rubric",
+      "path": "skills/maestro-producer-connect/knowledge/production-readiness-rubric.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Eight-Dimension Production Readiness Score with weights summing to 1.00, 1/5/10 anchors, two hard gates (Dim-4 Technical Quality → NOT DELIVERABLE, Dim-6 Delivery & QC → RELEASE BLOCKED), composite formula, output bands, PROVISIONAL labeling, inferred-vs-told-absence rule, uncertainty propagation"
+    },
+    {
+      "id": "production-fundamentals",
+      "path": "skills/maestro-producer-connect/knowledge/production-fundamentals.md",
+      "role": "domain-bedrock",
+      "required": true,
+      "description": "Beat licensing tiers, beat sourcing platforms, global producer community, AI beat generation (reference-first + rights caution), producer/engineer economics (fee/advance/recoupment, WFH-vs-royalty ownership consequence, role-by-role conventions, casting reconciliation, deal-structure failure modes), studio & recording budget (constraint map, phase/irreversibility, studio tiers and market rates, contingency, reconciliation, change-order discipline, tier-aware response depth)"
+    },
+    {
+      "id": "audio-and-delivery-systems",
+      "path": "skills/maestro-producer-connect/knowledge/audio-and-delivery-systems.md",
+      "role": "domain-advanced",
+      "required": false,
+      "description": "Audio technical standards (delivery spec as pass/fail contract, target-vs-tolerance, measurement-vs-claim, LUFS/true-peak/format/stems/versions/dither/identifiers/metadata/mono/headroom, four-layer QC), creative-direction & reference discipline (the brief, reference-track citation, taste translation, five brief components, demo A/B), and production technology & AI (three-prong adoption test, reproducibility, human-judgment/automation boundary, AI tools and rights caution, stem-separation limits, ITB-vs-analog)"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-producer-connect/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Five templates: Production Plan, Production Readiness Scorecard, Budget & Schedule, Producer/Team Casting Brief, Delivery & QC Checklist — product-blind, with ESTIMATE/NOT QUOTABLE and TARGET-until-measured discipline, hard-gate flags, and the co-write/flag-and-defer handoff"
+    }
+  ],
+  "load_order": [
+    "production-doctrine",
+    "production-readiness-rubric",
+    "production-fundamentals",
+    "audio-and-delivery-systems",
+    "output-templates"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, prior toolchain or owning-entity names, or any sibling product names.",
+    "mock_mode": "All assessment routes default to PRODUCER_CONNECT_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
