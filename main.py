@@ -29,6 +29,7 @@ from sync_agent_loader import build_sync_agent_system_prompt
 from brand_connect_loader import build_brand_connect_system_prompt
 from lex_cipher_loader import build_lex_cipher_system_prompt
 from tour_commander_loader import build_tour_commander_system_prompt
+from ink_and_air_loader import build_ink_and_air_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -56,6 +57,8 @@ BRAND_CONNECT_MOCK_MODE  = os.environ.get("BRAND_CONNECT_MOCK_MODE",  "true").lo
 LEX_CIPHER_MOCK_MODE     = os.environ.get("LEX_CIPHER_MOCK_MODE",     "true").lower() != "false"
 # Tour & Live (Tour-Commander) assessment mock mode — default ON so no live Anthropic calls during testing
 TOUR_COMMANDER_MOCK_MODE = os.environ.get("TOUR_COMMANDER_MOCK_MODE", "true").lower() != "false"
+# Publishing & Rights (Ink-and-Air) assessment mock mode — default ON so no live Anthropic calls during testing
+INK_AND_AIR_MOCK_MODE    = os.environ.get("INK_AND_AIR_MOCK_MODE",    "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -4037,5 +4040,301 @@ INSTRUCTIONS:
         "campaign":        req.campaign.model_dump(),
         "assessment_text": assessment_text,
         "advisory_footer": _TOUR_COMMANDER_ADVISORY_FOOTER,
+        "model":           MODEL_SONNET,
+    }
+
+
+# ── INK-AND-AIR — Catalog Health (Publishing & Rights) Assessment ─────────────
+
+class CatalogRightsInput(BaseModel):
+    """Structured description of the catalog / work under review.
+
+    The agent scores what is PRESENT and flags what is ABSENT — absence of a
+    required step (a registration, an executed split sheet, a filed claim) is
+    itself evaluable as a gap. These flags describe the catalog's rights state;
+    they are not a valuation and not a legal opinion.
+    """
+    catalog_name:                      str  = ""
+    work_count:                        int  = 0
+    has_international_usage:            bool = False
+    # D1 — Registration Completeness
+    pro_registration_complete:         bool = False
+    mechanical_registration_complete:  bool = False
+    new_works_registered_before_release: bool = False
+    # D2 — Collection Coverage
+    active_income_streams:             list[str] = []   # performance|mechanical|sync|neighboring|ugc
+    ugc_monetization_active:           bool = False
+    neighboring_rights_registered:     bool = False
+    # D3 — Royalty Recovery Readiness
+    mlc_unmatched_claims_filed:        Optional[bool] = None
+    black_box_claim_strategy:          bool = False
+    # D4 — Identifier Completeness
+    iswc_coverage_complete:            bool = False
+    ipi_registered_all_parties:        bool = False
+    active_revenue_without_identifiers: bool = False     # HG-1 trigger
+    # D5 — Ownership Clarity
+    split_sheets_executed:             bool = False
+    chain_of_title_documented:         bool = False
+    active_ownership_dispute:          bool = False       # HG-2 trigger (when formally filed)
+    # D6 — Licensing Readiness
+    one_stop_clearance:                Optional[bool] = None
+    sync_rep_in_place:                 bool = False
+    master_rights_clear:               bool = False
+    # D7 — Territorial Coverage
+    subpublishing_in_major_territories: bool = False
+    territories_collecting_count:      int  = 0
+    # D8 — Metadata Quality
+    statement_matching_rate:           Optional[float] = None  # 0.0–1.0
+    # D9 — Audit Status
+    audit_window_status:               str  = "unknown"   # within|approaching|expired|unknown
+    last_audit_within_window:          bool = False
+    # D10 — Legal Exposure
+    active_litigation:                 bool = False        # HG-4 trigger
+    uncleared_sample_exposure:         Optional[bool] = None
+
+class InkAndAirAssessRequest(BaseModel):
+    artist_id:        str = ""
+    artist_name:      str
+    artist_territory: str = "unknown"
+    catalog:          CatalogRightsInput
+    additional_notes: str = ""
+
+_INK_AND_AIR_ADVISORY_FOOTER = (
+    "This is a publishing rights-infrastructure assessment — not a legal opinion, "
+    "a financial valuation, or a sync-pitch strategy. Route deal execution and notice "
+    "filing to qualified entertainment counsel, royalty modeling to the Finance/Royalties "
+    "function, and sync pursuit to the Sync agent."
+)
+
+_INK_AND_AIR_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist_name": None,   # filled at runtime
+    "catalog": None,       # filled at runtime
+    "domain_constraint": "Maximizes legitimate royalty capture and rights protection. Identifies and explains; never advises on negotiation, never gives a legal opinion.",
+    "assessment": {
+        "catalog_name": None,  # filled at runtime
+        "dimensions": {
+            "registration_completeness": {
+                "grade": "B", "numeric": 7.0, "weight": 0.15, "confidence": "PARTIAL",
+                "rationale": "PRO registration is present across the home territory and new works are registered before release; mechanical registration shows documented timing gaps on part of the catalog tail. Registration is prospective, not yet a fully closed loop.",
+                "sub_signals": "PRO coverage SOURCED · mechanical coverage AMBIGUOUS · new-works lead time SOURCED · black-box-from-gaps NOT EVALUABLE",
+                "not_evaluable": ["exact PRO/mechanical coverage percentages — requires a society-portal export, not supplied"]
+            },
+            "collection_coverage": {
+                "grade": "B-", "numeric": 6.5, "weight": 0.15, "confidence": "PARTIAL",
+                "rationale": "Performance and mechanical are collecting and at least one UGC platform is monetized; neighboring-rights infrastructure is initiated but not complete across all applicable territories. Gaps are identified with a remediation path.",
+                "sub_signals": "performance SOURCED · mechanical SOURCED · UGC SOURCED · neighboring rights AMBIGUOUS",
+                "not_evaluable": []
+            },
+            "royalty_recovery_readiness": {
+                "grade": "C", "numeric": 5.0, "weight": 0.13, "confidence": "PARTIAL",
+                "rationale": "Recovery mechanisms are largely unworked: MLC unmatched-pool claims are not confirmed filed and there is no active society black-box claim program. This is quantifiable value currently uncaptured — document it as a recovery opportunity.",
+                "sub_signals": "MLC unmatched claims AMBIGUOUS · black-box strategy ABSENT · retroactive recovery NOT EVALUABLE",
+                "not_evaluable": ["recoverable value — requires statement history and a dated registration-gap range; estimate only where evidence supports it"]
+            },
+            "identifier_completeness": {
+                "grade": "B", "numeric": 7.0, "weight": 0.12, "confidence": "HIGH",
+                "rationale": "ISWC coverage and IPI registration for all writers and publishers are in place; no active-revenue works lack identifiers (HG-1 not triggered). Some ISRC linkage gaps remain on older catalog.",
+                "sub_signals": "ISWC SOURCED · IPI all parties SOURCED · active-revenue-without-identifiers ABSENT",
+                "not_evaluable": []
+            },
+            "ownership_clarity": {
+                "grade": "B+", "numeric": 8.0, "weight": 0.12, "confidence": "HIGH",
+                "rationale": "Co-written works carry executed split sheets and chain of title is documented; no formally filed ownership dispute is on record (HG-2 not triggered).",
+                "sub_signals": "executed splits SOURCED · chain of title SOURCED · active dispute ABSENT",
+                "not_evaluable": []
+            },
+            "licensing_readiness": {
+                "grade": "C+", "numeric": 6.0, "weight": 0.12, "confidence": "PARTIAL",
+                "rationale": "Master rights are clear but one-stop clearance is not confirmed and no dedicated sync representative is in place; licensing is possible but happens by ad hoc negotiation. No HG-2 dispute caps this dimension.",
+                "sub_signals": "master rights SOURCED · one-stop status AMBIGUOUS · sync rep ABSENT",
+                "not_evaluable": ["turnaround capability — not described in the structured input"]
+            },
+            "territorial_coverage": {
+                "grade": "C", "numeric": 5.0, "weight": 0.08, "confidence": "PARTIAL",
+                "rationale": "Home territory plus a few majors are collecting via sub-publishing; no direct affiliations in non-Western markets and reciprocal coverage is unverified against streaming territory data.",
+                "sub_signals": "sub-pub in majors SOURCED · territory count MEASURED · usage-vs-revenue overlap NOT EVALUABLE",
+                "not_evaluable": ["usage-vs-revenue territory overlap — requires DSP territory streaming data"]
+            },
+            "metadata_quality": {
+                "grade": "B-", "numeric": 6.5, "weight": 0.07, "confidence": "PARTIAL",
+                "rationale": "Statement matching rate is in the mid-range with minor discrepancies under reconciliation; ISWC is mostly linked in the content-management system.",
+                "sub_signals": "matching rate MEASURED · share consistency AMBIGUOUS · ISWC-in-CMS SOURCED",
+                "not_evaluable": []
+            },
+            "audit_status": {
+                "grade": "B", "numeric": 7.0, "weight": 0.04, "confidence": "HIGH",
+                "rationale": "The contractual audit window is not expired and a statement-review practice is in place (HG-3 not triggered). New-revenue-stream monitoring is reactive rather than systematic.",
+                "sub_signals": "audit window SOURCED (not expired) · review practice SOURCED · new-stream monitoring JUDGED",
+                "not_evaluable": []
+            },
+            "legal_exposure": {
+                "grade": "A-", "numeric": 8.5, "weight": 0.02, "confidence": "PARTIAL",
+                "rationale": "No active infringement litigation names the catalog (HG-4 not triggered) and termination windows are tracked. Uncleared sample exposure is not confirmed either way and is flagged for documentation.",
+                "sub_signals": "active litigation ABSENT · termination windows SOURCED · uncleared samples AMBIGUOUS · AI exposure CONTESTED (no settled law)",
+                "not_evaluable": ["uncleared sample exposure — not confirmed in the structured input"]
+            }
+        },
+        "hard_gates": {
+            "identifier_gate":       "CLEAR — no active-revenue works without ISWC and PRO registration (HG-1 not triggered)",
+            "ownership_dispute_gate":"CLEAR — no formally filed ownership dispute on record (HG-2 not triggered)",
+            "audit_window_gate":     "CLEAR — contractual audit window not expired (HG-3 not triggered)",
+            "litigation_gate":       "CLEAR — no active infringement litigation naming the catalog (HG-4 not triggered)"
+        },
+        "composite": {
+            "value": 6.5,
+            "formula": "(7.0×0.15)+(6.5×0.15)+(5.0×0.13)+(7.0×0.12)+(8.0×0.12)+(6.0×0.12)+(5.0×0.08)+(6.5×0.07)+(7.0×0.04)+(8.5×0.02)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked catalog evaluations",
+            "note": "PROVISIONAL — not calibrated; not comparable across catalogs. Secondary to the per-dimension grades."
+        },
+        "risk_classification": "NOTABLE_GAPS",
+        "asset_recovery_frame": "If this catalog went to sale, licensing, or audit today, due diligence would discount it primarily on royalty-recovery readiness (unworked unmatched/black-box claims) and territorial coverage (unverified reciprocal collection), with ownership clarity and legal exposure as genuine strengths. The largest near-term upside is filing the recovery claims and verifying foreign collection.",
+        "action_profile": {
+            "immediate": [],
+            "priority": [
+                {
+                    "dimension": "royalty_recovery_readiness",
+                    "gap": "MLC unmatched-pool claims not confirmed filed; no active black-box claim program.",
+                    "action": "File MLC unmatched-pool claims (US) and stand up a society black-box claim program; track retroactive recovery windows.",
+                    "estimated_recovery": "NOT ESTIMABLE without statement history and a dated registration-gap range — qualitative recoverability only."
+                }
+            ],
+            "optimize": [
+                {
+                    "dimension": "licensing_readiness",
+                    "gap": "One-stop clearance not confirmed; no dedicated sync representative.",
+                    "action": "Confirm one-stop clearance authority and establish a rate card / single sync contact; route active sync pursuit to the Sync agent."
+                },
+                {
+                    "dimension": "territorial_coverage",
+                    "gap": "Reciprocal coverage unverified against streaming territory data (sub-threshold weight, still improvable).",
+                    "action": "Map DSP territory streaming data against statement territories; confirm sub-publisher registration in the top revenue territories."
+                }
+            ],
+            "maintain": [
+                "registration_completeness", "collection_coverage", "identifier_completeness",
+                "ownership_clarity", "metadata_quality", "audit_status", "legal_exposure"
+            ]
+        },
+        "not_evaluable": [
+            "Exact coverage percentages, recoverable value, and territory overlap — this assessment is built from structured presence/absence flags, not from society-portal exports, statements, or DSP territory data. A definitive evaluation requires those records."
+        ],
+        "next_best_action": "File the MLC unmatched-pool claims and stand up the black-box recovery program — the single highest-value documentation step. Provide 3-year statement history and a society-portal export to convert the PARTIAL-confidence dimensions to a sourced grade. Route any deal negotiation to qualified counsel and royalty modeling to the Finance/Royalties function.",
+        "advisory_footer": _INK_AND_AIR_ADVISORY_FOOTER
+    },
+    "mock_note": "INK_AND_AIR_MOCK_MODE=true — this is a canned assessment. Set INK_AND_AIR_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/ink-and-air/assess", tags=["ink-and-air"])
+async def ink_and_air_assess(req: InkAndAirAssessRequest):
+    """
+    Catalog Health (publishing & rights) assessment for a PLMKR artist's catalog.
+
+    The agent scores the ten-dimension Catalog Health Rubric, states the four hard
+    gates, answers the Asset-Recovery Frame, classifies rights-infrastructure risk
+    severity, produces a prioritized Action Profile, and routes execution out. It
+    identifies and explains — it never advises on negotiation, never gives a legal
+    opinion, and never builds a financial valuation.
+
+    Artist identity is bound from the request payload (artist_name from the catalog
+    context), NOT from the Playmaker account profile, to prevent account-name vs.
+    credited-artist mismatches.
+
+    When INK_AND_AIR_MOCK_MODE=true (default), returns a canned scored assessment
+    without calling the Anthropic API. Set INK_AND_AIR_MOCK_MODE=false with a valid
+    ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if INK_AND_AIR_MOCK_MODE:
+        result = dict(_INK_AND_AIR_MOCK_ASSESSMENT)
+        result["artist_name"] = req.artist_name
+        result["catalog"]     = req.catalog.model_dump()
+        # shallow-copy the assessment block so per-request fields don't mutate the template
+        assessment = dict(result["assessment"])
+        assessment["catalog_name"] = req.catalog.catalog_name
+        result["assessment"] = assessment
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set INK_AND_AIR_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_ink_and_air_system_prompt(skills_dir=SKILLS_DIR)
+
+    cat = req.catalog
+
+    user_prompt = f"""You are performing a PLMKR Catalog Health assessment (publishing & rights). You IDENTIFY and EXPLAIN — you never advise on negotiation, never give a legal opinion, and never build a financial valuation. Use the ten-dimension Catalog Health Rubric, the four hard gates, the Asset-Recovery Frame, and the Catalog Health Evaluation template from your knowledge base.
+
+ARTIST IDENTITY (use this — not any account name):
+- Credited artist name: {req.artist_name}
+- Artist territory: {req.artist_territory}
+
+CATALOG UNDER REVIEW (structured presence/absence flags — full statements/portal exports are NOT supplied):
+- Catalog name: {cat.catalog_name or 'NOT NAMED'}
+- Work count: {cat.work_count}
+- Has international usage: {'YES' if cat.has_international_usage else 'NO'}
+- PRO registration complete: {'YES' if cat.pro_registration_complete else 'NO'}
+- Mechanical registration complete: {'YES' if cat.mechanical_registration_complete else 'NO'}
+- New works registered before release: {'YES' if cat.new_works_registered_before_release else 'NO'}
+- Active income streams: {', '.join(cat.active_income_streams) if cat.active_income_streams else 'None reported'}
+- UGC monetization active: {'YES' if cat.ugc_monetization_active else 'NO'}
+- Neighboring rights registered: {'YES' if cat.neighboring_rights_registered else 'NO'}
+- MLC unmatched-pool claims filed: {cat.mlc_unmatched_claims_filed if cat.mlc_unmatched_claims_filed is not None else 'NOT STATED'}
+- Black-box claim strategy in place: {'YES' if cat.black_box_claim_strategy else 'NO'}
+- ISWC coverage complete: {'YES' if cat.iswc_coverage_complete else 'NO'}
+- IPI registered for all parties: {'YES' if cat.ipi_registered_all_parties else 'NO'}
+- Active revenue without identifiers: {'YES — HG-1 candidate' if cat.active_revenue_without_identifiers else 'NO'}
+- Split sheets executed: {'YES' if cat.split_sheets_executed else 'NO'}
+- Chain of title documented: {'YES' if cat.chain_of_title_documented else 'NO'}
+- Active ownership dispute (formally filed): {'YES — HG-2 candidate' if cat.active_ownership_dispute else 'NO'}
+- One-stop clearance: {cat.one_stop_clearance if cat.one_stop_clearance is not None else 'NOT STATED'}
+- Sync representative in place: {'YES' if cat.sync_rep_in_place else 'NO'}
+- Master rights clear: {'YES' if cat.master_rights_clear else 'NO'}
+- Sub-publishing in major territories: {'YES' if cat.subpublishing_in_major_territories else 'NO'}
+- Territories collecting (count): {cat.territories_collecting_count}
+- Statement matching rate: {f'{cat.statement_matching_rate:.0%}' if cat.statement_matching_rate is not None else 'NOT STATED'}
+- Audit window status: {cat.audit_window_status}
+- Last audit within window: {'YES' if cat.last_audit_within_window else 'NO'}
+- Active litigation naming the catalog: {'YES — HG-4 candidate' if cat.active_litigation else 'NO'}
+- Uncleared sample exposure: {cat.uncleared_sample_exposure if cat.uncleared_sample_exposure is not None else 'NOT STATED'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST IDENTITY above.
+2. Score all 10 rubric dimensions. For each: letter grade, numeric equivalent, weight, sub-signal classification (MEASURED/SOURCED/JUDGED/AMBIGUOUS/ABSENT/NOT EVALUABLE), confidence (HIGH/MEDIUM/LOW/PARTIAL with reason), and a 1–3 sentence rationale describing the economic consequence of the current state — not a negotiation position.
+3. State all four hard gates (HG-1 Active Revenue Without Identifiers, HG-2 Unresolved Ownership Dispute, HG-3 Expired Audit Window, HG-4 Active Litigation): CLEAR or TRIGGERED with reason. HG-2 requires a formally filed dispute; a disclosed-but-unfiled dispute is CLEAR but must still be surfaced as a flagged risk.
+4. Compute the PROVISIONAL COMPOSITE per the rubric formula. Label it PROVISIONAL and state the unlock condition. Treat any retention/threshold figure as industry convention, not a recommendation.
+5. Answer the Asset-Recovery Frame explicitly with evidence from the dimension grades.
+6. Classify rights-infrastructure risk severity descriptively (LOW_RISK / NOTABLE_GAPS / SIGNIFICANT_GAPS / MATERIALLY_DEFICIENT / CRITICALLY_DEFICIENT). This labels severity — it is NOT a recommendation to sign, sell, or walk away.
+7. Produce an Action Profile (IMMEDIATE / PRIORITY / OPTIMIZE / MAINTAIN), with recoverability estimates ONLY where evidence supports them (labeled ESTIMATE with basis, or NOT ESTIMABLE).
+8. Mark NOT EVALUABLE items and name the minimum data required.
+9. Do not state any rate, advance, fee, or multiple as "market standard" without a Tier A/B source. Treat AI training-rights questions as contested unless settled.
+10. End with the advisory footer: "{_INK_AND_AIR_ADVISORY_FOOTER}"
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Publishing assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist_name":     req.artist_name,
+        "catalog":         req.catalog.model_dump(),
+        "assessment_text": assessment_text,
+        "advisory_footer": _INK_AND_AIR_ADVISORY_FOOTER,
         "model":           MODEL_SONNET,
     }
