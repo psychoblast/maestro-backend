@@ -25,6 +25,7 @@ write_video.py
 # Working documents — not versioned
 *.docx
 .openapi_tmp/
+PHASE3_LOG.md
 SESSION_LOG.md
 FIX_GIT_AUTH.md
 SESSION_NOTES_MAY8.md
