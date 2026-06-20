@@ -25,6 +25,8 @@ init_error_reporting()
 
 from ar_scout_loader import build_ar_scout_system_prompt
 from grid_prophet_loader import build_grid_prophet_system_prompt
+from sync_agent_loader import build_sync_agent_system_prompt
+from brand_connect_loader import build_brand_connect_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -44,6 +46,10 @@ ANTHROPIC_AVAILABLE = bool(ANTHROPIC_API_KEY)
 AR_SCOUT_MOCK_MODE       = os.environ.get("AR_SCOUT_MOCK_MODE",       "true").lower() != "false"
 # Marketing assessment mock mode — default ON so no live Anthropic calls during testing
 GRID_PROPHET_MOCK_MODE   = os.environ.get("GRID_PROPHET_MOCK_MODE",   "true").lower() != "false"
+# Sync licensing assessment mock mode — default ON so no live Anthropic calls during testing
+SYNC_AGENT_MOCK_MODE     = os.environ.get("SYNC_AGENT_MOCK_MODE",     "true").lower() != "false"
+# Brand Connect assessment mock mode — default ON so no live Anthropic calls during testing
+BRAND_CONNECT_MOCK_MODE  = os.environ.get("BRAND_CONNECT_MOCK_MODE",  "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -3115,3 +3121,404 @@ INSTRUCTIONS:
     }
 
 
+# ── BRAND-CONNECT — Brand Partnership Deal Quality Assessment ──────────────────
+
+class BrandConnectArtistInput(BaseModel):
+    """Artist-level fields for the brand partnership assessment. Name is taken
+    from release/track metadata, NOT from the Playmaker account profile."""
+    name:              str
+    genre:             str
+    stage:             str   = "emerging"   # emerging|developing|established|superstar
+    territory:         str   = "unknown"
+    tier:              str   = "GOLD"       # GOLD|PLATINUM|DIAMOND
+    monthly_listeners: Optional[int]   = None
+    social_following:  Optional[int]   = None   # total cross-platform
+    engagement_rate:   Optional[float] = None   # 0.0–1.0
+
+class BrandConnectDealInput(BaseModel):
+    deal_type:              str   = "paid_social"  # product_gifting|paid_social|ambassador|tour_sponsorship|equity
+    partner_category:       str   = "consumer_brand"
+    exclusivity_category:   Optional[str]  = None
+    term_months:            Optional[int]  = None
+    has_kill_fee:           Optional[bool] = None
+    upfront_payment_pct:    Optional[float] = None   # 0.0–1.0; fraction paid at signing
+    diligence_status:       str   = "none"   # none|partial|full
+    prior_artist_deals:     Optional[int]  = None   # brand's documented prior artist partnerships
+    has_morality_clause:    Optional[bool] = None
+    morality_clause_scoped: Optional[bool] = None   # True if specific triggers defined
+
+class BrandConnectAssessRequest(BaseModel):
+    artist_id:        str   = ""
+    artist:           BrandConnectArtistInput
+    deal:             BrandConnectDealInput
+    additional_notes: str   = ""
+
+_BRAND_CONNECT_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist": None,   # filled at runtime
+    "deal":   None,   # filled at runtime
+    "assessment": {
+        "dimensions": {
+            "strategic_value": {
+                "score": 5.5, "weight": 0.18, "confidence": "PARTIAL",
+                "evidence": "Deal type indicates audience access potential in artist's genre. Leverage-transfer test requires confirmation of brand's consumer demographic overlap with artist's listener base.",
+                "not_evaluable": ["confirmed audience demographic overlap — brand consumer data not provided",
+                                  "co-marketing spend commitment — not confirmed as contractually committed vs. aspirational"]
+            },
+            "economic_value": {
+                "score": 5.0, "weight": 0.16, "confidence": "LOW",
+                "evidence": "Deal type provided; specific consideration not provided. Payment schedule status unconfirmed.",
+                "not_evaluable": ["total consideration amount — not provided",
+                                  "production cost obligations — not assessed",
+                                  "kill fee amount — not confirmed at this stage"]
+            },
+            "partner_quality": {
+                "score": 3.0, "weight": 0.14, "confidence": "LOW",
+                "evidence": "Diligence status: none. Prior artist deal count not confirmed. Proceeding without adequate credibility evidence — scored INFERRED at baseline.",
+                "not_evaluable": ["brand payment track record — diligence not conducted",
+                                  "creative approval process timeline — not assessed",
+                                  "brand organizational alignment — not confirmed"]
+            },
+            "deal_structure": {
+                "score": 4.0, "weight": 0.14, "confidence": "LOW",
+                "evidence": "Term not confirmed. Category exclusivity scope not defined. Kill fee status not provided.",
+                "not_evaluable": ["exclusivity category scope — not confirmed",
+                                  "creative approval rounds and SLA — not assessed",
+                                  "IP ownership of content created — not confirmed",
+                                  "artist exit right — not confirmed"]
+            },
+            "risk_exposure": {
+                "score": 4.0, "weight": 0.14, "confidence": "PARTIAL",
+                "evidence": "Morality clause status not confirmed. No fatal exposure identified from available information, but morality clause assessment is incomplete.",
+                "not_evaluable": ["morality clause trigger specificity — not assessed",
+                                  "brand reputation controversy check — not conducted",
+                                  "category exclusivity vs. alternative revenue impact — not assessed"]
+            },
+            "execution_feasibility": {
+                "score": 5.0, "weight": 0.10, "confidence": "LOW",
+                "evidence": "Deal type (paid social) indicates standard content delivery scope. Specific deliverable requirements and production timeline not confirmed.",
+                "not_evaluable": ["production bandwidth assessment — not provided",
+                                  "content calendar conflict with existing commitments — not assessed"]
+            },
+            "opportunity_cost": {
+                "score": 3.0, "weight": 0.08, "confidence": "LOW",
+                "evidence": "Category exclusivity scope not confirmed. Alternative brand partnerships in same category not identified or assessed. BATNA not established.",
+                "not_evaluable": ["alternative brand opportunities in same category — not assessed",
+                                  "exclusivity cost vs. best foreclosed alternative — not quantified"]
+            },
+            "reversibility": {
+                "score": 4.0, "weight": 0.06, "confidence": "LOW",
+                "evidence": "Kill fee and exit right status not confirmed. Term length not confirmed.",
+                "not_evaluable": ["artist-exercisable exit right — not confirmed",
+                                  "kill fee structure — not confirmed",
+                                  "renewal terms — not confirmed"]
+            }
+        },
+        "composite": {
+            "value": 4.3,
+            "formula": "(5.5×0.18) + (5.0×0.16) + (3.0×0.14) + (4.0×0.14) + (4.0×0.14) + (5.0×0.10) + (3.0×0.08) + (4.0×0.06)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked brand partnership evaluations in feedback/outcomes/"
+        },
+        "band": "Amber",
+        "band_meaning": "Material gaps require resolution before committing — deal structure, partner diligence, and opportunity cost are all under-assessed at this stage",
+        "hard_gates": {
+            "partner_quality_gate": "CONDITIONAL — Partner Quality & Credibility scored 3 (INFERRED — diligence not conducted). Hard gate threshold is score 1 (disqualifying partner confirmed). Current score reflects absence of evidence, not negative evidence. Conduct partner diligence before commitment.",
+            "risk_exposure_gate":   "CONDITIONAL — Risk & Downside Exposure scored 4. Hard gate threshold is score 1 (fatal, unmitigated exposure confirmed). Morality clause specificity must be confirmed before commitment. No fatal exposure identified from available information."
+        },
+        "deal_priorities": [
+            "Conduct partner due diligence — confirm brand's prior artist partnership track record, payment reliability, and creative approval process timeline before committing. Partner Quality is the most consequential unassessed dimension.",
+            "Obtain deal term sheet — category exclusivity scope, kill fee structure, artist exit right, and creative approval SLAs are all required for a complete DQS assessment. Current structure scoring is LOW confidence on these dimensions.",
+            "Assess opportunity cost — identify alternative brand partnerships available in the same category within the next 6 months and confirm whether this deal's exclusivity provisions foreclose deals of comparable or greater value."
+        ],
+        "structural_flags": [
+            "Kill fee status unconfirmed — require before any commitment. A paid brand deal without a kill fee places all cancellation risk on the artist.",
+            "Morality clause scope not assessed — require specific trigger language for LEX-CIPHER review before commitment.",
+            "Category exclusivity scope not defined — require specific category definition. Over-broad exclusivity is a Dim-5 risk and a Dim-7 opportunity cost driver."
+        ],
+        "lex_cipher_routing": "Route to LEX-CIPHER when: (1) deal term sheet is available for review, (2) morality clause language is confirmed, (3) IP ownership provisions on content created for the deal are defined. Do not commit before LEX-CIPHER review.",
+        "confidence_cap": "Composite confidence capped at LOW: Partner Quality (Dim-3) scored INFERRED — no diligence conducted. Deal Structure (Dim-4) and Risk Exposure (Dim-5) scored LOW — deal documents not yet reviewed. Assessment cannot be confidently scored above Amber band without these inputs.",
+        "next_best_action": "Obtain the brand's deal term sheet and conduct a reference check with at least one prior artist partnership — these two inputs would move Partner Quality and Deal Structure from LOW to PARTIAL and would confirm or clear the Risk Exposure gate."
+    },
+    "model": "claude-sonnet-4-6",
+    "mock_note": "BRAND_CONNECT_MOCK_MODE=true — this is a canned assessment. Set BRAND_CONNECT_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/brand-connect/assess", tags=["brand-connect"])
+async def brand_connect_assess(req: BrandConnectAssessRequest):
+    """
+    Brand partnership deal quality assessment for a PLMKR artist + proposed deal.
+
+    Artist identity is bound from the request payload (artist.name from release/
+    track metadata), NOT from the Playmaker account profile, to prevent
+    account-name vs. credited-artist mismatches.
+
+    When BRAND_CONNECT_MOCK_MODE=true (default), returns a canned scored
+    assessment without calling the Anthropic API. Set BRAND_CONNECT_MOCK_MODE=false
+    with a valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if BRAND_CONNECT_MOCK_MODE:
+        result = dict(_BRAND_CONNECT_MOCK_ASSESSMENT)
+        result["artist"] = req.artist.model_dump()
+        result["deal"]   = req.deal.model_dump()
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set BRAND_CONNECT_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_brand_connect_system_prompt(skills_dir=SKILLS_DIR)
+
+    artist = req.artist
+    deal   = req.deal
+
+    user_prompt = f"""You are performing a PLMKR brand partnership deal quality assessment. Use the DQS scoring rubric, partnership strategy frameworks, deal economics, deal structure standards, and output templates from your knowledge base to produce a complete Deal Quality Assessment Memo.
+
+ARTIST PROFILE (from release/track metadata — use this for artist identity):
+- Credited artist name: {artist.name}
+- Primary genre: {artist.genre}
+- Career stage: {artist.stage}
+- Primary territory: {artist.territory}
+- Artist tier: {artist.tier}
+- Monthly listeners: {artist.monthly_listeners if artist.monthly_listeners is not None else 'NOT PROVIDED — mark as NOT EVALUABLE'}
+- Social following (cross-platform): {artist.social_following if artist.social_following is not None else 'NOT PROVIDED'}
+- Engagement rate: {f'{artist.engagement_rate:.1%}' if artist.engagement_rate is not None else 'NOT PROVIDED'}
+
+PROPOSED DEAL DETAILS:
+- Deal type: {deal.deal_type}
+- Partner category: {deal.partner_category}
+- Category exclusivity: {deal.exclusivity_category or 'NOT CONFIRMED'}
+- Term: {f'{deal.term_months} months' if deal.term_months is not None else 'NOT CONFIRMED'}
+- Kill fee confirmed: {deal.has_kill_fee if deal.has_kill_fee is not None else 'NOT CONFIRMED'}
+- Upfront payment %: {f'{deal.upfront_payment_pct:.0%}' if deal.upfront_payment_pct is not None else 'NOT CONFIRMED'}
+- Diligence status: {deal.diligence_status}
+- Prior artist partnerships (brand's documented history): {deal.prior_artist_deals if deal.prior_artist_deals is not None else 'NOT CONFIRMED'}
+- Morality clause present: {deal.has_morality_clause if deal.has_morality_clause is not None else 'NOT CONFIRMED'}
+- Morality clause specifically scoped: {deal.morality_clause_scoped if deal.morality_clause_scoped is not None else 'NOT CONFIRMED'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST PROFILE above, not any other name or account reference.
+2. Score all 8 DQS dimensions independently. For each, state evidence type (observed / told / inferred), confidence (high / medium / low), and whether the dimension is EVALUABLE from the data above.
+3. If a required data field is NOT CONFIRMED or NOT PROVIDED, mark it NOT EVALUABLE — do not estimate or infer it.
+4. Apply the DQS composite formula. Label the composite PROVISIONAL with the unlock condition.
+5. State both hard gate statuses (Partner Quality Gate, Risk & Exposure Gate) — CLEAR or CONDITIONAL or TRIGGERED with specific reason.
+6. Name the top 3 deal priorities (actions the artist should take before committing).
+7. Identify any structural flags (terms requiring LEX-CIPHER review before commitment).
+8. State the single next best action (24–72h).
+9. Do not use probability percentage language for any projection. Label all projections ESTIMATE with the comparable that produced them.
+10. Dim-1 (Strategic Value) and Dim-2 (Economic Value) must be scored and reported independently — never collapse them into a single "deal value" judgment.
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=6000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Brand partnership assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist":          req.artist.model_dump(),
+        "deal":            req.deal.model_dump(),
+        "assessment_text": assessment_text,
+        "model":           MODEL_SONNET,
+    }
+
+
+# ── SYNC-AGENT — Sync Licensing Assessment ────────────────────────────────────
+
+class SyncAgentTrackInput(BaseModel):
+    """Track-level fields for the sync licensing assessment."""
+    title:               str
+    genre:               str
+    clearance_status:    str   = "UNKNOWN"   # CLEARED|CLEARABLE|PENDING|BLOCKED|UNKNOWN
+    is_one_stop:         bool  = False
+    has_stems:           bool  = False
+    has_clean_version:   bool  = True
+    duration_sec:        Optional[float] = None
+    bpm:                 Optional[float] = None
+    has_samples:         bool  = False
+    has_explicit_lyrics: bool  = False
+
+class SyncAgentBriefInput(BaseModel):
+    """Brief-level fields describing the sync opportunity."""
+    project_type:         str          = "unknown"   # film|tv|ad|trailer|game|web|unknown
+    scene_description:    str          = ""
+    budget_range:         Optional[str] = None        # e.g., "$5k-$15k" or None
+    deadline_days:        Optional[int] = None
+    territory:            str          = "worldwide"
+    reference_tracks:     list[str]    = []
+    lyric_restrictions:   list[str]    = []
+    exclusivity_required: bool         = False
+    buyer_class:          str          = "unknown"   # indie|mid-tier|major|streaming|ad-agency|unknown
+
+class SyncAgentAssessRequest(BaseModel):
+    artist_id:        str   = ""
+    artist_name:      str
+    artist_territory: str   = "unknown"
+    track:            SyncAgentTrackInput
+    brief:            SyncAgentBriefInput
+    additional_notes: str   = ""
+
+_SYNC_AGENT_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist_name": None,  # filled at runtime
+    "track": None,        # filled at runtime
+    "brief": None,        # filled at runtime
+    "assessment": {
+        "dimensions": {
+            "brief_fit": {
+                "score": 4, "weight": 0.40, "confidence": "PARTIAL",
+                "rationale": "Track genre and energy profile consistent with the brief's emotional function. Reference tracks share up-tempo, cinematic qualities with this catalog entry. One defensible deviation: era may differ from references by ~5 years.",
+                "not_evaluable": [
+                    "lyric theme alignment — no lyric content provided",
+                    "specific reference track shared properties — references not yet decoded"
+                ]
+            },
+            "clearance_complexity": {
+                "score": 5, "weight": 0.25, "confidence": "HIGH",
+                "rationale": "One-stop confirmed: artist controls both master and publishing. No samples or uncleared interpolations flagged. Status: CLEARED — instant yes available.",
+                "not_evaluable": []
+            },
+            "turnaround_feasibility": {
+                "score": 4, "weight": 0.20, "confidence": "HIGH",
+                "rationale": "One-stop catalog can confirm same-day. Deadline of 14 days met with ≥50% buffer. Structurally eligible for this buyer class.",
+                "not_evaluable": []
+            },
+            "fee_tier": {
+                "score": 3, "weight": 0.15, "confidence": "LOW",
+                "rationale": "Budget range sits within the standard band for this use category per indicative estimates. Standard negotiation — no strategic exception required.",
+                "not_evaluable": [
+                    "buyer budget ceiling — no exact figure provided",
+                    "comparable closed deals in this category — real comparables pending"
+                ]
+            }
+        },
+        "composite": {
+            "value": 82,
+            "formula": "(4×0.40×20) + (5×0.25×20) + (4×0.20×20) + (3×0.15×20)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked sync assessments in feedback/outcomes/"
+        },
+        "hard_gates": {
+            "clearance_unknown_gate": "CLEAR — clearance status CLEARED; chain fully papered",
+            "turnaround_gate":        "CLEAR — turnaround feasibility scored 4; deadline met with ≥50% buffer",
+            "brief_fit_gate":         "CLEAR — brief fit scored 4; above the do-not-pitch floor of ≤2"
+        },
+        "verdict": "PITCH",
+        "pitch_rationale": "All three hard gates clear. Composite 82/100 (PROVISIONAL). One-stop clears the clearance risk entirely; brief-fit at 4 gives a defensible one-line fit case. Fee tier confidence is LOW pending exact budget confirmation — quote inside stated budget range or open at top of comparable-supported band.",
+        "next_action": "Prepare pitch email within 24h. Lead with clearance status and one-line fit case referencing the scene's emotional function. Include stems availability note. Subject line should carry the answer."
+    },
+    "mock_note": "SYNC_AGENT_MOCK_MODE=true — this is a canned assessment. Set SYNC_AGENT_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/sync-agent/assess", tags=["sync-agent"])
+async def sync_agent_assess(req: SyncAgentAssessRequest):
+    """
+    Sync licensing brief-fit assessment for a PLMKR artist + track + brief.
+
+    Artist identity is bound from the request payload (artist_name from
+    track/release metadata), NOT from the Playmaker account profile, to prevent
+    account-name vs. credited-artist mismatches.
+
+    When SYNC_AGENT_MOCK_MODE=true (default), returns a canned scored assessment
+    without calling the Anthropic API. Set SYNC_AGENT_MOCK_MODE=false with a
+    valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if SYNC_AGENT_MOCK_MODE:
+        result = dict(_SYNC_AGENT_MOCK_ASSESSMENT)
+        result["artist_name"] = req.artist_name
+        result["track"]       = req.track.model_dump()
+        result["brief"]       = req.brief.model_dump()
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set SYNC_AGENT_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_sync_agent_system_prompt(skills_dir=SKILLS_DIR)
+
+    track = req.track
+    brief = req.brief
+
+    user_prompt = f"""You are performing a PLMKR sync licensing assessment. Use the scoring rubric, buyer psychology, clearance workflow, deal logic, and output templates from your knowledge base to produce a complete Brief-Fit Scorecard.
+
+ARTIST PROFILE (use this for artist identity — not any account name):
+- Credited artist name: {req.artist_name}
+- Primary territory: {req.artist_territory}
+
+TRACK DETAILS:
+- Title: {track.title}
+- Genre: {track.genre}
+- Clearance status: {track.clearance_status}
+- One-stop (artist controls both master and publishing): {'YES' if track.is_one_stop else 'NO — publishing side requires separate clearance'}
+- Stems available: {'YES' if track.has_stems else 'NO'}
+- Clean version available: {'YES' if track.has_clean_version else 'NO'}
+- Duration: {f'{track.duration_sec:.0f}s' if track.duration_sec is not None else 'NOT PROVIDED'}
+- BPM: {f'{track.bpm:.0f}' if track.bpm is not None else 'NOT PROVIDED'}
+- Contains samples: {'YES — recursive chain applies; status cannot exceed CLEARABLE until sample chain confirmed' if track.has_samples else 'NO'}
+- Explicit lyrics: {'YES — clean version required for most TV/ad; confirm availability' if track.has_explicit_lyrics else 'NO'}
+
+BRIEF DETAILS:
+- Project type: {brief.project_type}
+- Scene / emotional function: {brief.scene_description or 'NOT PROVIDED — mark brief fit as NOT EVALUABLE from scene function'}
+- Budget range: {brief.budget_range or 'NOT PROVIDED — fee tier scored LOW confidence'}
+- Deadline (days from now): {brief.deadline_days if brief.deadline_days is not None else 'NOT PROVIDED — turnaround feasibility scored LOW confidence'}
+- Territory: {brief.territory}
+- Reference tracks: {', '.join(brief.reference_tracks) if brief.reference_tracks else 'NOT PROVIDED'}
+- Lyric restrictions: {', '.join(brief.lyric_restrictions) if brief.lyric_restrictions else 'None stated'}
+- Exclusivity required: {'YES' if brief.exclusivity_required else 'NO'}
+- Buyer class: {brief.buyer_class}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST PROFILE above.
+2. Score all 4 rubric dimensions. For each: score (1–5), weight, rationale (1–3 sentences), confidence (HIGH/PARTIAL/LOW), and NOT EVALUABLE items named.
+3. If clearance_status is UNKNOWN: cap composite at 40 and flag the gate.
+4. Apply the composite formula: Σ(weight × score × 20) → 0–100. Label PROVISIONAL with unlock condition.
+5. State all three hard gates: CLEAR or TRIGGERED with reason.
+6. Issue verdict: PITCH (≥60, all gates clear, brief_fit ≥ 3) / HOLD / PASS.
+7. State ALTERNATIVES if HOLD or PASS (what condition changes the verdict).
+8. State the single NEXT BEST ACTION (24–48h).
+9. Log as a falsifiable prediction with outcome check date (90 days default).
+10. Do not use probability percentage language.
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Sync licensing assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist_name":     req.artist_name,
+        "track":           req.track.model_dump(),
+        "brief":           req.brief.model_dump(),
+        "assessment_text": assessment_text,
+        "model":           MODEL_SONNET,
+    }
