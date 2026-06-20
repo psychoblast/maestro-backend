@@ -24,6 +24,7 @@ from error_reporting import init_error_reporting, capture_exception
 init_error_reporting()
 
 from ar_scout_loader import build_ar_scout_system_prompt
+from grid_prophet_loader import build_grid_prophet_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -40,7 +41,9 @@ ANTHROPIC_API_KEY   = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_AVAILABLE = bool(ANTHROPIC_API_KEY)
 
 # A&R assessment mock mode — default ON so no live Anthropic calls during testing
-AR_SCOUT_MOCK_MODE  = os.environ.get("AR_SCOUT_MOCK_MODE", "true").lower() != "false"
+AR_SCOUT_MOCK_MODE       = os.environ.get("AR_SCOUT_MOCK_MODE",       "true").lower() != "false"
+# Marketing assessment mock mode — default ON so no live Anthropic calls during testing
+GRID_PROPHET_MOCK_MODE   = os.environ.get("GRID_PROPHET_MOCK_MODE",   "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -2884,5 +2887,231 @@ INSTRUCTIONS:
         "model":            MODEL_SONNET,
     }
 
+
+# ── GRID-PROPHET — Marketing Assessment ───────────────────────────────────────
+
+class GridProphetArtistInput(BaseModel):
+    """Artist-level fields for the marketing assessment. Name is taken from
+    release/track metadata, NOT from the Playmaker account profile."""
+    name:             str
+    genre:            str
+    stage:            str   = "emerging"   # emerging|developing|established|superstar
+    territory:        str   = "unknown"
+    monthly_listeners: Optional[int]   = None
+    social_following:  Optional[int]   = None   # total cross-platform
+    save_rate:         Optional[float] = None   # 0.0–1.0 on most recent release
+    release_count:     int   = 0
+    has_email_list:    bool  = False
+    email_list_size:   Optional[int]   = None
+    has_merch:         bool  = False
+    prior_editorial_placements: int = 0
+
+class GridProphetCampaignInput(BaseModel):
+    release_title:       str
+    release_date:        Optional[str]   = None   # YYYY-MM-DD or None if unreleased
+    campaign_budget_usd: Optional[float] = None
+    campaign_window_weeks: int = 12
+    primary_platforms:   list[str] = []   # e.g. ["tiktok", "instagram", "spotify"]
+    has_tour_dates:      bool = False
+    tour_territory:      Optional[str]   = None
+    is_catalog_campaign: bool = False
+
+class GridProphetAssessRequest(BaseModel):
+    artist_id:        str   = ""
+    artist:           GridProphetArtistInput
+    campaign:         GridProphetCampaignInput
+    additional_notes: str   = ""
+
+_GRID_PROPHET_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist": None,    # filled at runtime
+    "campaign": None,  # filled at runtime
+    "assessment": {
+        "dimensions": {
+            "virality": {
+                "score": 6.0, "weight": 0.15, "confidence": "PARTIAL",
+                "evidence": "Genre has documented TikTok sound track record at this scale. Hook structure is excerpt-friendly per track profile.",
+                "not_evaluable": ["pre-release organic spread — no social listening data provided",
+                                  "UGC velocity — no comparable track history provided"]
+            },
+            "ugc_potential": {
+                "score": 5.0, "weight": 0.12, "confidence": "PARTIAL",
+                "evidence": "Genre supports participatory format (singalong, lip-sync). Audio excerpt-worthy based on genre profile.",
+                "not_evaluable": ["prior UGC on artist catalog — no analytics provided",
+                                  "challenge/movement vector — no release concept details provided"]
+            },
+            "platform_fit": {
+                "score": 5.5, "weight": 0.18, "confidence": "LOW",
+                "evidence": "Platform list provided; genre indicates plausible fit on primary platforms.",
+                "not_evaluable": ["posting cadence — no social analytics provided",
+                                  "engagement rate vs. cohort benchmark — no platform analytics provided",
+                                  "algorithm growth state — cannot assess without recent post performance data"]
+            },
+            "editorial_readiness": {
+                "score": 4.0, "weight": 0.13, "confidence": "PARTIAL",
+                "evidence": "Release date provided; pitch window can be assessed once EPK status confirmed.",
+                "not_evaluable": ["metadata completeness — distributor QC not confirmed",
+                                  "EPK status — bio, press photo, embed player not confirmed",
+                                  "editorial contact — not provided"]
+            },
+            "touring_synergy": {
+                "score": 3.0, "weight": 0.03, "confidence": "LOW",
+                "evidence": "No tour dates confirmed in campaign input.",
+                "not_evaluable": ["live activity within campaign window — not provided"]
+            },
+            "merch_d2c": {
+                "score": 3.0, "weight": 0.10, "confidence": "PARTIAL",
+                "evidence": "Merch status and email list provided at binary level; size and conversion history not evaluable.",
+                "not_evaluable": ["email list open rate — not provided",
+                                  "D2C purchase history — not provided",
+                                  "physical format plans — not provided"]
+            },
+            "brand_partnership": {
+                "score": 4.0, "weight": 0.07, "confidence": "LOW",
+                "evidence": "Monthly listener range indicates brand interest threshold may not yet be met at sub-100K scale.",
+                "not_evaluable": ["brand-safety record — no public controversy check data provided",
+                                  "prior brand work — not provided",
+                                  "category openness — not provided"]
+            },
+            "fan_ltv": {
+                "score": 4.0, "weight": 0.22, "confidence": "PARTIAL",
+                "evidence": "Release count and email list presence are structural LTV signals. Save rate provided as proxy for depth of listen.",
+                "not_evaluable": ["ticket conversion history — no live event data provided",
+                                  "catalog re-listen behavior — no streaming analytics provided",
+                                  "community platform (Discord/Patreon) — not provided"]
+            }
+        },
+        "composite": {
+            "value": 4.6,
+            "formula": "(6.0×0.15) + (5.0×0.12) + (5.5×0.18) + (4.0×0.13) + (3.0×0.03) + (3.0×0.10) + (4.0×0.07) + (4.0×0.22)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked campaign evaluations in feedback/outcomes/"
+        },
+        "band": "Amber",
+        "band_meaning": "Limited campaign — address gap dimensions before full spend; partial rollout",
+        "hard_gates": {
+            "editorial_gate":    "CONDITIONAL — Editorial Readiness scored 4. Metadata and EPK must be confirmed clean before any editorial pitch submission. Score of 1 would block pitch.",
+            "paid_spend_gate":   "CLEAR — Platform Fit scored 5.5 (above gate threshold of ≤2). Paid spend can proceed with caution; recommend small-scale test first.",
+            "brand_pitch_gate":  "BLOCKED — Brand Partnership Potential scored 4 (≤2 threshold not triggered at 4; gate not active). However, audience size NOT EVALUABLE — confirm monthly listeners ≥50K before pursuing brand outreach."
+        },
+        "campaign_priorities": [
+            "Confirm EPK completeness (bio, press photo, metadata) — this is a hard gate for editorial and blocks Spotify pitch if any field is missing.",
+            "Obtain platform analytics (Spotify for Artists, TikTok/Instagram analytics) — Platform Fit is the highest-weighted gap dimension; cannot score confidently without posting cadence and engagement rate data.",
+            "Build or grow email list before launch — Fan LTV potential is the highest-weight dimension (0.22); email list is the single highest-LTV fan acquisition channel available to this artist at this stage."
+        ],
+        "channel_mix_recommendation": {
+            "organic_social": {
+                "allocation": "50%", "rationale": "Primary platform algorithm building. TikTok/Reels cadence must be established before paid amplification.",
+                "measurement": "Organic engagement rate, completion rate, follower growth WoW"
+            },
+            "editorial_pitch": {
+                "allocation": "0% budget (relationship-earned)", "rationale": "Highest-value non-paid channel. Priority: Spotify editorial 7+ days pre-release.",
+                "measurement": "Editorial add within 72h of release"
+            },
+            "email_sms": {
+                "allocation": "10%", "rationale": "Highest LTV-per-dollar channel for artists with existing list. Pre-save push in Phase 2.",
+                "measurement": "Pre-save click rate, email open rate, D2C conversion rate"
+            },
+            "paid_social": {
+                "allocation": "40%", "rationale": "Retargeting warm audiences (video viewers ≥50%, profile visitors, prior savers). Cold prospecting only at 10–15% of paid budget until CPA is proven.",
+                "measurement": "Cost-per-pre-save, cost-per-follower, warm vs. cold audience CPM ratio"
+            }
+        },
+        "confidence_cap": "Composite confidence capped at LOW: Platform Fit and Fan LTV scored PARTIAL or LOW — platform analytics and conversion history not provided. Assessment cannot be confidently scored above Amber band without these inputs.",
+        "next_best_action": "Provide Spotify for Artists analytics (monthly listener count, save rate, completion rate) and social posting cadence data — these two inputs would move Platform Fit and Fan LTV from PARTIAL/LOW to PARTIAL/MEDIUM and may shift the composite band from Amber to Yellow."
+    },
+    "model": "claude-sonnet-4-6",
+    "mock_note": "GRID_PROPHET_MOCK_MODE=true — this is a canned assessment. Set GRID_PROPHET_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/grid-prophet/assess", tags=["grid-prophet"])
+async def grid_prophet_assess(req: GridProphetAssessRequest):
+    """
+    Marketing readiness assessment for a PLMKR artist + campaign.
+
+    Artist identity is bound from the request payload (artist.name from release/
+    track metadata), NOT from the Playmaker account profile, to prevent
+    account-name vs. credited-artist mismatches.
+
+    When GRID_PROPHET_MOCK_MODE=true (default), returns a canned scored assessment
+    without calling the Anthropic API. Set GRID_PROPHET_MOCK_MODE=false with a
+    valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if GRID_PROPHET_MOCK_MODE:
+        result = dict(_GRID_PROPHET_MOCK_ASSESSMENT)
+        result["artist"]   = req.artist.model_dump()
+        result["campaign"] = req.campaign.model_dump()
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set GRID_PROPHET_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_grid_prophet_system_prompt(skills_dir=SKILLS_DIR)
+
+    artist   = req.artist
+    campaign = req.campaign
+
+    user_prompt = f"""You are performing a PLMKR marketing readiness assessment. Use the scoring rubric, campaign architecture, channel economics, and output templates from your knowledge base to produce a complete Campaign Plan assessment.
+
+ARTIST PROFILE (from release/track metadata — use this for artist identity, not any account profile name):
+- Credited artist name: {artist.name}
+- Primary genre: {artist.genre}
+- Career stage: {artist.stage}
+- Primary territory: {artist.territory}
+- Monthly listeners: {artist.monthly_listeners if artist.monthly_listeners is not None else 'NOT PROVIDED — mark as NOT EVALUABLE'}
+- Social following (cross-platform): {artist.social_following if artist.social_following is not None else 'NOT PROVIDED'}
+- Save rate (most recent release): {f'{artist.save_rate:.1%}' if artist.save_rate is not None else 'NOT PROVIDED — mark as NOT EVALUABLE'}
+- Total release count: {artist.release_count}
+- Email list: {'YES — size: ' + str(artist.email_list_size) if artist.has_email_list else 'NO — flag as LTV gap'}
+- Merch available: {'YES' if artist.has_merch else 'NO'}
+- Prior editorial placements: {artist.prior_editorial_placements}
+
+CAMPAIGN DETAILS:
+- Release title: {campaign.release_title}
+- Release date: {campaign.release_date or 'unreleased / TBD'}
+- Campaign budget: {f'${campaign.campaign_budget_usd:,.0f}' if campaign.campaign_budget_usd is not None else 'NOT PROVIDED'}
+- Campaign window: {campaign.campaign_window_weeks} weeks
+- Primary platforms: {', '.join(campaign.primary_platforms) if campaign.primary_platforms else 'NOT PROVIDED'}
+- Tour dates within campaign window: {'YES — territory: ' + (campaign.tour_territory or 'unspecified') if campaign.has_tour_dates else 'NO'}
+- Catalog campaign (vs. new release): {'YES' if campaign.is_catalog_campaign else 'NO'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST PROFILE above (credited artist name), not any other name or account reference.
+2. Score all 8 rubric dimensions. For each, explicitly state whether evidence is OBSERVED, TOLD, or INFERRED, and whether the dimension is EVALUABLE or NOT EVALUABLE from the data above.
+3. If a required data field is NOT PROVIDED, mark it NOT EVALUABLE — do not estimate or infer it.
+4. Apply the scoring rubric composite formula. Label the composite PROVISIONAL with the unlock condition.
+5. State all hard gates (Editorial Gate, Paid Spend Gate, Brand Pitch Gate) — CLEAR or BLOCKED with reason.
+6. Recommend a channel mix with stated mechanism and measurement method for each channel.
+7. Name the top 3 campaign priorities and the single next best action (24–72h).
+8. Do not use probability percentage language for any projection. Label all projections ESTIMATE with the comparable that produced them.
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=6000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Marketing assessment failed: {str(e)}")
+
+    return {
+        "status":        "ok",
+        "mock":          False,
+        "artist":        req.artist.model_dump(),
+        "campaign":      req.campaign.model_dump(),
+        "assessment_text": assessment_text,
+        "model":         MODEL_SONNET,
+    }
 
 
