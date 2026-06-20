@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Royalty Recovery knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "recovery-doctrine",
+      "path": "skills/maestro-royalty-doctor/knowledge/recovery-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Identity & mission, recovery posture, DNA, decision biases, seven hard refusals, eight-item judgment doctrine (pipeline-first diagnosis, statement verification, NOT EVALUABLE, anti-fabrication, nine-mode revenue-leak taxonomy, black-box logic, audit-window discipline, NOT QUOTABLE), source tiers, MEASURED/SOURCED/JUDGED classification, scope fences"
+    },
+    {
+      "id": "recovery-rubric",
+      "path": "skills/maestro-royalty-doctor/knowledge/recovery-rubric.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Seven-Dimension Royalty Recovery Readiness Model with weights summing to 1.00, four hard gates (HG-1..HG-4), letter-grade anchors, provisional composite formula (max 10.0), Recovery Posture tiers, four-tier Recovery Plan, anti-fake-precision mechanics, required output elements"
+    },
+    {
+      "id": "royalty-pipeline-mechanics",
+      "path": "skills/maestro-royalty-doctor/knowledge/royalty-pipeline-mechanics.md",
+      "role": "domain-bedrock",
+      "required": true,
+      "description": "US streaming royalty flow (master/performance/mechanical), performance collection pipeline (writer's vs publisher's share), label accounting cycle (reserve/recoupment), collection timelines map (all Tier C), nine-mode pipeline failure taxonomy, unmatched-pool and reserve-release practitioner insight"
+    },
+    {
+      "id": "statement-analysis",
+      "path": "skills/maestro-royalty-doctor/knowledge/statement-analysis.md",
+      "role": "domain-advanced",
+      "required": false,
+      "description": "Statement architecture (label and publisher), line-item interpretation, twelve-category anomaly-detection checklist, accounting-window analysis (lag vs suspicious), controlled-composition clause accounting, the soft audit as first-response tool, domain anti-patterns"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-royalty-doctor/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Four templates: Royalty Recovery Audit, Statement Anomaly Report, Registration Gap Report, Black-Box/Historical Recovery Plan — with NOT EVALUABLE / NOT ESTIMABLE / NOT QUOTABLE discipline, lag-before-loss enforcement, and the execution-routing advisory footer"
+    }
+  ],
+  "load_order": [
+    "recovery-doctrine",
+    "recovery-rubric",
+    "royalty-pipeline-mechanics",
+    "statement-analysis",
+    "output-templates"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to ROYALTY_DOCTOR_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
