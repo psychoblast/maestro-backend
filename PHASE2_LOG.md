@@ -275,3 +275,46 @@ GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for t
 ### Entity gate result
 
 GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (`agent-?os|mindvision|mindvisionllc`). Broader sweep (nexus, scrubbed rubric codenames, prior constitution paths, sibling product names) also clean; the only broad-sweep matches were the benign substring "reve" inside "revenue" and "prevent", which are not provenance markers. The loader smoke test (`assert_no_forbidden_terms` over the assembled real knowledge) passes.
+
+---
+
+## producer-connect (Production) — 2026-06-20
+
+**Agent slug:** `producer-connect` · persona **Beat**, Production Specialist · skill `maestro-producer-connect`
+
+**Mode A — Knowledge re-home + SKILL.md distillation:**
+- Re-homed the Production doctrine into `skills/maestro-producer-connect/knowledge/` as NEW scrubbed PLMKR-owned originals (read from the Production source; never copied), mirroring `skills/maestro-ar-scout/knowledge/`:
+  - `production-doctrine.md` — Beat identity & mission, the lane/scope fences, eight-principle doctrine, decision biases, communication style, and the judgment discipline (evidence classification MEASURED/SOURCED/JUDGED/AMBIGUOUS/ABSENT/NOT EVALUABLE, measurement-vs-claim anti-fabrication, currency discipline, the production-to-co-write flag-and-defer boundary, hard-refusal anti-patterns)
+  - `production-readiness-rubric.md` — Eight-Dimension Production Readiness Score (weights sum to 1.00), 1/5/10 anchors, two hard gates (Dim-4 Technical Quality → NOT DELIVERABLE, Dim-6 Delivery & QC → RELEASE BLOCKED), composite formula, output bands, PROVISIONAL labeling, inferred-vs-told-absence rule, uncertainty propagation
+  - `production-fundamentals.md` — beat licensing tiers, beat sourcing, global producer community, AI beat generation (reference-first + rights caution), producer/engineer economics (fee/advance/recoupment, WFH-vs-royalty ownership consequence, role-by-role conventions, casting reconciliation, deal-structure failure modes), studio & recording budget discipline, tier-aware response depth
+  - `audio-and-delivery-systems.md` — audio technical delivery QC standards (LUFS/true-peak/format/stems/versions/dither/identifiers/metadata/mono/headroom, four-layer QC), creative-brief discipline (references, taste translation, five components, demo A/B), production technology & AI (three-prong adoption test, reproducibility, human-judgment/automation boundary, AI-tool rights caution, stem-separation limits, ITB-vs-analog)
+  - `output-templates.md` — five product-blind templates (Production Plan, Production Readiness Scorecard, Budget & Schedule, Producer/Team Casting Brief, Delivery & QC Checklist) with ESTIMATE/NOT QUOTABLE and TARGET-until-measured discipline
+- `MANIFEST.json` with 5-file load order
+- `SKILL.md` enriched: Beat persona retained verbatim (voice greeting intact); added the production doctrine, a Production Readiness lens, the creative-brief discipline, the technical-delivery discipline, and the production-to-co-write flag-and-defer block
+
+**Mode B — Structured Assessment Route:**
+- `producer_connect_loader.py` — manifest-driven context loader, mirrors `ink_and_air_loader.py` exactly (knowledge header: "PLMKR PRODUCTION KNOWLEDGE BASE")
+- `POST /api/agents/producer-connect/assess` — `PRODUCER_CONNECT_MOCK_MODE=true` by default; canned realistic eight-dimension PROVISIONAL Production Readiness Scorecard (composite 6.0/10, band YELLOW_PROCEED_WITH_NAMED_GAPS, both hard gates CLEAR) with a four-tier Action Profile — zero live Anthropic calls. Identity bound from `artist_name`; scores readiness (not a contract/valuation/song-verdict); loudness/true-peak labeled TARGET until measured; thresholds and bands framed as industry convention, not a go/no-go.
+- Models: `ProductionProjectInput`, `ProducerConnectAssessRequest`
+- Documented in `docs/API_REFERENCE.md`
+
+**Tests added:**
+- `tests/test_producer_connect_loader.py` — 9 loader tests (empty manifest, load order, graceful skip, unknown ID, skill+knowledge combination, preloaded skill text, no-knowledge fallback, entity gate smoke)
+- `tests/test_producer_connect_assess.py` — 20 route tests (200 mock, structure, identity binding, 8 dimensions, weights sum to 1.0, both hard gates present, gates CLEAR for healthy project, composite PROVISIONAL, composite range 0–10, composite matches weighted sum, readiness-band validity, advisory footer routes to counsel/Publishing/Sync, action-profile tiers, project_name binding, template-not-mutated, project fields, entity wall, 422 missing artist_name, 422 missing project, no-key mock still 200, live-mode no-key 503)
+
+### Commit hashes and tags
+
+| Commit | Hash | Tag |
+|--------|------|-----|
+| Mode A — knowledge + SKILL.md | `3a3f97b` | `phase2-producer-connect-A` |
+| Mode B — loader + route + tests + API doc | `71a2c95` | `phase2-producer-connect-B` |
+
+### Test count
+
+- New tests added: 29 (9 loader + 20 assess)
+- Prior floor entering this session: 613
+- Total after producer-connect: 642 (net +29; floor did not drop)
+
+### Entity gate result
+
+GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for the official provenance marker patterns (`agent-?os|mindvision|mindvisionllc`). Broader sweep (nexus, scrubbed rubric codenames, prior constitution paths, `verticals/` paths, sibling product names) also clean; the only broad-sweep matches were the benign substring "reve" inside "revenue"/"reverb"/"prevent"/"revised", which are not provenance markers. The loader smoke test (`assert_no_forbidden_terms` over the assembled real knowledge) passes.
