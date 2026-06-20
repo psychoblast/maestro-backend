@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Music Publishing knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "publishing-doctrine",
+      "path": "skills/maestro-ink-and-air/knowledge/publishing-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Identity & mission, asset-management posture, DNA, decision biases, hard refusals, eleven-item judgment doctrine (deal-type logic, registration triage, audit triggers, NOT EVALUABLE, anti-fabrication, revenue-leak taxonomy, writer-vs-publisher economics, sample clearance, writer income mix, NOT QUOTABLE, opportunity scan), source tiers, MEASURED/SOURCED/JUDGED classification, scope fences"
+    },
+    {
+      "id": "catalog-health-rubric",
+      "path": "skills/maestro-ink-and-air/knowledge/catalog-health-rubric.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Ten-Dimension Catalog Health Model with weights summing to 1.00, anti-fake-precision mechanics, letter-grade anchors, four hard gates (HG-1..HG-4), provisional composite formula (max 10.0), Action Profile tiers, NOT QUOTABLE discipline, required output elements"
+    },
+    {
+      "id": "publishing-fundamentals",
+      "path": "skills/maestro-ink-and-air/knowledge/publishing-fundamentals.md",
+      "role": "domain-bedrock",
+      "required": true,
+      "description": "Two-copyright architecture, automatic subsistence, copyright term, divisibility/transfer, work-made-for-hire, territoriality & registration (ISWC/IPI), songwriter splits, publishing-deal structures (admin/co-pub/full/WFH), PROs & performance royalties, mechanical royalties (The MLC, CRB rates)"
+    },
+    {
+      "id": "royalty-and-catalog-systems",
+      "path": "skills/maestro-ink-and-air/knowledge/royalty-and-catalog-systems.md",
+      "role": "domain-advanced",
+      "required": false,
+      "description": "Global collection & sub-publishing, royalty accounting & audits, neighboring rights (SoundExchange 50/45/5), termination & reversion (Section 203/304), catalog valuation & transactions (NPS, multiples), sync clearance (rights side), AI training-rights landscape"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-ink-and-air/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Five templates: Catalog Health Evaluation, Revenue Leak Report, Publishing Deal Evaluation, Clearance Complexity Assessment, Opportunity Scan — with NOT EVALUABLE / NOT ESTIMABLE / NOT QUOTABLE discipline and scope-fence handoffs"
+    }
+  ],
+  "load_order": [
+    "publishing-doctrine",
+    "catalog-health-rubric",
+    "publishing-fundamentals",
+    "royalty-and-catalog-systems",
+    "output-templates"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to INK_AND_AIR_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
