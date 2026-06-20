@@ -92,3 +92,49 @@ GATE_CLEAN — staged additions contain zero hits for provenance marker patterns
 ### Entity gate result
 
 GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for all provenance marker patterns (prior toolchain and entity names).
+
+---
+
+## phase2/lex-cipher — Entertainment Lawyer & Legal
+
+**Agent slug:** lex-cipher
+**Build date:** 2026-06-20
+
+### What was built
+
+**Mode A — Knowledge + Doctrine:**
+- 5 scrubbed knowledge files in `skills/maestro-lex-cipher/knowledge/`:
+  - `legal-doctrine.md` — Mission + binding domain constraint (CAN draft/flag; CANNOT advise/opine), DNA, anti-patterns, 7-step clause-review sequence, deal-type classification tree, NOT EVALUABLE protocol, anti-fabrication source tiers (A/B/C/D), preliminary infringement framework, chain-of-title defect classification, escalation/scope fences, international territorial qualification rule, NOT QUOTABLE discipline
+  - `deal-quality-rubric.md` — Eight-dimension Deal/Document Quality model (rights_grant 0.18, compensation 0.16, recoupment 0.14, exit_reversion 0.13, audit_rights 0.13, warranties 0.12, dispute_resolution 0.08, red_flag_absence 0.06 → Σ=1.00), letter-grade→numeric table, four hard gates (HG-1..HG-4), provisional composite formula, descriptive risk classification, unlock condition
+  - `contract-architecture.md` — Clause-level mechanics by agreement type: recording, publishing/songwriter, management, licensing/sync/brand, live/touring, business entities, adjacent commercial/employment/NDA
+  - `copyright-ip-international.md` — Two-copyright model, territorial copyright basics, preliminary infringement framework, chain of title + work-for-hire, trademark mechanics, international deal mechanics, dispute-resolution ladder, currency discipline
+  - `output-templates.md` — Four templates (Contract/Deal Review, Copyright Infringement Preliminary Analysis, IP Chain-of-Title Checklist, Business Entity Identification) with mandatory counsel footer + negotiation-routing discipline
+- `MANIFEST.json` with 5-file load order
+- `SKILL.md` enriched: domain constraint, DNA, anti-patterns, 7-step clause-review sequence, deal-type map, anti-fabrication source tiers, two-copyright + infringement + chain-of-title frameworks, mandatory territorial qualification, tier-aware response depth, escalation fences, counsel-routing footer
+
+**Mode B — Structured Assessment Route:**
+- `lex_cipher_loader.py` — manifest-driven context loader, mirrors `sync_agent_loader.py` / `ar_scout_loader.py` exactly
+- `POST /api/agents/lex-cipher/assess` — `LEX_CIPHER_MOCK_MODE=true` by default; canned eight-dimension PROVISIONAL assessment (composite 7.4/10, all hard gates CLEAR, risk NOTABLE_GAPS) with the mandatory qualified-counsel footer and zero live Anthropic calls. Identity bound from `artist_name`; risk classification is descriptive (never a recommendation to sign). Retention/threshold language framed as industry convention.
+- Models: `LexCipherAgreementInput`, `LexCipherAssessRequest`
+- Documented in `docs/API_REFERENCE.md`
+
+**Tests added:**
+- `tests/test_lex_cipher_loader.py` — 8 loader tests (empty manifest, load order, graceful skip, unknown ID, skill+knowledge combination, preloaded skill text, no-knowledge fallback, entity gate)
+- `tests/test_lex_cipher_assess.py` — 18 route tests (200 mock, structure, identity binding, 8 dimensions, weights sum to 1.0, 4 hard gates, composite PROVISIONAL, composite range, risk classification validity, counsel footer present, agreement_type binding, template-not-mutated, agreement fields, entity wall, 422 missing artist_name, 422 missing agreement, no-key mock still 200, live-mode no-key 503)
+
+### Commit hashes and tags
+
+| Commit | Hash | Tag |
+|--------|------|-----|
+| Mode A — knowledge + SKILL.md | `2174103` | `phase2-lex-cipher-A` |
+| Mode B — loader + route + tests + API doc | `7bd9ee9` | `phase2-lex-cipher-B` |
+
+### Test count
+
+- New tests added: 26 (8 loader + 18 assess)
+- Prior floor entering this session: 500
+- Total after lex-cipher: 526 (net +26; floor did not drop)
+
+### Entity gate result
+
+GATE_CLEAN — both Mode A and Mode B staged additions contained zero hits for all provenance marker patterns (prior toolchain and entity names). Broader sweep (rêve, nexus, gate-evidence, constitution, master_plan, core/, verticals/, numbered-agent routing) also clean.
