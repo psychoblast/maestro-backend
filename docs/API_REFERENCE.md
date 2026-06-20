@@ -1001,3 +1001,21 @@ Sorted alphabetically by path.
 - **Request body:** `artist` (object: name, genre, stage, territory, monthly_listeners, social_following, save_rate, release_count, has_email_list, email_list_size, has_merch, prior_editorial_placements), `campaign` (object: release_title, release_date, campaign_budget_usd, campaign_window_weeks, primary_platforms, has_tour_dates, tour_territory, is_catalog_campaign), `additional_notes` (string)
 - **Response:** 200 — `{ status, mock: bool, artist, campaign, assessment: { dimensions, composite, band, hard_gates, campaign_priorities, channel_mix_recommendation, confidence_cap, next_best_action } }`
 - **Notes:** `GRID_PROPHET_MOCK_MODE=true` (default) returns a canned PROVISIONAL assessment without any Anthropic API call. Artist identity is bound from `artist.name` in the request payload, NOT from the Playmaker account profile. Dimensions: virality (0.15), ugc_potential (0.12), platform_fit (0.18), editorial_readiness (0.13), touring_synergy (0.03), merch_d2c (0.10), brand_partnership (0.07), fan_ltv (0.22).
+
+
+#### POST /api/agents/brand-connect/assess
+
+- **Summary:** Brand Partnership Deal Quality Assessment — structured 8-dimension scoring of an artist + proposed brand deal using the PLMKR DQS rubric
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist` (object: name, genre, stage, territory, tier, monthly_listeners, social_following, engagement_rate), `deal` (object: deal_type, partner_category, exclusivity_category, term_months, has_kill_fee, upfront_payment_pct, diligence_status, prior_artist_deals, has_morality_clause, morality_clause_scoped), `additional_notes` (string)
+- **Response:** 200 — `{ status, mock: bool, artist, deal, assessment: { dimensions, composite, band, hard_gates, deal_priorities, structural_flags, lex_cipher_routing, confidence_cap, next_best_action } }`
+- **Notes:** `BRAND_CONNECT_MOCK_MODE=true` (default) returns a canned PROVISIONAL Amber-band assessment without any Anthropic API call. Artist identity is bound from `artist.name` in the request payload, NOT from the Playmaker account profile. Dimensions: strategic_value (0.18), economic_value (0.16), partner_quality (0.14), deal_structure (0.14), risk_exposure (0.14), execution_feasibility (0.10), opportunity_cost (0.08), reversibility (0.06).
+
+
+#### POST /api/agents/sync-agent/assess
+
+- **Summary:** Sync Licensing Brief-Fit Assessment — four-dimension scoring of an artist track against a sync brief using the PLMKR sync rubric
+- **Auth:** Yes (X-API-Key)
+- **Request body:** `artist_name` (string), `artist_territory` (string), `track` (object: title, genre, clearance_status, is_one_stop, has_stems, has_clean_version, duration_sec, bpm, has_samples, has_explicit_lyrics), `brief` (object: project_type, scene_description, budget_range, deadline_days, territory, reference_tracks, lyric_restrictions, exclusivity_required, buyer_class), `additional_notes` (string)
+- **Response:** 200 — `{ status, mock: bool, artist_name, track, brief, assessment: { dimensions, composite, hard_gates, verdict, pitch_rationale, next_action } }`
+- **Notes:** `SYNC_AGENT_MOCK_MODE=true` (default) returns a canned PROVISIONAL assessment (composite 82/100, verdict PITCH) without any Anthropic API call. Artist identity is bound from `artist_name` in the request payload, NOT from the Playmaker account profile. Dimensions: brief_fit (0.40), clearance_complexity (0.25), turnaround_feasibility (0.20), fee_tier (0.15). Hard gates: clearance UNKNOWN caps composite at 40; turnaround feasibility=1 caps at 25; brief fit ≤2 triggers do-not-pitch.
