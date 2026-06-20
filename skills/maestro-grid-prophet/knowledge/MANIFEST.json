@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Grid-Prophet knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "scoring-rubric",
+      "path": "skills/maestro-grid-prophet/knowledge/scoring-rubric.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "8-dimension marketing scoring rubric, composite formula, hard gates, weight flip-conditions"
+    },
+    {
+      "id": "campaign-architecture",
+      "path": "skills/maestro-grid-prophet/knowledge/campaign-architecture.md",
+      "role": "campaign-method",
+      "required": true,
+      "description": "Full-funnel campaign architecture, 12-week release arc, fan acquisition channels, global release architecture"
+    },
+    {
+      "id": "channel-economics",
+      "path": "skills/maestro-grid-prophet/knowledge/channel-economics.md",
+      "role": "platform-context",
+      "required": true,
+      "description": "DSP platform economics, music ad-creative norms, international platform dominance map, CPM benchmarks"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-grid-prophet/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Three output templates: Campaign Plan, Weekly Performance Memo, Pitch / PR Output"
+    },
+    {
+      "id": "social-community",
+      "path": "skills/maestro-grid-prophet/knowledge/social-community.md",
+      "role": "community-doctrine",
+      "required": true,
+      "description": "Community lifecycle model, Discord architecture, UGC cultivation, fandom psychology, superfan identification, anti-patterns"
+    },
+    {
+      "id": "content-and-lifecycle",
+      "path": "skills/maestro-grid-prophet/knowledge/content-and-lifecycle.md",
+      "role": "content-doctrine",
+      "required": true,
+      "description": "Content calendar logic, content pillar framework, short-form vs. long-form economics, email CRM lifecycle, behavioral trigger library"
+    },
+    {
+      "id": "pr-press-strategy",
+      "path": "skills/maestro-grid-prophet/knowledge/pr-press-strategy.md",
+      "role": "pr-doctrine",
+      "required": false,
+      "description": "Press tier architecture, pitch format mechanics, pitch construction framework, PR infrastructure decision, Canada-specific outlets, EPK standards"
+    }
+  ],
+  "load_order": [
+    "scoring-rubric",
+    "campaign-architecture",
+    "channel-economics",
+    "output-templates",
+    "social-community",
+    "content-and-lifecycle",
+    "pr-press-strategy"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to GRID_PROPHET_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
