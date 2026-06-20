@@ -27,6 +27,7 @@ from ar_scout_loader import build_ar_scout_system_prompt
 from grid_prophet_loader import build_grid_prophet_system_prompt
 from sync_agent_loader import build_sync_agent_system_prompt
 from brand_connect_loader import build_brand_connect_system_prompt
+from lex_cipher_loader import build_lex_cipher_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -50,6 +51,8 @@ GRID_PROPHET_MOCK_MODE   = os.environ.get("GRID_PROPHET_MOCK_MODE",   "true").lo
 SYNC_AGENT_MOCK_MODE     = os.environ.get("SYNC_AGENT_MOCK_MODE",     "true").lower() != "false"
 # Brand Connect assessment mock mode — default ON so no live Anthropic calls during testing
 BRAND_CONNECT_MOCK_MODE  = os.environ.get("BRAND_CONNECT_MOCK_MODE",  "true").lower() != "false"
+# Legal (Lex-Cipher) assessment mock mode — default ON so no live Anthropic calls during testing
+LEX_CIPHER_MOCK_MODE     = os.environ.get("LEX_CIPHER_MOCK_MODE",     "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -3520,5 +3523,251 @@ INSTRUCTIONS:
         "track":           req.track.model_dump(),
         "brief":           req.brief.model_dump(),
         "assessment_text": assessment_text,
+        "model":           MODEL_SONNET,
+    }
+
+
+# ── LEX-CIPHER — Legal Deal / Document Quality Assessment ─────────────────────
+
+class LexCipherAgreementInput(BaseModel):
+    """Structured description of the agreement under review.
+
+    The agent reviews what is PRESENT and flags what is ABSENT — absence of a
+    required provision is itself evaluable as a gap. These flags describe the
+    document's structure; they are not legal conclusions.
+    """
+    agreement_type:               str  = "unknown"   # recording|publishing|management|sync|brand|performance|nda|other
+    parties_described:            str  = ""
+    governing_territory:          str  = "unknown"
+    # Dimension 1 — Rights Grant Clarity
+    has_rights_grant:             bool = False
+    rights_grant_defined:         bool = False        # territory/term/media/exclusivity specified
+    reserved_rights_stated:       bool = False
+    # Dimension 2 — Compensation Structure
+    compensation_defined:         bool = False
+    royalty_base:                 Optional[str] = None  # SRLP|PPD|net_receipts|gross|flat_fee|None
+    deductions_defined:           bool = False
+    accounting_period_defined:    bool = False
+    # Dimension 3 — Recoupment / Cost Transparency
+    recoupable_costs_enumerated:  Optional[bool] = None
+    cross_collateralization:      Optional[bool] = None
+    # Dimension 4 — Exit / Reversion
+    has_termination_for_cause:    bool = False
+    has_reversion_clause:         bool = False
+    perpetual_term:               Optional[bool] = None
+    # Dimension 5 — Audit Rights
+    has_audit_rights:             bool = False
+    audit_window_months:          Optional[int] = None
+    # Dimension 6 — Warranties & Representations
+    has_ip_ownership_warranty:    bool = False
+    has_indemnification:          bool = False
+    # Dimension 7 — Dispute Resolution
+    governing_law_stated:         bool = False
+    dispute_forum_defined:        bool = False
+    # Dimension 8 — Red-Flag Clauses
+    red_flag_clauses:             list[str] = []      # named clauses present, e.g. "open-ended recoupable costs"
+
+class LexCipherAssessRequest(BaseModel):
+    artist_id:        str = ""
+    artist_name:      str
+    artist_territory: str = "unknown"
+    agreement:        LexCipherAgreementInput
+    additional_notes: str = ""
+
+_LEX_CIPHER_COUNSEL_FOOTER = (
+    "Route to qualified entertainment counsel for execution, negotiation, and legal opinion."
+)
+
+_LEX_CIPHER_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist_name": None,   # filled at runtime
+    "agreement": None,     # filled at runtime
+    "domain_constraint": "Drafts and flags — never advises. Qualified counsel signs off.",
+    "assessment": {
+        "agreement_type": None,  # filled at runtime
+        "dimensions": {
+            "rights_grant_clarity": {
+                "grade": "B", "numeric": 8.0, "weight": 0.18, "confidence": "PARTIAL",
+                "rationale": "Rights grant present with territory, term, and media defined; exclusivity stated. Reserved rights are not separately enumerated — one element requires interpretation but is resolvable from context.",
+                "sub_signals": "territory SOURCED · term SOURCED · media SOURCED · exclusivity SOURCED · reserved rights ABSENT",
+                "not_evaluable": ["full rights-scope language — only structural flags supplied, not the clause text"]
+            },
+            "compensation_structure": {
+                "grade": "B-", "numeric": 7.5, "weight": 0.16, "confidence": "PARTIAL",
+                "rationale": "Compensation type and royalty base defined; accounting period present. Deduction categories are not fully enumerated, leaving the effective rate partly indeterminate without the deduction schedule.",
+                "sub_signals": "payment type SOURCED · royalty base SOURCED · deductions AMBIGUOUS · accounting period SOURCED",
+                "not_evaluable": ["effective rate — meaningless without the full deduction schedule"]
+            },
+            "recoupment_transparency": {
+                "grade": "C", "numeric": 6.0, "weight": 0.14, "confidence": "PARTIAL",
+                "rationale": "Recoupable-cost categories are partially defined; cross-collateralization is present without a stated scope limit. Document this — a cross-collateralization clause without scope nets balances across projects.",
+                "sub_signals": "recoupable costs AMBIGUOUS · cross-collateralization SOURCED (scope ABSENT)",
+                "not_evaluable": []
+            },
+            "exit_reversion": {
+                "grade": "B", "numeric": 8.0, "weight": 0.13, "confidence": "HIGH",
+                "rationale": "Termination for cause is defined and a reversion clause is present with stated trigger conditions. Term is not perpetual.",
+                "sub_signals": "termination for cause SOURCED · reversion trigger SOURCED · perpetual term ABSENT",
+                "not_evaluable": []
+            },
+            "audit_rights": {
+                "grade": "B-", "numeric": 7.5, "weight": 0.13, "confidence": "HIGH",
+                "rationale": "Audit rights present with a window of at least 12 months from statement date by industry convention; scope and cost allocation not fully specified.",
+                "sub_signals": "audit clause SOURCED · window SOURCED · scope AMBIGUOUS · cost allocation ABSENT",
+                "not_evaluable": []
+            },
+            "warranties_representations": {
+                "grade": "B-", "numeric": 7.5, "weight": 0.12, "confidence": "PARTIAL",
+                "rationale": "IP-ownership warranty and an indemnification provision are present. Indemnification proportionality (cap vs. unlimited) and survival are not specified in the supplied flags.",
+                "sub_signals": "ownership warranty SOURCED · indemnification SOURCED · proportionality AMBIGUOUS · survival ABSENT",
+                "not_evaluable": ["indemnification cap — not described in the structured input"]
+            },
+            "dispute_resolution": {
+                "grade": "C+", "numeric": 6.5, "weight": 0.08, "confidence": "PARTIAL",
+                "rationale": "Governing law is stated; forum/jurisdiction is defined. Cost allocation and confidentiality of proceedings are not addressed in the supplied structure.",
+                "sub_signals": "governing law SOURCED · forum SOURCED · cost allocation ABSENT · confidentiality ABSENT",
+                "not_evaluable": []
+            },
+            "red_flag_absence": {
+                "grade": "B", "numeric": 8.0, "weight": 0.06, "confidence": "HIGH",
+                "rationale": "No high-severity red-flag clauses identified in the supplied list. Cross-collateralization without scope limit is documented under recoupment but is not an HG-4 trigger on its own.",
+                "sub_signals": "no HG-4 red-flag clauses named",
+                "not_evaluable": []
+            }
+        },
+        "hard_gates": {
+            "rights_grant_gate":  "CLEAR — rights grant present and defined (HG-1 not triggered)",
+            "audit_rights_gate":  "CLEAR — audit rights present with window ≥ 12 months from statement (HG-2 not triggered)",
+            "ip_ownership_gate":  "CLEAR — IP-ownership warranty present; chain of title established within stated context (HG-3 not triggered)",
+            "red_flag_gate":      "CLEAR — no HG-4 red-flag clause present"
+        },
+        "composite": {
+            "value": 7.4,
+            "formula": "(8.0×0.18)+(7.5×0.16)+(6.0×0.14)+(8.0×0.13)+(7.5×0.13)+(7.5×0.12)+(6.5×0.08)+(8.0×0.06)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked deal evaluations in feedback/outcomes/"
+        },
+        "risk_classification": "NOTABLE_GAPS",
+        "red_flags": [
+            {
+                "clause": "Cross-collateralization without stated scope limit",
+                "what_it_does": "Nets recoupable balances across projects so a profitable project pays down another's deficit.",
+                "severity": "HIGH",
+                "routing": "Identify the deficiency for qualified counsel; route the negotiation position to the management function. Not prescribed here."
+            }
+        ],
+        "not_evaluable": [
+            "Full clause text — this assessment is built from structured presence/absence flags, not the agreement itself. A definitive review requires the executed document."
+        ],
+        "next_best_action": "Provide the executed agreement text for a clause-level review. The single highest-value documentation step is confirming the deduction schedule and the cross-collateralization scope; route any negotiation of those terms to the management function plus qualified counsel.",
+        "counsel_footer": _LEX_CIPHER_COUNSEL_FOOTER
+    },
+    "mock_note": "LEX_CIPHER_MOCK_MODE=true — this is a canned assessment. Set LEX_CIPHER_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/lex-cipher/assess", tags=["lex-cipher"])
+async def lex_cipher_assess(req: LexCipherAssessRequest):
+    """
+    Legal deal / document quality assessment for a PLMKR artist's agreement.
+
+    The agent DRAFTS and FLAGS — it never advises, never gives a legal opinion,
+    and never recommends a negotiation position. It scores the eight-dimension
+    Deal/Document Quality Rubric, states the four hard gates, classifies legal
+    risk severity, and routes execution to qualified entertainment counsel.
+
+    Artist identity is bound from the request payload (artist_name from the
+    deal/release context), NOT from the Playmaker account profile, to prevent
+    account-name vs. credited-artist mismatches.
+
+    When LEX_CIPHER_MOCK_MODE=true (default), returns a canned scored assessment
+    without calling the Anthropic API. Set LEX_CIPHER_MOCK_MODE=false with a
+    valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if LEX_CIPHER_MOCK_MODE:
+        result = dict(_LEX_CIPHER_MOCK_ASSESSMENT)
+        result["artist_name"] = req.artist_name
+        result["agreement"]   = req.agreement.model_dump()
+        # deep-copy the assessment block so per-request fields don't mutate the template
+        assessment = dict(result["assessment"])
+        assessment["agreement_type"] = req.agreement.agreement_type
+        result["assessment"] = assessment
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set LEX_CIPHER_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_lex_cipher_system_prompt(skills_dir=SKILLS_DIR)
+
+    ag = req.agreement
+
+    user_prompt = f"""You are performing a PLMKR legal deal/document quality assessment. You DRAFT and FLAG — you never advise, never give a legal opinion, and never recommend a negotiation position. Use the eight-dimension Deal/Document Quality Rubric, the hard gates, and the Contract/Deal Review template from your knowledge base.
+
+ARTIST IDENTITY (use this — not any account name):
+- Credited artist name: {req.artist_name}
+- Artist territory: {req.artist_territory}
+
+AGREEMENT UNDER REVIEW (structured presence/absence flags — the full clause text is NOT supplied):
+- Agreement type: {ag.agreement_type}
+- Parties: {ag.parties_described or 'NOT DESCRIBED'}
+- Governing territory: {ag.governing_territory}
+- Rights grant present: {'YES' if ag.has_rights_grant else 'NO — HG-1 candidate'}
+- Rights grant defined (territory/term/media/exclusivity): {'YES' if ag.rights_grant_defined else 'NO'}
+- Reserved rights stated: {'YES' if ag.reserved_rights_stated else 'NO'}
+- Compensation defined: {'YES' if ag.compensation_defined else 'NO'}
+- Royalty base: {ag.royalty_base or 'NOT STATED — effective rate not determinable'}
+- Deductions defined: {'YES' if ag.deductions_defined else 'NO'}
+- Accounting period defined: {'YES' if ag.accounting_period_defined else 'NO'}
+- Recoupable costs enumerated: {ag.recoupable_costs_enumerated if ag.recoupable_costs_enumerated is not None else 'NOT STATED'}
+- Cross-collateralization present: {ag.cross_collateralization if ag.cross_collateralization is not None else 'NOT STATED'}
+- Termination for cause present: {'YES' if ag.has_termination_for_cause else 'NO'}
+- Reversion clause present: {'YES' if ag.has_reversion_clause else 'NO'}
+- Perpetual term: {ag.perpetual_term if ag.perpetual_term is not None else 'NOT STATED'}
+- Audit rights present: {'YES' if ag.has_audit_rights else 'NO — HG-2 candidate'}
+- Audit window (months from statement): {ag.audit_window_months if ag.audit_window_months is not None else 'NOT STATED'}
+- IP-ownership warranty present: {'YES' if ag.has_ip_ownership_warranty else 'NO — HG-3 candidate'}
+- Indemnification present: {'YES' if ag.has_indemnification else 'NO'}
+- Governing law stated: {'YES' if ag.governing_law_stated else 'NO'}
+- Dispute forum defined: {'YES' if ag.dispute_forum_defined else 'NO'}
+- Named red-flag clauses present: {', '.join(ag.red_flag_clauses) if ag.red_flag_clauses else 'None named'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST IDENTITY above.
+2. Score all 8 rubric dimensions. For each: letter grade, numeric equivalent, weight, sub-signal classification (SOURCED/ABSENT/AMBIGUOUS/NOT EVALUABLE), confidence, and a 1–3 sentence rationale describing what the clause does — not what position to take.
+3. State all four hard gates (HG-1 Rights Grant, HG-2 Audit Rights, HG-3 IP Ownership, HG-4 Red-Flag Clause): CLEAR or TRIGGERED with reason. An absent rights grant, absent audit rights, audit window shorter than 12 months from statement, unestablished IP ownership, or any high-severity red-flag clause triggers the corresponding gate.
+4. Compute the PROVISIONAL COMPOSITE per the rubric formula. Label it PROVISIONAL and state the unlock condition. Treat any retention/threshold figure as industry convention, not a recommendation.
+5. Classify legal-risk severity descriptively (LOW_RISK / NOTABLE_GAPS / SIGNIFICANT_GAPS / MATERIALLY_DEFICIENT / CRITICALLY_DEFICIENT). This labels severity — it is NOT a recommendation to sign or walk away.
+6. List red-flag clauses present: clause, what it does, severity, and routing. Name the deficiency only — never prescribe a target term or position.
+7. Mark NOT EVALUABLE items (the full clause text is not supplied) and name the minimum data required.
+8. State a single NEXT BEST ACTION focused on documentation/counsel — route all negotiation to the management function plus qualified counsel.
+9. Do not state any rate, advance, or fee as "market standard" without a Tier A/B source.
+10. End with the counsel footer: "{_LEX_CIPHER_COUNSEL_FOOTER}"
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Legal assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist_name":     req.artist_name,
+        "agreement":       req.agreement.model_dump(),
+        "assessment_text": assessment_text,
+        "counsel_footer":  _LEX_CIPHER_COUNSEL_FOOTER,
         "model":           MODEL_SONNET,
     }
