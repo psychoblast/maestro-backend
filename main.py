@@ -30,6 +30,7 @@ from brand_connect_loader import build_brand_connect_system_prompt
 from lex_cipher_loader import build_lex_cipher_system_prompt
 from tour_commander_loader import build_tour_commander_system_prompt
 from ink_and_air_loader import build_ink_and_air_system_prompt
+from royalty_doctor_loader import build_royalty_doctor_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -59,6 +60,7 @@ LEX_CIPHER_MOCK_MODE     = os.environ.get("LEX_CIPHER_MOCK_MODE",     "true").lo
 TOUR_COMMANDER_MOCK_MODE = os.environ.get("TOUR_COMMANDER_MOCK_MODE", "true").lower() != "false"
 # Publishing & Rights (Ink-and-Air) assessment mock mode — default ON so no live Anthropic calls during testing
 INK_AND_AIR_MOCK_MODE    = os.environ.get("INK_AND_AIR_MOCK_MODE",    "true").lower() != "false"
+ROYALTY_DOCTOR_MOCK_MODE = os.environ.get("ROYALTY_DOCTOR_MOCK_MODE", "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -4336,5 +4338,298 @@ INSTRUCTIONS:
         "catalog":         req.catalog.model_dump(),
         "assessment_text": assessment_text,
         "advisory_footer": _INK_AND_AIR_ADVISORY_FOOTER,
+        "model":           MODEL_SONNET,
+    }
+
+
+# ── ROYALTY-DOCTOR — Royalty Recovery Audit ──────────────────────────────────────
+
+class RoyaltyCatalogInput(BaseModel):
+    """Structured description of the catalog under recovery review.
+
+    The agent scores the catalog's RECOVERY STATE — how completely it is collecting
+    income it has already earned, and how ready it is to recover what it is not.
+    Absence of a required step (a registration, a filed claim, a verification
+    practice) is itself evaluable as a leak point. These flags are not a valuation
+    and not a legal opinion.
+    """
+    catalog_name:                      str  = ""
+    work_count:                        int  = 0
+    has_international_usage:            bool = False
+    # HG-1 inputs — minimum data set for an evaluable recovery audit
+    statement_data_available:          bool = False
+    registration_export_available:     bool = False
+    # D1 — Registration Integrity
+    pro_registration_complete:         bool = False
+    mechanical_registration_complete:  bool = False
+    neighboring_rights_registered:     bool = False
+    identifiers_complete:              bool = False   # ISWC / ISRC / IPI on earning works
+    active_revenue_without_identifiers: bool = False
+    # D2 — Statement Verification
+    statements_verified_against_dsp:   bool = False
+    anomaly_review_practiced:          bool = False
+    reserve_deductions_reviewed:       bool = False
+    # D3 — Black-Box Recovery Readiness
+    unmatched_pool_claims_filed:       Optional[bool] = None
+    black_box_program_active:          bool = False
+    proof_of_ownership_ready:          bool = False
+    # D4 — Pipeline Coverage
+    active_income_streams:             list[str] = []   # master|performance|mechanical|neighboring|sync_backend
+    # D5 — Audit Readiness
+    audit_window_status:               str  = "unknown"   # within|approaching|expired|unknown
+    statement_history_retained:        bool = False
+    soft_audit_practice:               bool = False
+    # D6 — Collection-Timing Discipline
+    lag_vs_missing_tracked:            bool = False
+    # D7 — Recovery Documentation
+    chain_of_title_documented:         bool = False
+    split_sheets_executed:             bool = False
+
+class RoyaltyDoctorAssessRequest(BaseModel):
+    artist_id:        str = ""
+    artist_name:      str
+    artist_territory: str = "unknown"
+    catalog:          RoyaltyCatalogInput
+    additional_notes: str = ""
+
+_ROYALTY_DOCTOR_ADVISORY_FOOTER = (
+    "This is a royalty-recovery analysis — it identifies and documents where income "
+    "is uncollected or underpaid and builds the recovery case. It is not a legal "
+    "opinion, a contract interpretation, or a catalog valuation. Route formal audit "
+    "demands and any legal action to qualified entertainment counsel, deal and "
+    "valuation modeling to the Finance/Royalties function, copyright-law and "
+    "publishing-deal questions to the Publishing function, and sync pursuit to the "
+    "Sync function."
+)
+
+_ROYALTY_DOCTOR_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist_name": None,   # filled at runtime
+    "catalog": None,       # filled at runtime
+    "domain_constraint": "Maximizes legitimate cash capture. Identifies, documents, and quantifies-where-evidence-supports; rules out normal pipeline lag before claiming loss; never fabricates a recoverable figure; never renders a legal opinion.",
+    "assessment": {
+        "catalog_name": None,  # filled at runtime
+        "dimensions": {
+            "registration_integrity": {
+                "grade": "B-", "numeric": 6.5, "weight": 0.20, "confidence": "PARTIAL",
+                "rationale": "PRO registration is complete across the home territory, but mechanical registration shows documented gaps on the catalog tail and neighboring rights are not registered with the applicable collectors. Each gap means earned income that cannot be matched to its owner.",
+                "sub_signals": "PRO coverage SOURCED · mechanical coverage AMBIGUOUS · neighboring-rights registration ABSENT · identifier coverage SOURCED",
+                "not_evaluable": ["exact PRO/mechanical coverage percentages — requires a society-portal export, not supplied"]
+            },
+            "statement_verification": {
+                "grade": "C+", "numeric": 6.0, "weight": 0.18, "confidence": "PARTIAL",
+                "rationale": "Statements receive spot checks but no systematic cross-reference against DSP dashboard data and no full twelve-category anomaly review. The reserve and deduction sections are not routinely reconciled — a common location for silent underpayment.",
+                "sub_signals": "DSP cross-reference JUDGED (intermittent) · anomaly checklist JUDGED (not systematic) · reserve/deduction review ABSENT",
+                "not_evaluable": []
+            },
+            "black_box_recovery_readiness": {
+                "grade": "C", "numeric": 5.0, "weight": 0.16, "confidence": "PARTIAL",
+                "rationale": "Recovery mechanisms are largely unworked: unmatched-pool claims are not confirmed filed and there is no active black-box claim program with the holding collectors. This is quantifiable value currently uncaptured and aging toward redistribution — document it as the primary recovery opportunity.",
+                "sub_signals": "unmatched-pool claims AMBIGUOUS · black-box program ABSENT · proof-of-ownership package JUDGED (partial)",
+                "not_evaluable": ["recoverable value — requires distribution history and a dated registration-gap range; NOT ESTIMABLE on the supplied flags"]
+            },
+            "pipeline_coverage": {
+                "grade": "B", "numeric": 7.0, "weight": 0.14, "confidence": "PARTIAL",
+                "rationale": "Master, performance, and mechanical streams are flowing; neighboring rights and sync backend are not confirmed collecting where international usage exists. The same plays are generating income on streams that are not all being captured.",
+                "sub_signals": "master SOURCED · performance SOURCED · mechanical SOURCED · neighboring/sync-backend AMBIGUOUS",
+                "not_evaluable": []
+            },
+            "audit_readiness": {
+                "grade": "B", "numeric": 7.0, "weight": 0.12, "confidence": "HIGH",
+                "rationale": "The contractual audit window is within range (not expired — HG-4 not triggered) and statement history is retained for the recoverable period. A soft-audit / written-inquiry practice exists but is used reactively rather than as a standing discipline.",
+                "sub_signals": "audit window SOURCED (within) · statement history SOURCED · soft-audit practice JUDGED",
+                "not_evaluable": []
+            },
+            "collection_timing_discipline": {
+                "grade": "B+", "numeric": 8.0, "weight": 0.10, "confidence": "HIGH",
+                "rationale": "The team distinguishes income in normal pipeline transit from income that is genuinely stuck or underpaid, and maps the expected lag per stream before flagging a loss. This keeps recovery claims credible and avoids premature audit demands (HG-3 discipline intact).",
+                "sub_signals": "per-stream lag mapping JUDGED · usage-vs-receipt comparison JUDGED · in-transit/stuck/underpaid classification JUDGED",
+                "not_evaluable": []
+            },
+            "recovery_documentation": {
+                "grade": "C+", "numeric": 6.0, "weight": 0.10, "confidence": "PARTIAL",
+                "rationale": "Chain of title is documented, but split sheets are not executed across all co-written works, leaving ownership ambiguity that would weaken a claim. The evidentiary chain is partial — sufficient for some claims, not yet for all.",
+                "sub_signals": "chain of title SOURCED · executed splits AMBIGUOUS · identifier/registration records JUDGED (partial)",
+                "not_evaluable": []
+            }
+        },
+        "hard_gates": {
+            "data_sufficiency_gate": "CLEAR — statement data and a registration export are available; the audit is evaluable (HG-1 not triggered)",
+            "fabrication_gate":      "CLEAR — no recoverable figure is stated without statement history and a dated gap range (HG-2 not triggered)",
+            "lag_diagnosis_gate":    "CLEAR — questioned streams are classified IN TRANSIT / STUCK / UNDERPAID before any loss claim (HG-3 not triggered)",
+            "audit_window_gate":     "CLEAR — the contractual audit window is not expired for the period in question (HG-4 not triggered)"
+        },
+        "composite": {
+            "value": 6.4,
+            "formula": "(6.5×0.20)+(6.0×0.18)+(5.0×0.16)+(7.0×0.14)+(7.0×0.12)+(8.0×0.10)+(6.0×0.10)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked recovery audits",
+            "note": "PROVISIONAL — not calibrated; not comparable across catalogs. Secondary to the per-dimension grades."
+        },
+        "recovery_posture": "NOTABLE_LEAKAGE",
+        "leak_map": [
+            {
+                "leak": "Unmatched-pool / black-box mechanicals",
+                "evidence": "Unmatched-pool claims not confirmed filed; no active claim program (D3 = C). Registration tail gaps (D1 = B-) feed the unmatched pool.",
+                "recoverable": "NOT ESTIMABLE — requires distribution history and a dated registration-gap range. Time-sensitive: unmatched mechanicals are subject to market-share redistribution after a retention period (industry convention)."
+            },
+            {
+                "leak": "Uncollected neighboring rights",
+                "evidence": "Neighboring rights not registered with applicable collectors (D1) and not confirmed flowing (D4), despite international usage.",
+                "recoverable": "NOT ESTIMABLE on the supplied flags — register, then file the claim with proof of ownership."
+            },
+            {
+                "leak": "Silent statement underpayment (reserve / deductions)",
+                "evidence": "Reserve and deduction sections not routinely reconciled (D2 = C+); no systematic DSP cross-reference.",
+                "recoverable": "NOT ESTIMABLE without the statements themselves — surfaces through a soft audit citing specific line items."
+            }
+        ],
+        "recovery_plan": {
+            "immediate": [],
+            "priority": [
+                {
+                    "dimension": "black_box_recovery_readiness",
+                    "gap": "Unmatched-pool claims not filed; no black-box claim program; recoverable money aging toward redistribution.",
+                    "action": "Close the mechanical/neighboring registration tail gaps, then file the unmatched-pool and historical claims with proof of ownership; track each retroactive recovery window against its deadline.",
+                    "estimated_recovery": "NOT ESTIMABLE without distribution history and a dated registration-gap range — qualitative recoverability only."
+                },
+                {
+                    "dimension": "registration_integrity",
+                    "gap": "Mechanical tail gaps and unregistered neighboring rights are causing earned income to go unmatched.",
+                    "action": "Complete mechanical registration on the catalog tail and register neighboring rights with the applicable collectors — this stops the leak prospectively and unlocks the retroactive claims."
+                }
+            ],
+            "optimize": [
+                {
+                    "dimension": "statement_verification",
+                    "gap": "Statements spot-checked, not systematically verified; reserve/deduction sections not reconciled.",
+                    "action": "Stand up a standing statement-verification practice: DSP cross-reference plus the twelve-category anomaly checklist plus a reserve/deduction reconciliation on every statement; raise anomalies via a documented soft audit before any formal demand."
+                },
+                {
+                    "dimension": "recovery_documentation",
+                    "gap": "Split sheets not executed across all co-written works.",
+                    "action": "Execute split sheets on the remaining co-written works to complete the evidentiary chain needed to file claims."
+                }
+            ],
+            "maintain": [
+                "pipeline_coverage", "audit_readiness", "collection_timing_discipline"
+            ]
+        },
+        "not_evaluable": [
+            "Recoverable dollar amounts, exact coverage percentages, and per-stream income — this audit is built from structured presence/absence flags, not from statements, distribution history, or society-portal exports. A definitive recovery figure requires those records plus a dated registration-gap or anomaly range."
+        ],
+        "next_best_action": "File the unmatched-pool / black-box claims and close the mechanical and neighboring-rights registration tail gaps — the single highest-value, time-sensitive recovery step. Supply 3-year statement history and a society-portal export to convert the PARTIAL-confidence dimensions to sourced grades and to make recoverable amounts estimable. Route any formal audit demand to qualified counsel.",
+        "advisory_footer": _ROYALTY_DOCTOR_ADVISORY_FOOTER
+    },
+    "mock_note": "ROYALTY_DOCTOR_MOCK_MODE=true — this is a canned assessment. Set ROYALTY_DOCTOR_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/royalty-doctor/assess", tags=["royalty-doctor"])
+async def royalty_doctor_assess(req: RoyaltyDoctorAssessRequest):
+    """
+    Royalty Recovery Audit for a PLMKR artist's catalog.
+
+    The agent scores the seven-dimension Royalty Recovery Readiness Rubric, states
+    the four hard gates, classifies recovery posture (leakage severity), produces a
+    Leak Map and a prioritized Recovery Plan, and routes execution out. It IDENTIFIES,
+    DOCUMENTS, and QUANTIFIES-WHERE-EVIDENCE-SUPPORTS — it rules out normal pipeline
+    lag before claiming loss, never fabricates a recoverable figure, and never renders
+    a legal opinion.
+
+    Artist identity is bound from the request payload (artist_name from the catalog
+    context), NOT from the Playmaker account profile, to prevent account-name vs.
+    credited-artist mismatches.
+
+    When ROYALTY_DOCTOR_MOCK_MODE=true (default), returns a canned scored assessment
+    without calling the Anthropic API. Set ROYALTY_DOCTOR_MOCK_MODE=false with a valid
+    ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if ROYALTY_DOCTOR_MOCK_MODE:
+        result = dict(_ROYALTY_DOCTOR_MOCK_ASSESSMENT)
+        result["artist_name"] = req.artist_name
+        result["catalog"]     = req.catalog.model_dump()
+        # shallow-copy the assessment block so per-request fields don't mutate the template
+        assessment = dict(result["assessment"])
+        assessment["catalog_name"] = req.catalog.catalog_name
+        result["assessment"] = assessment
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set ROYALTY_DOCTOR_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_royalty_doctor_system_prompt(skills_dir=SKILLS_DIR)
+
+    cat = req.catalog
+
+    user_prompt = f"""You are performing a PLMKR Royalty Recovery Audit. You IDENTIFY, DOCUMENT, and QUANTIFY-WHERE-EVIDENCE-SUPPORTS where income is uncollected or underpaid. You rule out normal pipeline lag before claiming any loss, you never fabricate a recoverable figure, and you never render a legal opinion. Use the seven-dimension Royalty Recovery Readiness Rubric, the four hard gates, the Pipeline-First Diagnosis, and the Royalty Recovery Audit template from your knowledge base.
+
+ARTIST IDENTITY (use this — not any account name):
+- Credited artist name: {req.artist_name}
+- Artist territory: {req.artist_territory}
+
+CATALOG UNDER REVIEW (structured presence/absence flags — full statements/portal exports are NOT supplied unless the data-availability flags say so):
+- Catalog name: {cat.catalog_name or 'NOT NAMED'}
+- Work count: {cat.work_count}
+- Has international usage: {'YES' if cat.has_international_usage else 'NO'}
+- Statement data available: {'YES' if cat.statement_data_available else 'NO'}
+- Registration export available: {'YES' if cat.registration_export_available else 'NO'}
+- PRO registration complete: {'YES' if cat.pro_registration_complete else 'NO'}
+- Mechanical registration complete: {'YES' if cat.mechanical_registration_complete else 'NO'}
+- Neighboring rights registered: {'YES' if cat.neighboring_rights_registered else 'NO'}
+- Identifiers complete (ISWC/ISRC/IPI): {'YES' if cat.identifiers_complete else 'NO'}
+- Active revenue without identifiers: {'YES' if cat.active_revenue_without_identifiers else 'NO'}
+- Statements verified against DSP data: {'YES' if cat.statements_verified_against_dsp else 'NO'}
+- Anomaly review practiced: {'YES' if cat.anomaly_review_practiced else 'NO'}
+- Reserve/deductions reviewed: {'YES' if cat.reserve_deductions_reviewed else 'NO'}
+- Unmatched-pool claims filed: {cat.unmatched_pool_claims_filed if cat.unmatched_pool_claims_filed is not None else 'NOT STATED'}
+- Black-box claim program active: {'YES' if cat.black_box_program_active else 'NO'}
+- Proof of ownership ready: {'YES' if cat.proof_of_ownership_ready else 'NO'}
+- Active income streams: {', '.join(cat.active_income_streams) if cat.active_income_streams else 'None reported'}
+- Audit window status: {cat.audit_window_status}
+- Statement history retained: {'YES' if cat.statement_history_retained else 'NO'}
+- Soft-audit practice in place: {'YES' if cat.soft_audit_practice else 'NO'}
+- Lag-vs-missing tracked: {'YES' if cat.lag_vs_missing_tracked else 'NO'}
+- Chain of title documented: {'YES' if cat.chain_of_title_documented else 'NO'}
+- Split sheets executed: {'YES' if cat.split_sheets_executed else 'NO'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST IDENTITY above.
+2. Score all 7 rubric dimensions. For each: letter grade, numeric equivalent, weight, sub-signal classification (MEASURED/SOURCED/JUDGED/AMBIGUOUS/ABSENT/NOT EVALUABLE), confidence (HIGH/MEDIUM/LOW/PARTIAL with reason), and a 1–3 sentence rationale describing the recovery consequence of the current state.
+3. State all four hard gates: HG-1 No statement/registration data (NOT EVALUABLE if both data flags are NO), HG-2 Fabricated recovery figure, HG-3 Lag misdiagnosed as underpayment, HG-4 Expired audit window (TIME-CRITICAL if the window is expired). CLEAR or TRIGGERED with reason. If HG-1 triggers, STOP and return NOT EVALUABLE naming the minimum data required.
+4. Compute the PROVISIONAL COMPOSITE per the rubric formula. Label it PROVISIONAL and state the unlock condition. Treat any retention/threshold figure as industry convention, not a recommendation.
+5. Classify recovery posture descriptively (FULLY_COLLECTING / MINOR_LEAKAGE / NOTABLE_LEAKAGE / SIGNIFICANT_LEAKAGE / SEVERE_LEAKAGE). This labels leakage severity — it is NOT a recommendation to sign, sell, or litigate.
+6. Produce a Leak Map (where money is most likely going missing, ranked, each with its evidence basis) and a four-tier Recovery Plan (IMMEDIATE / PRIORITY / OPTIMIZE / MAINTAIN), with recoverable amounts labeled ESTIMATE (with basis) ONLY where evidence supports them, otherwise NOT ESTIMABLE.
+7. Apply the Pipeline-First Diagnosis: classify any questioned stream IN TRANSIT / STUCK / UNDERPAID before asserting a loss.
+8. Mark NOT EVALUABLE items and name the minimum data required.
+9. Do not state any rate, mechanical rate, society retention, or multiple as "market standard" without a Tier A/B source.
+10. End with the advisory footer: "{_ROYALTY_DOCTOR_ADVISORY_FOOTER}"
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Royalty recovery assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist_name":     req.artist_name,
+        "catalog":         req.catalog.model_dump(),
+        "assessment_text": assessment_text,
+        "advisory_footer": _ROYALTY_DOCTOR_ADVISORY_FOOTER,
         "model":           MODEL_SONNET,
     }
