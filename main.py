@@ -31,6 +31,7 @@ from lex_cipher_loader import build_lex_cipher_system_prompt
 from tour_commander_loader import build_tour_commander_system_prompt
 from ink_and_air_loader import build_ink_and_air_system_prompt
 from royalty_doctor_loader import build_royalty_doctor_system_prompt
+from producer_connect_loader import build_producer_connect_system_prompt
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -61,6 +62,7 @@ TOUR_COMMANDER_MOCK_MODE = os.environ.get("TOUR_COMMANDER_MOCK_MODE", "true").lo
 # Publishing & Rights (Ink-and-Air) assessment mock mode — default ON so no live Anthropic calls during testing
 INK_AND_AIR_MOCK_MODE    = os.environ.get("INK_AND_AIR_MOCK_MODE",    "true").lower() != "false"
 ROYALTY_DOCTOR_MOCK_MODE = os.environ.get("ROYALTY_DOCTOR_MOCK_MODE", "true").lower() != "false"
+PRODUCER_CONNECT_MOCK_MODE = os.environ.get("PRODUCER_CONNECT_MOCK_MODE", "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -4631,5 +4633,310 @@ INSTRUCTIONS:
         "catalog":         req.catalog.model_dump(),
         "assessment_text": assessment_text,
         "advisory_footer": _ROYALTY_DOCTOR_ADVISORY_FOOTER,
+        "model":           MODEL_SONNET,
+    }
+
+
+# ── PRODUCER-CONNECT — Production Readiness assessment ────────────────────────────
+
+class ProductionProjectInput(BaseModel):
+    """Structured description of the recording project under readiness review.
+
+    Beat scores the project's PRODUCTION READINESS — how ready it is to reach a
+    release-ready, spec-compliant master on schedule and on budget — across eight
+    dimensions. Absence of a required step (a signed brief, a deal memo, a
+    contingency reserve, an embedded identifier) is itself evaluable. These flags
+    are a readiness assessment, not a contract, a legal opinion, or a sync valuation.
+    """
+    project_name:                       str  = ""
+    project_scope:                      str  = "single"   # single|ep|album
+    target_format:                      str  = "streaming"
+    # D1 — Creative Direction Clarity
+    reference_tracks_count:             int  = 0
+    creative_brief_signed:              bool = False
+    sonic_target_measurable:            bool = False
+    # D2 — Producer/Team Fit
+    producer_selected:                  bool = False
+    team_credits_genre_matched:         bool = False
+    rates_confirmed_in_writing:         bool = False
+    full_team_locked:                   bool = False
+    # D3 — Song/Arrangement Readiness
+    demo_exists:                        bool = False
+    structure_locked:                   bool = False
+    composition_locked:                 bool = False
+    # D4 — Technical Quality & Standards (hard gate)
+    mix_stage:                          str  = "not_started"  # not_started|in_progress|mixed|mastered
+    measured_loudness_in_spec:          Optional[bool] = None
+    true_peak_in_spec:                  Optional[bool] = None
+    format_conforms:                    Optional[bool] = None
+    stems_complete:                     Optional[bool] = None
+    qc_bounced:                         bool = False           # Dim-4 hard gate trigger
+    # D5 — Budget Discipline
+    budget_documented:                  bool = False
+    phase_allocated:                    bool = False
+    contingency_reserved:               bool = False
+    actuals_reconciled:                 bool = False
+    # D6 — Delivery & QC Completeness (hard gate)
+    stereo_master_present:              Optional[bool] = None
+    isrc_assigned:                      Optional[bool] = None
+    core_metadata_complete:             Optional[bool] = None
+    credits_finalized:                  Optional[bool] = None
+    # D7 — Schedule Feasibility
+    schedule_exists:                    bool = False
+    team_availability_confirmed:        bool = False
+    release_date_buffer_weeks:          Optional[int]  = None
+    # D8 — Deal & Ownership Structure
+    deal_memos_executed:                bool = False
+    master_ownership_assigned:          bool = False
+    wfh_confirmed_session_players:      Optional[bool] = None
+    cowrite_flagged:                    Optional[bool] = None
+
+class ProducerConnectAssessRequest(BaseModel):
+    artist_id:        str = ""
+    artist_name:      str
+    artist_territory: str = "unknown"
+    project:          ProductionProjectInput
+    additional_notes: str = ""
+
+_PRODUCER_CONNECT_ADVISORY_FOOTER = (
+    "This is a production-readiness and casting assessment — not a contract, a legal "
+    "opinion, a song/talent verdict, or a sync valuation. Route deal papering and "
+    "clause interpretation to qualified counsel, composition splits and co-writes to "
+    "the Publishing function, placement pricing to the Sync function, and song/talent "
+    "selection to A&R. Beat identifies, scopes, casts, and QC-checks — it does not "
+    "negotiate, paper, or place."
+)
+
+_PRODUCER_CONNECT_MOCK_ASSESSMENT = {
+    "status": "ok",
+    "mock": True,
+    "artist_name": None,   # filled at runtime
+    "project": None,       # filled at runtime
+    "operating_principle": "The master is the asset. Every call is scored against a release-ready, spec-compliant, creatively-realized recording — quality, time, and budget tradeoffs named, never pretended free.",
+    "assessment": {
+        "project_name": None,  # filled at runtime
+        "dimensions": {
+            "creative_direction_clarity": {
+                "grade": "B", "numeric": 7.0, "weight": 0.18, "confidence": "PARTIAL",
+                "rationale": "References are cited and a measurable sonic target is described, but the written brief is not yet signed by both artist and producer. Direction is consistent enough to track against; the sign-off gap leaves room for mid-session re-alignment.",
+                "evidence": "references SOURCED · measurable target SOURCED · brief sign-off ABSENT",
+                "assumption": "If a signed brief and a documented demo A/B were confirmed, this moves toward 9."
+            },
+            "producer_team_fit": {
+                "grade": "C+", "numeric": 6.0, "weight": 0.16, "confidence": "PARTIAL",
+                "rationale": "Producer is selected on genre-matching credits and the rate is within range, but rates are not yet confirmed in writing and the mixer/mastering engineer are identified rather than locked. The team is preliminary, not confirmed.",
+                "evidence": "producer credits SOURCED · rate-in-range SOURCED · rates-in-writing ABSENT · full team locked ABSENT",
+                "assumption": "If signed deal memos for all key roles were reviewed, this moves toward 9 (and lifts Dim-8)."
+            },
+            "song_arrangement_readiness": {
+                "grade": "B", "numeric": 7.0, "weight": 0.14, "confidence": "HIGH",
+                "rationale": "Demo exists at the target tempo, structure is locked, and composition is effectively complete; minor refinements possible but no structural changes expected in tracking.",
+                "evidence": "demo SOURCED · structure locked SOURCED · composition locked SOURCED",
+                "assumption": "If a producer-delivered pre-pro arrangement map were confirmed, this moves toward 10."
+            },
+            "technical_quality_standards": {
+                "grade": "C", "numeric": 5.0, "weight": 0.14, "confidence": "PARTIAL",
+                "rationale": "Mix is in progress and measurable, not yet mastered; loudness/true-peak/format are not yet measured against the current platform spec. In progress and on track — only a measured spec failure or a QC bounce would trigger the NOT DELIVERABLE gate (it is not triggered here).",
+                "evidence": "mix in progress JUDGED · measured loudness NOT EVALUABLE (not yet mastered) · qc bounce ABSENT",
+                "not_evaluable": ["measured integrated loudness and true-peak — requires a mastered file and a compliant meter, not supplied"],
+                "assumption": "Once mastered and metered to the current platform spec, this moves to 7+ (or triggers the gate if it fails)."
+            },
+            "budget_discipline": {
+                "grade": "C+", "numeric": 6.0, "weight": 0.12, "confidence": "PARTIAL",
+                "rationale": "A phase-allocated budget with a ≥10% contingency line exists and is owner-approved, but actuals are not yet reconciled at phase close and not every cost item is signed-deal-memo-backed. Documented but not yet fully tracked.",
+                "evidence": "phase-allocated budget SOURCED · contingency SOURCED · actuals reconciled ABSENT",
+                "assumption": "If phase-close reconciliations and signed memos for every line were confirmed, this moves toward 9."
+            },
+            "delivery_qc_completeness": {
+                "grade": "C", "numeric": 5.0, "weight": 0.12, "confidence": "PARTIAL",
+                "rationale": "Package is assembling — stereo master and identifier path are in place and metadata is drafting — but stems are not yet verified against the full distributor spec and credits are not yet artist-approved in writing. No required element is confirmed missing, so the RELEASE BLOCKED gate is not triggered.",
+                "evidence": "stereo master path SOURCED · ISRC path SOURCED · stems-verified ABSENT · credits finalized ABSENT",
+                "assumption": "If a verified full package (stems summing to master, metadata through QC, credits approved) were confirmed, this moves toward 10."
+            },
+            "schedule_feasibility": {
+                "grade": "C+", "numeric": 6.0, "weight": 0.08, "confidence": "PARTIAL",
+                "rationale": "A phase-by-phase schedule exists with key availability confirmed and a release-date buffer, but the mastering slot and ≥2-week distributor buffer are not yet both locked. Achievable with 1–2 named risks.",
+                "evidence": "schedule SOURCED · availability SOURCED · ≥2-week delivery buffer AMBIGUOUS",
+                "assumption": "If a fully signed-off calendar with the mastering slot booked were confirmed, this moves toward 9."
+            },
+            "deal_ownership_structure": {
+                "grade": "C", "numeric": 5.0, "weight": 0.06, "confidence": "PARTIAL",
+                "rationale": "Master ownership is assigned in writing and deal memos exist for key roles, but session-player work-for-hire is not yet confirmed across the board and any co-write implication is not yet flagged to Publishing. A well-assembled team can still be legally exposed until every memo is signed.",
+                "evidence": "master ownership SOURCED · key-role memos SOURCED · session-player WFH AMBIGUOUS · co-write flag ABSENT",
+                "assumption": "If all session-player WFH clauses were signed and any co-write referred to Publishing, this moves toward 9."
+            }
+        },
+        "hard_gates": {
+            "technical_quality_gate": "CLEAR — mix in progress and measurable; no measured spec failure and no QC bounce (Dim-4 not at 1). NOT DELIVERABLE is not triggered. Re-check at mastering against the current platform spec.",
+            "delivery_qc_gate":       "CLEAR — no required package element confirmed missing (stereo master, stems, identifier, core metadata, credits) (Dim-6 not at 1). RELEASE BLOCKED is not triggered."
+        },
+        "composite": {
+            "value": 6.0,
+            "formula": "(7.0×0.18)+(6.0×0.16)+(7.0×0.14)+(5.0×0.14)+(6.0×0.12)+(5.0×0.12)+(6.0×0.08)+(5.0×0.06)",
+            "label": "PROVISIONAL",
+            "unlock_condition": "≥30 outcome-checked production evaluations",
+            "note": "PROVISIONAL — not calibrated; not comparable across projects. Secondary to the per-dimension grades. Thresholds and bands are industry convention, not a go/no-go verdict."
+        },
+        "readiness_band": "YELLOW_PROCEED_WITH_NAMED_GAPS",
+        "action_profile": {
+            "immediate": [
+                {
+                    "dimension": "creative_direction_clarity",
+                    "gap": "Written creative brief not yet signed by both artist and producer.",
+                    "action": "Get the brief — ≥3 annotated references, measurable sonic target — countersigned by artist and producer before booking any further studio dates. The cheapest insurance in the budget."
+                }
+            ],
+            "priority": [
+                {
+                    "dimension": "producer_team_fit",
+                    "gap": "Rates not confirmed in writing; mixer/mastering engineer not locked.",
+                    "action": "Send and countersign deal memos for all key roles (rate, scope, revision rounds, ownership consequence) — this also lifts Dim-8 from a told to a sourced basis."
+                },
+                {
+                    "dimension": "delivery_qc_completeness",
+                    "gap": "Stems not verified against full distributor spec; credits not artist-approved.",
+                    "action": "Confirm stems sum to the master and match the naming spec; finalize and get written artist approval of credits before the mastering handoff."
+                }
+            ],
+            "optimize": [
+                {
+                    "dimension": "budget_discipline",
+                    "gap": "Actuals not yet reconciled at phase close; not all lines signed-memo-backed.",
+                    "action": "Stand up phase-close reconciliation (invoices + open commitments) and convert ESTIMATE lines to signed deal memos."
+                },
+                {
+                    "dimension": "deal_ownership_structure",
+                    "gap": "Session-player work-for-hire not confirmed across the board; co-write implication not yet routed.",
+                    "action": "Sign WFH clauses for every session player before tracking; if any producer contribution crosses into composition, flag it and refer the split to the Publishing function."
+                }
+            ],
+            "maintain": [
+                "song_arrangement_readiness", "technical_quality_standards", "schedule_feasibility"
+            ]
+        },
+        "not_evaluable": [
+            "Measured loudness/true-peak/format conformance and final credits — this assessment is built from structured readiness flags, not from a mastered file, a meter output, a distributor QC receipt, or signed deal memos. A release-ready verdict requires those records, and any platform spec or rate is industry convention until verified against current data."
+        ],
+        "next_best_action": "Lock the signed creative brief, then countersign deal memos for all key roles — the two highest-leverage documentation steps. Re-run Dim-4 against a mastered, metered file at the current platform spec before any release-ready claim. Route contract papering to counsel, composition splits to Publishing, and placement pricing to Sync.",
+        "advisory_footer": _PRODUCER_CONNECT_ADVISORY_FOOTER
+    },
+    "mock_note": "PRODUCER_CONNECT_MOCK_MODE=true — this is a canned assessment. Set PRODUCER_CONNECT_MOCK_MODE=false with a valid ANTHROPIC_API_KEY to run a live assessment."
+}
+
+
+@app.post("/api/agents/producer-connect/assess", tags=["producer-connect"])
+async def producer_connect_assess(req: ProducerConnectAssessRequest):
+    """
+    Production Readiness assessment for a PLMKR artist's recording project.
+
+    Beat (Production Specialist) scores the eight-dimension Production Readiness
+    Rubric, states the two hard gates (Dim-4 Technical Quality → NOT DELIVERABLE,
+    Dim-6 Delivery & QC → RELEASE BLOCKED), computes a PROVISIONAL composite and
+    output band, produces a prioritized Action Profile, and routes execution out.
+    Beat identifies, scopes, casts, and QC-checks — it never negotiates a contract,
+    prices a placement, splits a composition, or picks the song.
+
+    Artist identity is bound from the request payload (artist_name), NOT from the
+    Playmaker account profile, to prevent account-name vs. credited-artist mismatches.
+
+    When PRODUCER_CONNECT_MOCK_MODE=true (default), returns a canned scored
+    assessment without calling the Anthropic API. Set PRODUCER_CONNECT_MOCK_MODE=false
+    with a valid ANTHROPIC_API_KEY to run a live assessment.
+    """
+    if PRODUCER_CONNECT_MOCK_MODE:
+        result = dict(_PRODUCER_CONNECT_MOCK_ASSESSMENT)
+        result["artist_name"] = req.artist_name
+        result["project"]     = req.project.model_dump()
+        # shallow-copy the assessment block so per-request fields don't mutate the template
+        assessment = dict(result["assessment"])
+        assessment["project_name"] = req.project.project_name
+        result["assessment"] = assessment
+        return result
+
+    if not ANTHROPIC_AVAILABLE:
+        raise HTTPException(status_code=503,
+                            detail="AI unavailable: ANTHROPIC_API_KEY not configured. "
+                                   "Set PRODUCER_CONNECT_MOCK_MODE=true to use mock mode.")
+
+    system_prompt = build_producer_connect_system_prompt(skills_dir=SKILLS_DIR)
+
+    p = req.project
+
+    user_prompt = f"""You are performing a PLMKR Production Readiness assessment as Beat, Production Specialist. You IDENTIFY, SCOPE, CAST, and QC-CHECK — you never negotiate a contract, price a placement, split a composition, or pick the song/talent. Use the eight-dimension Production Readiness Rubric, the two hard gates, the output bands, and the Production Readiness Scorecard template from your knowledge base.
+
+ARTIST IDENTITY (use this — not any account name):
+- Credited artist name: {req.artist_name}
+- Artist territory: {req.artist_territory}
+
+PROJECT UNDER REVIEW (structured readiness flags — a mastered file, meter output, distributor QC receipt, and signed deal memos are NOT supplied):
+- Project name: {p.project_name or 'NOT NAMED'}
+- Scope: {p.project_scope}
+- Target format: {p.target_format}
+- Reference tracks cited (count): {p.reference_tracks_count}
+- Creative brief signed by both parties: {'YES' if p.creative_brief_signed else 'NO'}
+- Sonic target measurable (genre/sub-genre/era/BPM/palette/dynamic): {'YES' if p.sonic_target_measurable else 'NO'}
+- Producer selected: {'YES' if p.producer_selected else 'NO'}
+- Team credits genre-matched: {'YES' if p.team_credits_genre_matched else 'NO'}
+- Rates confirmed in writing: {'YES' if p.rates_confirmed_in_writing else 'NO'}
+- Full team locked: {'YES' if p.full_team_locked else 'NO'}
+- Demo exists: {'YES' if p.demo_exists else 'NO'}
+- Song structure locked: {'YES' if p.structure_locked else 'NO'}
+- Composition/lyrics locked: {'YES' if p.composition_locked else 'NO'}
+- Mix stage: {p.mix_stage}
+- Measured loudness in spec: {p.measured_loudness_in_spec if p.measured_loudness_in_spec is not None else 'NOT MEASURED'}
+- True-peak in spec: {p.true_peak_in_spec if p.true_peak_in_spec is not None else 'NOT MEASURED'}
+- Delivery format conforms: {p.format_conforms if p.format_conforms is not None else 'NOT STATED'}
+- Stems complete and verified: {p.stems_complete if p.stems_complete is not None else 'NOT STATED'}
+- QC bounced by distributor/mastering: {'YES — Dim-4 hard gate candidate' if p.qc_bounced else 'NO'}
+- Budget documented: {'YES' if p.budget_documented else 'NO'}
+- Budget phase-allocated: {'YES' if p.phase_allocated else 'NO'}
+- Contingency reserved (>=10%): {'YES' if p.contingency_reserved else 'NO'}
+- Actuals reconciled at phase close: {'YES' if p.actuals_reconciled else 'NO'}
+- Stereo master present: {p.stereo_master_present if p.stereo_master_present is not None else 'NOT STATED'}
+- ISRC assigned/embedded: {p.isrc_assigned if p.isrc_assigned is not None else 'NOT STATED'}
+- Core metadata complete: {p.core_metadata_complete if p.core_metadata_complete is not None else 'NOT STATED'}
+- Credits finalized (artist-approved in writing): {p.credits_finalized if p.credits_finalized is not None else 'NOT STATED'}
+- Production schedule exists: {'YES' if p.schedule_exists else 'NO'}
+- Team availability confirmed: {'YES' if p.team_availability_confirmed else 'NO'}
+- Release-date buffer (weeks after delivery): {p.release_date_buffer_weeks if p.release_date_buffer_weeks is not None else 'NOT STATED'}
+- Deal memos executed for key roles: {'YES' if p.deal_memos_executed else 'NO'}
+- Master ownership assigned in writing: {'YES' if p.master_ownership_assigned else 'NO'}
+- Session-player work-for-hire confirmed: {p.wfh_confirmed_session_players if p.wfh_confirmed_session_players is not None else 'NOT STATED'}
+- Co-write implication flagged to Publishing: {p.cowrite_flagged if p.cowrite_flagged is not None else 'NOT STATED'}
+
+ADDITIONAL CONTEXT:
+{req.additional_notes or 'None provided.'}
+
+INSTRUCTIONS:
+1. Use ONLY the artist name from the ARTIST IDENTITY above.
+2. Score all 8 rubric dimensions. For each: letter grade, numeric equivalent, weight, an evidence classification (MEASURED/SOURCED/JUDGED/AMBIGUOUS/ABSENT/NOT EVALUABLE), confidence (HIGH/MEDIUM/LOW/PARTIAL with reason), a 1–3 sentence rationale describing the readiness consequence of the current state, and the assumption that, if wrong, would move the score by >=1. Score each dimension independently; told-absence of infrastructure is evidence (scored on its anchor), while a missing track record on a first/early project defaults to 3 labeled INFERRED and is never scored below 3 on absence alone.
+3. State both hard gates — Technical Quality Gate (Dim-4 = 1 → NOT DELIVERABLE) and Delivery & QC Gate (Dim-6 = 1 → RELEASE BLOCKED): CLEAR or TRIGGERED with reason. Only a measured spec failure or a QC bounce triggers Dim-4; only a confirmed-missing required package element triggers Dim-6.
+4. Compute the COMPOSITE per the rubric formula and assign the output band (GREEN/YELLOW/AMBER/RED). Label the composite PROVISIONAL and state the unlock condition. If either gate is TRIGGERED, state the gate verdict first — it overrides the band for the blocked verdict.
+5. Never state a loudness or true-peak value as a measurement unless a meter output is supplied — otherwise label it TARGET. Treat any platform-specific spec or any rate as industry convention / ESTIMATE — NOT QUOTABLE until verified against current data.
+6. Produce an Action Profile (IMMEDIATE / PRIORITY / OPTIMIZE / MAINTAIN) keyed by dimension with concrete next steps.
+7. Mark NOT EVALUABLE items and name the minimum record required.
+8. If any producer contribution crosses into composition (a co-write), flag it and refer it to the Publishing function — do not resolve the split here.
+9. End with the advisory footer: "{_PRODUCER_CONNECT_ADVISORY_FOOTER}"
+"""
+
+    try:
+        resp = await async_client.messages.create(
+            model=MODEL_SONNET,
+            max_tokens=4000,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+        assessment_text = resp.content[0].text
+    except Exception as e:
+        raise HTTPException(status_code=503,
+                            detail=f"Production readiness assessment failed: {str(e)}")
+
+    return {
+        "status":          "ok",
+        "mock":            False,
+        "artist_name":     req.artist_name,
+        "project":         req.project.model_dump(),
+        "assessment_text": assessment_text,
+        "advisory_footer": _PRODUCER_CONNECT_ADVISORY_FOOTER,
         "model":           MODEL_SONNET,
     }
