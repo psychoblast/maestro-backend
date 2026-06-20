@@ -1,0 +1,52 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Tour & Live (Tour-Commander) knowledge base — load order for system prompt assembly",
+  "files": [
+    {
+      "id": "tour-doctrine",
+      "path": "skills/maestro-tour-commander/knowledge/tour-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Identity & mission, DNA, philosophy, decision biases, hard refusals, eight-item judgment doctrine, NOT EVALUABLE & anti-fabrication discipline, source tiers, scope fences"
+    },
+    {
+      "id": "campaign-quality-rubric",
+      "path": "skills/maestro-tour-commander/knowledge/campaign-quality-rubric.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Eight-Dimension Tour Campaign Quality model, weights, four hard gates, grade anchors, provisional composite formula, risk classification, anti-fake-precision, action profile"
+    },
+    {
+      "id": "tour-operations",
+      "path": "skills/maestro-tour-commander/knowledge/tour-operations.md",
+      "role": "operations-doctrine",
+      "required": true,
+      "description": "Routing & logistics (anchor-first, efficiency tests, travel mode, day-off, dead legs), tour economics & P&L (break-even, artist-to-gross, tour support, profit centers), production management (rider, advance, stage plot, provision tiers)"
+    },
+    {
+      "id": "live-business-ecosystem",
+      "path": "skills/maestro-tour-commander/knowledge/live-business-ecosystem.md",
+      "role": "ecosystem-context",
+      "required": true,
+      "description": "Booking-agency dynamics, venue tier ladder & promoter ecosystem, offer/deal evaluation, ticketing strategy, tour merchandise, festivals & special events, international touring"
+    },
+    {
+      "id": "output-templates",
+      "path": "skills/maestro-tour-commander/knowledge/output-templates.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Four templates: Tour Routing Assessment, Offer Evaluation Report, Tour P&L Pre-Model, Festival Strategy Assessment — with scope-fence handoffs"
+    }
+  ],
+  "load_order": [
+    "tour-doctrine",
+    "campaign-quality-rubric",
+    "tour-operations",
+    "live-business-ecosystem",
+    "output-templates"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
+    "mock_mode": "All assessment routes default to TOUR_COMMANDER_MOCK_MODE=true — no live Anthropic calls during testing."
+  }
+}
