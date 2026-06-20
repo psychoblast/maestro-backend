@@ -32,6 +32,7 @@ from tour_commander_loader import build_tour_commander_system_prompt
 from ink_and_air_loader import build_ink_and_air_system_prompt
 from royalty_doctor_loader import build_royalty_doctor_system_prompt
 from producer_connect_loader import build_producer_connect_system_prompt
+from knowledge_bank.agent_home import consult_for_agent as _bank_consult_for_agent
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
 from fastapi.exceptions import RequestValidationError
@@ -63,6 +64,9 @@ TOUR_COMMANDER_MOCK_MODE = os.environ.get("TOUR_COMMANDER_MOCK_MODE", "true").lo
 INK_AND_AIR_MOCK_MODE    = os.environ.get("INK_AND_AIR_MOCK_MODE",    "true").lower() != "false"
 ROYALTY_DOCTOR_MOCK_MODE = os.environ.get("ROYALTY_DOCTOR_MOCK_MODE", "true").lower() != "false"
 PRODUCER_CONNECT_MOCK_MODE = os.environ.get("PRODUCER_CONNECT_MOCK_MODE", "true").lower() != "false"
+# Shared knowledge-bank consult mock mode — default ON. The bank is deterministic
+# (no LLM), so "mock" here just means the route returns the assembled consult result.
+BANK_CONSULT_MOCK_MODE     = os.environ.get("BANK_CONSULT_MOCK_MODE",     "true").lower() != "false"
 
 # Base directory: defaults to the folder containing this file so both local
 # and Docker deployments work without explicit env overrides.
@@ -4691,6 +4695,12 @@ class ProductionProjectInput(BaseModel):
     wfh_confirmed_session_players:      Optional[bool] = None
     cowrite_flagged:                    Optional[bool] = None
 
+class BankConsultRequest(BaseModel):
+    """Request body for the shared knowledge-bank consult route."""
+    agent: str
+    query: str
+
+
 class ProducerConnectAssessRequest(BaseModel):
     artist_id:        str = ""
     artist_name:      str
@@ -4939,4 +4949,41 @@ INSTRUCTIONS:
         "assessment_text": assessment_text,
         "advisory_footer": _PRODUCER_CONNECT_ADVISORY_FOOTER,
         "model":           MODEL_SONNET,
+    }
+
+
+@app.post("/api/bank/consult", tags=["knowledge-bank"])
+async def bank_consult(req: BankConsultRequest):
+    """
+    Shared knowledge-bank consultation — lets ANY agent (paired or unpaired) pull
+    assembled expert knowledge from ANY of the 9 domains.
+
+    Paired agents (the 9 with a home domain) get their home domain by default plus
+    any query keyword matches; unpaired agents (e.g. merch-empire) get pure query
+    matches. The bank is PURELY deterministic — no Anthropic/LLM call is made.
+
+    When BANK_CONSULT_MOCK_MODE=true (default), the route returns the deterministic
+    consult result directly. The flag exists only to mirror the assess-route shape;
+    there is no live-LLM branch because retrieval needs none.
+    """
+    if BANK_CONSULT_MOCK_MODE:
+        result = _bank_consult_for_agent(req.agent, req.query)
+        return {
+            "status":      "ok",
+            "mock":        True,
+            "agent":       result["agent"],
+            "home_domain": result["home_domain"],
+            "domains":     result["domains"],
+            "knowledge":   result["knowledge"],
+        }
+
+    # Retrieval is deterministic; a non-mock path still serves the same result.
+    result = _bank_consult_for_agent(req.agent, req.query)
+    return {
+        "status":      "ok",
+        "mock":        False,
+        "agent":       result["agent"],
+        "home_domain": result["home_domain"],
+        "domains":     result["domains"],
+        "knowledge":   result["knowledge"],
     }
