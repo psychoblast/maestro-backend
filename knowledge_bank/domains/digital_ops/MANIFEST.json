@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Digital operations knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "digital-ops-doctrine",
+      "path": "knowledge_bank/domains/digital_ops/digital-ops-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Specialist identity and mission (metadata as the routing table for royalties), jurisdiction (owns/does-not-own), philosophy, decision style and biases, communication style, eight-item judgment doctrine (completeness threshold, ISRC reuse tree, claim dispute protocol, error severity, NOT EVALUABLE, anti-fabrication/currency rule, audit triage, delivery-failure triage), hard refusals"
+    },
+    {
+      "id": "metadata-standards-and-identifiers",
+      "path": "knowledge_bank/domains/digital_ops/metadata-standards-and-identifiers.md",
+      "role": "metadata-and-identifiers",
+      "required": true,
+      "description": "DDEX ERN/ID3 metadata standards, required vs optional fields; ISRC anatomy and assignment protocol, reuse rules, UPC/EAN anatomy, common ISRC errors and remediation cost, identifier interoperability (ISRC vs ISWC)"
+    },
+    {
+      "id": "dsp-delivery-and-qc",
+      "path": "knowledge_bank/domains/digital_ops/dsp-delivery-and-qc.md",
+      "role": "delivery-and-qc",
+      "required": true,
+      "description": "Currency warning; universal delivery requirements (audio/artwork/metadata), platform comparison, delivery vs editorial timeline, rejection cause taxonomy, pre-delivery QC checklist, domain anti-patterns"
+    },
+    {
+      "id": "rights-systems-and-content-id",
+      "path": "knowledge_bank/domains/digital_ops/rights-systems-and-content-id.md",
+      "role": "rights-systems",
+      "required": true,
+      "description": "Content-recognition system architecture and claim types, claim evaluation protocol, dispute decision tree, ISRC-conflict to wrongful-claim chain, TikTok rights layer, Meta rights manager, abuse patterns and responses"
+    },
+    {
+      "id": "catalog-governance-and-rights-hygiene",
+      "path": "knowledge_bank/domains/digital_ops/catalog-governance-and-rights-hygiene.md",
+      "role": "governance-and-hygiene",
+      "required": true,
+      "description": "Four-pillar governance framework, version control for metadata, metadata debt and remediation sequencing, catalog scale thresholds, standards maintenance, seven-coverage-area rights-hygiene audit, dark-catalog problem, territory-block remediation discipline"
+    },
+    {
+      "id": "release-quality-scorecard",
+      "path": "knowledge_bank/domains/digital_ops/release-quality-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Eight-dimension release-quality scorecard, grade anchors, four hard gates (ISRC conflict, delivery rejection, erroneous claim, territory liability), action tiers, composite/calibration discipline, NOT EVALUABLE discipline"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/digital_ops/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Mandatory core and conditional-module matrix, four deliverable templates (Digital Release QC Report, Metadata Error Remediation Plan, Rights Hygiene Audit Report, Content Recognition Claim Evaluation), handoff boundaries, escalation flags, hard refusals"
+    }
+  ],
+  "load_order": [
+    "digital-ops-doctrine",
+    "metadata-standards-and-identifiers",
+    "dsp-delivery-and-qc",
+    "rights-systems-and-content-id",
+    "catalog-governance-and-rights-hygiene",
+    "release-quality-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}
