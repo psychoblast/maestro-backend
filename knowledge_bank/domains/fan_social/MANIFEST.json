@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Fan and social knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "fan-social-doctrine",
+      "path": "knowledge_bank/domains/fan_social/fan-social-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Specialist identity and mission (depth of fan relationship and sustainable superfan revenue concentration), the foundational mandate (own the relationship not the algorithm) with the revenue-concentration and parasocial-responsibility principles, philosophy, decision style and biases, the six-part judgment doctrine (owned-vs-rented channel priority, superfan revenue-concentration rules, monetization-timing with the enumeration rule, platform-investment triage with the NOT EVALUABLE pattern, engagement quality over vanity metrics, fan-data ethics lines), hard refusals, and communication style"
+    },
+    {
+      "id": "fandom-psychology",
+      "path": "knowledge_bank/domains/fan_social/fandom-psychology.md",
+      "role": "psychology",
+      "required": true,
+      "description": "Named frameworks (participatory culture, parasocial interaction, identity fusion, affective economics, sense of community, the five-stage fan engagement spectrum), decision branching for when attachment deepens or erodes and depth-vs-breadth, domain anti-patterns, and music modules (genre fan-culture typology, the parasocial-rupture recovery framework by severity, fan identity in the AI era)"
+    },
+    {
+      "id": "community-architecture",
+      "path": "knowledge_bank/domains/fan_social/community-architecture.md",
+      "role": "architecture",
+      "required": true,
+      "description": "Owned vs. rented community media and migration economics, the hub-and-spoke model with hub selection, the community lifecycle model, social capital (bonding/bridging), community health indicators, the moderation framework and crisis decision tree, domain anti-patterns, and music modules (community-server architecture, SMS/email, the platform-migration pattern, membership-hub model, listening-party architecture)"
+    },
+    {
+      "id": "superfan-economics",
+      "path": "knowledge_bank/domains/fan_social/superfan-economics.md",
+      "role": "economics",
+      "required": true,
+      "description": "The true-fans thesis, the revenue-concentration principle, the fan LTV framework, three-tier membership design with the paywall-sequencing rule, D2C commerce margins, decision branching for membership launch and fan-funding vs. pre-order vs. subscription, domain anti-patterns, and music modules (platform-specific monetization, fan-club tier economics, fan-funding and crowdfunding)"
+    },
+    {
+      "id": "platform-mechanics",
+      "path": "knowledge_bank/domains/fan_social/platform-mechanics.md",
+      "role": "platform-mechanics",
+      "required": true,
+      "description": "The three-type algorithm taxonomy (interest/social/intent graph), the content-format taxonomy, the sound-discovery flywheel, domain anti-patterns, and music modules covering short-video, social-feed, video, text/discourse, live-streaming, community-server, and regional platforms with the platform-native content principle and currency-verification discipline"
+    },
+    {
+      "id": "fan-data-crm",
+      "path": "knowledge_bank/domains/fan_social/fan-data-crm.md",
+      "role": "data-and-crm",
+      "required": true,
+      "description": "Fan identity resolution, behavioral segmentation, the adapted RFM+Depth+Advocacy model, first-party data priority, the analytics hierarchy, decision branching for CRM investment and stage-based data collection, pre-save as data capture, domain anti-patterns, and music modules (DSP-for-artists mining with save rate, email-list building, tooling categories)"
+    },
+    {
+      "id": "engagement-lifecycle",
+      "path": "knowledge_bank/domains/fan_social/engagement-lifecycle.md",
+      "role": "lifecycle",
+      "required": true,
+      "description": "The six-stage fan journey map, activation-moment theory, the retention/churn framework with the inactivity curve, reactivation triggers, lifecycle-stage thresholds, decision branching for acquisition vs. retention and reactivation ROI, domain anti-patterns, and music modules (album-cycle journey, concert as conversion event, engineered lifecycles, artist-inactivity management)"
+    },
+    {
+      "id": "content-for-fans",
+      "path": "knowledge_bank/domains/fan_social/content-for-fans.md",
+      "role": "content",
+      "required": true,
+      "description": "Artist-voice vs. brand-voice, the content-authenticity framework (spontaneity, emotional honesty, specificity), the UGC cultivation model, the planned-vs-reactive calendar, the behind-the-scenes content hierarchy, decision branching, domain anti-patterns, and music modules (fan-channel content types ranked, the teaser-and-reveal model, fan-participation mechanics)"
+    },
+    {
+      "id": "ambassador-programs",
+      "path": "knowledge_bank/domains/fan_social/ambassador-programs.md",
+      "role": "ambassador",
+      "required": true,
+      "description": "The five-tier ambassador taxonomy, incentivization structure with the anti-mercenary rule, street-team management, the fan-labor ethics framework with the coercion test, digital advocacy mechanics, decision branching for program launch and incentive selection, domain anti-patterns, and music modules (organized-fandom mobilization, street-team history, campus ambassador programs)"
+    },
+    {
+      "id": "fanbase-health-scorecard",
+      "path": "knowledge_bank/domains/fan_social/fanbase-health-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "The eight-dimension Fanbase Health model (Community Health, Superfan Concentration, D2C Conversion, Engagement Lifecycle, Platform Presence, Content Quality, Fan Data Maturity, Ambassador Program) with weights, the MEASURED/SOURCED/JUDGED evidence discipline and NOT EVALUABLE rule, letter-to-numeric mapping, dimension anchors, the four hard gates, the mandatory owned-channel test, and the verdict ladder"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/fan_social/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Output discipline (mandatory core, decision-type fields, conditional modules), the module table, the four templates (fanbase health evaluation, fan strategy recommendation, platform investment decision, community crisis response with the financially-affected-fans protocol), handoff boundaries to other domains, and hard refusals"
+    }
+  ],
+  "load_order": [
+    "fan-social-doctrine",
+    "fandom-psychology",
+    "community-architecture",
+    "superfan-economics",
+    "platform-mechanics",
+    "fan-data-crm",
+    "engagement-lifecycle",
+    "content-for-fans",
+    "ambassador-programs",
+    "fanbase-health-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}

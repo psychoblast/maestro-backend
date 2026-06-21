@@ -157,6 +157,24 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "decision rights", "competing priorities", "conflicting advice",
         "reconcile", "should we sign", "should we acquire", "should we enter",
     ),
+    "fan_social": (
+        "superfan", "super-fan", "super fan", "fandom", "parasocial",
+        "fan community", "fan-community", "community architecture",
+        "owned channel", "owned-channel", "owned vs rented", "rented platform",
+        "d2c", "direct-to-fan", "direct to fan", "direct-to-consumer fan",
+        "fan club", "fan-club", "street team", "street-team", "street captain",
+        "ambassador program", "ambassador tier", "fan mobilization",
+        "fan engagement", "fan relationship", "fan loyalty", "fan retention",
+        "fan lifecycle", "fan journey", "fan data", "fan crm", "fan segmentation",
+        "fan identity", "identity fusion", "superfan economics", "superfan tier",
+        "superfan concentration", "fan monetization", "fan-funding", "fan funding",
+        "membership tier", "subscription tier", "patreon", "discord",
+        "community server", "listening party", "fan-to-fan", "casual listener",
+        "casual fan", "evangelist fan", "ugc", "user-generated content",
+        "user generated content", "behind-the-scenes content", "artist-voice content",
+        "community health", "engagement rate", "save rate", "email list",
+        "sms list", "fanbase health", "fan-base health", "build the community",
+    ),
 }
 
 
