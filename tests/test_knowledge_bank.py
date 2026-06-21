@@ -23,6 +23,8 @@ EXPECTED_DOMAINS = [
     "capital_funding",
     "controller",
     "data_analytics",
+    "digital_ops",
+    "executive",
 ]
 
 
@@ -30,7 +32,7 @@ EXPECTED_DOMAINS = [
 
 def test_list_domains_is_the_expected_keys():
     assert registry.list_domains() == EXPECTED_DOMAINS
-    assert len(registry.list_domains()) == 12
+    assert len(registry.list_domains()) == 14
 
 
 def test_load_domain_non_empty_for_every_domain():

@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Executive strategy knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "executive-strategy-doctrine",
+      "path": "knowledge_bank/domains/executive/executive-strategy-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Specialist identity and mission (executive synthesis and durable enterprise-value creation), ten-point executive doctrine (DNA), jurisdiction (owns/does-not-own), philosophy, decision style and biases, communication style, eight-item judgment doctrine (decide-or-defer threshold, evidence-quality tiers, averaging trap, override protocol, reversibility-times-stakes quadrant, NOT EVALUABLE, anti-fabrication/currency, falsifiability and logging), hard refusals"
+    },
+    {
+      "id": "decision-synthesis-and-judgment",
+      "path": "knowledge_bank/domains/executive/decision-synthesis-and-judgment.md",
+      "role": "decision-synthesis",
+      "required": true,
+      "description": "Multi-input decision architecture, evidence-quality weighting for conflicting inputs, structured decision frameworks (pre-mortem, DACI, competing hypotheses, reversibility, inversion), dissent architecture, deciding under incomplete information, the 11-part decision memo and its anti-pattern index, the four music decision archetypes, the four structural conflict zones, and GO/NO-GO/CONDITIONAL/DEFERRED logic"
+    },
+    {
+      "id": "capital-allocation-and-strategy",
+      "path": "knowledge_bank/domains/executive/capital-allocation-and-strategy.md",
+      "role": "capital-and-strategy",
+      "required": true,
+      "description": "Capital allocation discipline (four capital-use categories, ROIC vs. hurdle, NPV/DCF and assumption sensitivity, payback, marginal-dollar thinking, reinvest-vs-return, opportunity cost, staged/optioned funding, failure modes) and corporate strategy (where-to-play/how-to-win, durable advantage, capability gap, strategic-fit test, build/buy/partner, market entry, portfolio coherence, failure modes), each with music applications"
+    },
+    {
+      "id": "enterprise-risk-and-governance",
+      "path": "knowledge_bank/domains/executive/enterprise-risk-and-governance.md",
+      "role": "risk-and-governance",
+      "required": true,
+      "description": "Five-category risk taxonomy, likelihood-times-impact matrix, mitigated vs. unmitigated/residual risk, the fatal-unmitigated-risk gate concept, the four risk responses, risk tolerance and the residual test, governance decision-rights tiers and controls, named risk ownership, risk-blindness failure modes, and music risk types (advance non-recoupment, key-artist/key-person, rights/clearance, contractual, artist-conduct reputational, platform concentration, deal-approval governance)"
+    },
+    {
+      "id": "prioritization-and-forecasting",
+      "path": "knowledge_bank/domains/executive/prioritization-and-forecasting.md",
+      "role": "prioritization-and-forecasting",
+      "required": true,
+      "description": "Opportunity cost as the governing lens, ranking under a binding constraint (capital/attention/capacity), next-best-alternative comparison, portfolio construction, sunk cost vs. forward value, kill-decision discipline (now/wait/never), prioritization failure modes; and forecasting (outside view/base rates, bull/base/bear scenario construction, calibration, ranges vs. point forecasts, sensitivity analysis, optionality and staging), each with music applications"
+    },
+    {
+      "id": "enterprise-decision-scorecard",
+      "path": "knowledge_bank/domains/executive/enterprise-decision-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Eight-dimension Enterprise Decision Score (Enterprise Value Creation, Capital Efficiency, Risk Profile, Strategic Fit, Opportunity Cost, Organizational Capacity, Optionality & Reversibility, Evidence Quality) with weights, 1/5/10 anchors, composite formula, output bands, scoring rules, inferred-vs-told-absence boundary, uncertainty propagation, and the two hard gates (Risk, Evidence)"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/executive/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Usage rules, the ten-deliverable catalogue (decision memo, strategic plan, capital allocation plan, board report, expansion assessment, acquisition analysis, risk assessment, priority report, crisis brief, dashboard), mandatory core and conditional-module matrix, handoff boundaries to other domains, escalation flags, and hard refusals"
+    }
+  ],
+  "load_order": [
+    "executive-strategy-doctrine",
+    "decision-synthesis-and-judgment",
+    "capital-allocation-and-strategy",
+    "enterprise-risk-and-governance",
+    "prioritization-and-forecasting",
+    "enterprise-decision-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}
