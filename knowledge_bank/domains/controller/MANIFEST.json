@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Financial controller knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "ledger-integrity-doctrine",
+      "path": "knowledge_bank/domains/controller/ledger-integrity-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Controller identity, mission, jurisdiction (owns/does-not-own), eight doctrine principles, decision style and biases, communication style, hard refusals"
+    },
+    {
+      "id": "period-close-and-reconciliation",
+      "path": "knowledge_bank/domains/controller/period-close-and-reconciliation.md",
+      "role": "close-and-reconciliation",
+      "required": true,
+      "description": "Close as evidence-assembly, close calendar design and SLAs, four-element reconciliation standard, break investigation and aging protocol, cut-off control; music close calendar, royalty-payable and recoupable-advance reconciliation"
+    },
+    {
+      "id": "revenue-recognition",
+      "path": "knowledge_bank/domains/controller/revenue-recognition.md",
+      "role": "revenue-recognition",
+      "required": true,
+      "description": "ASC 606 / IFRS 15 five-step model, variable-consideration constraint, deferred-revenue release discipline; advances and minimum guarantees, breakage highly-probable standard, streaming/sync/PRO/mechanical recognition"
+    },
+    {
+      "id": "documentation-controls-and-segregation",
+      "path": "knowledge_bank/domains/controller/documentation-controls-and-segregation.md",
+      "role": "controls-and-documentation",
+      "required": true,
+      "description": "Vouching and audit-trail standard, journal entry controls, retention; COSO control environment, segregation-of-duties matrix and compensating controls, authorization limits, access controls; music-label documentation and control modules"
+    },
+    {
+      "id": "multi-entity-and-cost-allocation",
+      "path": "knowledge_bank/domains/controller/multi-entity-and-cost-allocation.md",
+      "role": "multi-entity",
+      "required": true,
+      "description": "Entity-wall doctrine, cost-allocation methodology and consistency, intercompany reconciliation and consolidated elimination, transfer-pricing rationale; music-enterprise entity structures, intercompany rights flows, entity-wall close checkpoint"
+    },
+    {
+      "id": "fraud-anomaly-and-cash",
+      "path": "knowledge_bank/domains/controller/fraud-anomaly-and-cash.md",
+      "role": "assurance-and-cash",
+      "required": true,
+      "description": "Fraud risk assessment, journal entry analytics, digit-distribution testing, duplicate-payment screening, investigation and escalation; compliance calendar and reporting timeliness; bank reconciliation, cash position, rolling cash forecast; music fraud and cash patterns"
+    },
+    {
+      "id": "ledger-integrity-scorecard",
+      "path": "knowledge_bank/domains/controller/ledger-integrity-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Nine-dimension Ledger Integrity & Controls Scorecard — weights, composite formula, hard gates (reconciliation, documentation), band scale, confidence tagging, INFERRED vs. told-absence, PROVISIONAL composite, dimension anchors"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/controller/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Certification verdict (CERTIFIABLE / WITH NOTES / NOT CERTIFIABLE), six output templates (Integrity Assessment, Close Package Review, Reconciliation Status, Rev-Rec Memo, Controls Gap Analysis, Fraud Alert), handoff boundaries, escalation flag, hard refusals"
+    }
+  ],
+  "load_order": [
+    "ledger-integrity-doctrine",
+    "period-close-and-reconciliation",
+    "revenue-recognition",
+    "documentation-controls-and-segregation",
+    "multi-entity-and-cost-allocation",
+    "fraud-anomaly-and-cash",
+    "ledger-integrity-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}
