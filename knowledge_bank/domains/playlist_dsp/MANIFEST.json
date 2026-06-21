@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Playlist and DSP knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "playlist-dsp-doctrine",
+      "path": "knowledge_bank/domains/playlist_dsp/playlist-dsp-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Strategist identity and mission (placement probability x post-placement retention), jurisdiction (owns/does-not-own), six philosophy principles, decision style and biases incl. soft/hard blocks and escalation line, communication style, hard refusals (no guarantees, no pay-for-play, named fit rationale, run the gate before refusing)"
+    },
+    {
+      "id": "pitch-theory",
+      "path": "knowledge_bank/domains/playlist_dsp/pitch-theory.md",
+      "role": "pitch-theory",
+      "required": true,
+      "description": "Gatekeeper pitch theory (lower the risk of yes, specificity, one ask, proof hierarchy), pre-send checklist, pitch-construction bars, DSP pitch tools (fields gate / prose persuades), editorial vs independent lead-time norms, release-day discipline, anti-spam cadence rules"
+    },
+    {
+      "id": "playlist-ecosystem",
+      "path": "knowledge_bank/domains/playlist_dsp/playlist-ecosystem.md",
+      "role": "ecosystem-and-economies",
+      "required": true,
+      "description": "Marketplace and algorithm reasoning, token fit-gate then outcome ranking, the three playlist economies (editorial/algorithmic/independent) never aggregated, the editorial decision model, post-placement analytics and retention as the second KPI, no invented benchmark bands"
+    },
+    {
+      "id": "curator-relationships",
+      "path": "knowledge_bank/domains/playlist_dsp/curator-relationships.md",
+      "role": "relationships",
+      "required": true,
+      "description": "Trust-account model and cadence logic, working cadence numbers (A/B/C follow-up, daily ceiling), DSP editorial posture (tool is the relationship), independent curator vetting and outreach, relationship-state to pitch-decision table (cold/opened/warm/damaged/closed)"
+    },
+    {
+      "id": "dsp-platform-mechanics",
+      "path": "knowledge_bank/domains/playlist_dsp/dsp-platform-mechanics.md",
+      "role": "platform-mechanics",
+      "required": true,
+      "description": "Platform-as-gatekeeper model (editorial vs algorithmic access), paid-promotion decision logic (amplify never manufacture), chart-eligibility framework; per-platform editorial+algorithmic mechanics, follower-reach feed, discovery surfaces, radio/autoplay, paid tools, distributor-gated vs self-serve access, post-release windows, video-first dynamics"
+    },
+    {
+      "id": "international-editorial",
+      "path": "knowledge_bank/domains/playlist_dsp/international-editorial.md",
+      "role": "international",
+      "required": true,
+      "description": "Territory editorial reasoning (territory != translation, distribution gates access, local programming moments, cultural chart weight); per-region ecosystems and access realities for Korea, Japan, Southeast Asia, China, India, MENA, and Afrobeats/Sub-Saharan Africa"
+    },
+    {
+      "id": "scoring-rubric",
+      "path": "knowledge_bank/domains/playlist_dsp/scoring-rubric.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Three-band scoring (MEASURED/CHECKED/JUDGED), Band B checkable gates (fit gate, pitch-quality bars, cadence, timing, target-health vet) with hard/soft blocks, Band C judged dimensions P1-P5 + Specificity, closed verdict scale, confidence caps, placement-probability language, deferred numeric layer with unlock"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/playlist_dsp/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Mandatory core (work product, decision summary, confidence), conditional-module matrix, three deliverable templates (Pitch Package, Strategy Memo, Post-Placement Read), refusal-with-next-step discipline, handoff boundaries and escalation flags"
+    }
+  ],
+  "load_order": [
+    "playlist-dsp-doctrine",
+    "pitch-theory",
+    "playlist-ecosystem",
+    "curator-relationships",
+    "dsp-platform-mechanics",
+    "international-editorial",
+    "scoring-rubric",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}

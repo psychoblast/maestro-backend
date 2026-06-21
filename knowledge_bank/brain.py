@@ -261,6 +261,25 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "image risk", "morality clause", "category exclusivity",
         "not ready for editorial", "say no to the artist", "protect the artist",
     ),
+    "playlist_dsp": (
+        "playlist", "playlisting", "dsp", "dsp strategy", "streaming platform",
+        "editorial playlist", "editorial pitch", "editorial submission",
+        "editorial add", "editorial consideration", "editorial calendar",
+        "algorithmic playlist", "algorithmic add", "playlist pitch",
+        "pitch a playlist", "pitch the playlist", "playlist placement",
+        "playlist add", "playlist fit", "playlist strategy", "playlist campaign",
+        "playlist health", "playlist farm", "playlist-farm", "get on a playlist",
+        "land a placement", "curator", "playlist curator", "independent curator",
+        "curator relationship", "curator outreach", "spotify for artists", "s4a",
+        "release radar", "discover weekly", "discovery mode", "marquee",
+        "showcase", "new music friday", "fresh finds", "daily mix", "daylist",
+        "new music daily", "amazon music for artists", "deezer", "boomplay",
+        "anghami", "jiosaavn", "melon", "circle chart", "oricon",
+        "post-placement", "post placement", "placement probability",
+        "pitch window", "pitch tool", "pre-save", "presave",
+        "save rate by source", "follow conversion", "list refresh",
+        "audience contract", "trust account", "pay-for-play", "pay for play",
+    ),
 }
 
 
