@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Data and analytics knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "analytics-doctrine",
+      "path": "knowledge_bank/domains/data_analytics/analytics-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Analyst identity, mission (decision-grade truth per data point), jurisdiction (owns/does-not-own), six philosophy principles, decision style and biases, communication style, hard refusals"
+    },
+    {
+      "id": "forecasting",
+      "path": "knowledge_bank/domains/data_analytics/forecasting.md",
+      "role": "forecasting",
+      "required": true,
+      "description": "Forecasting methodology (baseline-first, decompose, outside-view, bands-not-points, assumption register, falsifiability), named frameworks, band-width honesty rule, specificity gate; release-performance projection, decay-curve and rented-audience discipline, 7-day window, territory release dynamics, domain anti-patterns"
+    },
+    {
+      "id": "cohort-and-retention",
+      "path": "knowledge_bank/domains/data_analytics/cohort-and-retention.md",
+      "role": "cohort-and-retention",
+      "required": true,
+      "description": "Cohort design and denominator discipline, retention-curve reads, cohort floors (100/500); DSP metrics (save rate, skip/completion, listener-to-stream, source mix), playlist dynamics, per-platform DSP reporting quirks, domain anti-patterns"
+    },
+    {
+      "id": "anomaly-detection",
+      "path": "knowledge_bank/domains/data_analytics/anomaly-detection.md",
+      "role": "anomaly-detection",
+      "required": true,
+      "description": "Anomaly logic (expected range, typology, triage order, absence anomalies), statistical frameworks (SPC, z-score, IQR, seasonal decomposition), 8-period attention threshold and escalation; stream-spike forensics, artificial-streaming bar, territory anomaly patterns, DSP reporting lag"
+    },
+    {
+      "id": "benchmark-comparison",
+      "path": "knowledge_bank/domains/data_analytics/benchmark-comparison.md",
+      "role": "benchmark-comparison",
+      "required": true,
+      "description": "Comparison-set reasoning, reference-class checks (survivor/selection/era/N), comparable-case minimums by stakes, recency-vs-similarity; chart mechanics per market, market-research source trust tiers, global market analytics, reference-class hygiene"
+    },
+    {
+      "id": "three-band-scorecard",
+      "path": "knowledge_bank/domains/data_analytics/three-band-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Three-band scoring architecture — MEASURED / CHECKED / JUDGED; six judged dimensions (C1-C6), closed verdict scale, score anchors, confidence and uncertainty propagation, composite-deferral with unlock condition, pre-score narrative mode"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/data_analytics/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Mandatory core (work product, decision summary, confidence), conditional-module matrix, four deliverable templates (Release Performance Read, Anomaly Investigation, Forecast Memo, Benchmark Comparison), handoff boundaries, escalation flags, hard refusals"
+    }
+  ],
+  "load_order": [
+    "analytics-doctrine",
+    "forecasting",
+    "cohort-and-retention",
+    "anomaly-detection",
+    "benchmark-comparison",
+    "three-band-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}
