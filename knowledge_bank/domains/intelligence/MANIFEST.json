@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Market intelligence knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "intelligence-doctrine",
+      "path": "knowledge_bank/domains/intelligence/intelligence-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Specialist identity and mission (the platform's eyes; produces no strategy of its own; maximizes currency with consequence), the foundational mandate (news is noise until it changes a decision) with the decision-first and source-is-part-of-the-claim principles, philosophy, decision style and biases, the five hard refusals (no entry without a so-what, no rumor as fact, no editorializing beyond evidence, no silent aging, no manufactured significance), and communication style"
+    },
+    {
+      "id": "decision-change-methodology",
+      "path": "knowledge_bank/domains/intelligence/decision-change-methodology.md",
+      "role": "methodology",
+      "required": true,
+      "description": "The Decision-Change Test and the structural/cyclical/noise change tiers, the Four-Filter Method (source reality, decision impact, durability, routing clarity), editorial judgment protocols (so-what enforcement, source triangulation, the recency-weighting expiration gradient), the three practitioner failure modes (completeness trap, conservative overcorrection, routing approximation), and the worked decision tree"
+    },
+    {
+      "id": "consequential-development-matrix",
+      "path": "knowledge_bank/domains/intelligence/consequential-development-matrix.md",
+      "role": "classification",
+      "required": true,
+      "description": "The five-class consequence matrix (rule-changer, strategy-invalidator, opportunity-creator, contextual-update, monitoring signal) with timing and source floors, the classification anti-pattern (newsworthiness is not consequence), the rule-change-vs-right-answer-change distinction as the most common misclassification, worked distinctions, and the bridge from classification to timing"
+    },
+    {
+      "id": "source-trust-and-assessment",
+      "path": "knowledge_bank/domains/intelligence/source-trust-and-assessment.md",
+      "role": "source-assessment",
+      "required": true,
+      "description": "The four-tier source trust system (primary, strong trade, useful signal, rumor), the STAR Protocol for assigning a tier to a new source, tier degradation and recency, the rumor-handling protocol, the contradictory-source resolution protocol, and the anti-fabrication rules gating every quantified claim (named tiered source plus a date; temporal fabrication is worse than admitted ignorance)"
+    },
+    {
+      "id": "triage-and-routing",
+      "path": "knowledge_bank/domains/intelligence/triage-and-routing.md",
+      "role": "routing",
+      "required": true,
+      "description": "Additive specialist-specific routing with the category routing map and the technology/AI routing branch, the territory overlay with the quota-supersession rule, the immediate-alert vs. regular-cycle timing protocol and what an alert is NOT, the Decision-Change Test as a publication gate with its failure-mode table, competing-development prioritization, routing confidence with falsifiable routing predictions, the quiet-cycle protocol, and the NOT EVALUABLE protocol"
+    },
+    {
+      "id": "territory-intelligence",
+      "path": "knowledge_bank/domains/intelligence/territory-intelligence.md",
+      "role": "territory",
+      "required": true,
+      "description": "The territory-lens method (five structural axes: streaming landscape, chart system, rights bodies, content rules, live economics), structural scan lenses for North America, Europe, Asia-Pacific, and emerging/high-growth markets framed generically and durably, and the cross-territory discipline (never globalize a single-territory fact, watch the rules not the numbers, coverage gaps are reportable)"
+    },
+    {
+      "id": "intelligence-quality-scorecard",
+      "path": "knowledge_bank/domains/intelligence/intelligence-quality-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "The MEASURED/SOURCED/JUDGED evidence discipline with the NOT EVALUABLE rule, the eight-dimension quality model (decision relevance, sourcing integrity, classification accuracy, routing precision, timing judgment, currency, selectivity, territory coverage) with weights, the four hard gates (no unsourced fact, no rumor as fact, no so-what-less entry, no silent staleness), the currency-with-consequence test, and the verdict ladder"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/intelligence/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Output discipline (dated, sourced, confidence-tagged; no recommendation section), the standard entry format, the three-sentence alert format, the quiet-cycle report, the NOT EVALUABLE entry, and the handoff boundaries to every downstream specialist with the hard refusals at the boundary"
+    }
+  ],
+  "load_order": [
+    "intelligence-doctrine",
+    "decision-change-methodology",
+    "consequential-development-matrix",
+    "source-trust-and-assessment",
+    "triage-and-routing",
+    "territory-intelligence",
+    "intelligence-quality-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external toolchains, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}
