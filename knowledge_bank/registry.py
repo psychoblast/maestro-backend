@@ -24,6 +24,7 @@ class Domain(NamedTuple):
     key: str           # stable domain key used by the brain / callers
     slug: str          # skills/maestro-<slug>/knowledge source directory
     display_name: str  # human-readable label for sectioning
+    source_dir: Path | None = None  # explicit knowledge dir; default = skills/maestro-<slug>/knowledge
 
 
 # ── The domain catalog ──────────────────────────────────────────────────────────
@@ -39,6 +40,7 @@ _DOMAINS: tuple[Domain, ...] = (
     Domain("publishing",        "ink-and-air",      "Publishing"),
     Domain("finance_royalties", "royalty-doctor",   "Finance & Royalties"),
     Domain("production",        "producer-connect", "Production"),
+    Domain("capital_funding",   "capital-funding",  "Capital and funding", _BASE / "knowledge_bank" / "domains" / "capital_funding"),
 )
 
 _DOMAINS_BY_KEY: dict[str, Domain] = {d.key: d for d in _DOMAINS}
@@ -61,7 +63,14 @@ def get_domain(key: str) -> Domain:
 
 
 def _source_dir(domain: Domain, skills_dir: Path) -> Path:
-    """Absolute path to a domain's knowledge directory."""
+    """Absolute path to a domain's knowledge directory.
+
+    Honors an explicit ``source_dir`` override (used by domains whose knowledge
+    lives under ``knowledge_bank/domains/<key>`` rather than ``skills/``); falls
+    back to the ``skills/maestro-<slug>/knowledge`` convention otherwise.
+    """
+    if domain.source_dir is not None:
+        return domain.source_dir
     return skills_dir / f"maestro-{domain.slug}" / "knowledge"
 
 

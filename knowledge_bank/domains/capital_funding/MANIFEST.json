@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Capital and funding knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "capital-stack-and-sourcing",
+      "path": "knowledge_bank/domains/capital_funding/capital-stack-and-sourcing.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Capital stack taxonomy, non-dilutive-first sequencing doctrine, true all-in cost of capital, WACC/IRR comparison, source ranking, encumbrance and optionality, music-sector cost-of-capital adjustments"
+    },
+    {
+      "id": "non-dilutive-and-grant-strategy",
+      "path": "knowledge_bank/domains/capital_funding/non-dilutive-and-grant-strategy.md",
+      "role": "non-dilutive-doctrine",
+      "required": true,
+      "description": "Grant strategy and disposition discipline, matching-fund math, eligible-expenditure and IP strings, clawback-risk mapping, sponsorship/partnership as a capital source, revenue and royalty financing"
+    },
+    {
+      "id": "debt-and-dilutive-structures",
+      "path": "knowledge_bank/domains/capital_funding/debt-and-dilutive-structures.md",
+      "role": "structure-method",
+      "required": true,
+      "description": "Instrument-to-use matching, DSCR and coverage analysis, catalog/IP-backed lending, equity and dilution math, liquidation-preference waterfall, convertibles, cap-table preservation"
+    },
+    {
+      "id": "terms-and-covenant-analysis",
+      "path": "knowledge_bank/domains/capital_funding/terms-and-covenant-analysis.md",
+      "role": "terms-doctrine",
+      "required": true,
+      "description": "Term-sheet anatomy, fatal-term taxonomy, covenant risk classification and stress-testing, clawback-trigger mapping, music-specific grant and label/investor covenant hazards, breach monitoring"
+    },
+    {
+      "id": "capital-soundness-scorecard",
+      "path": "knowledge_bank/domains/capital_funding/capital-soundness-scorecard.md",
+      "role": "scoring-rubric",
+      "required": true,
+      "description": "Eight-dimension capital soundness scorecard — weights, anchors, hard gates (repayment/recoupment/clawback, terms/covenant), scoring rules, confidence tagging, composite formula, output bands"
+    },
+    {
+      "id": "output-templates-and-handoffs",
+      "path": "knowledge_bank/domains/capital_funding/output-templates-and-handoffs.md",
+      "role": "output-format",
+      "required": true,
+      "description": "Five output templates (Capital Raise Recommendation, Soundness Scorecard, Non-Dilutive Opportunity Assessment, Term Sheet Red-Flag Analysis, Capital Stack Summary), adversarial FUNDABLE/WITH CONDITIONS/NOT FUNDABLE verdict, handoff boundaries, hard refusals"
+    }
+  ],
+  "load_order": [
+    "capital-stack-and-sourcing",
+    "non-dilutive-and-grant-strategy",
+    "debt-and-dilutive-structures",
+    "terms-and-covenant-analysis",
+    "capital-soundness-scorecard",
+    "output-templates-and-handoffs"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}
