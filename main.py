@@ -820,12 +820,40 @@ def load_artist(artist_id: str = "") -> dict:
 def load_knowledge() -> str:
     return KNOWLEDGE_BASE.read_text() if KNOWLEDGE_BASE.exists() else ""
 
-def build_system_blocks(agent: dict, artist_id: str = "", voice_mode: bool = True, has_history: bool = False) -> list:
+def build_bank_block(agent_slug: str, question: str = "") -> Optional[str]:
+    """
+    Consult the knowledge bank on behalf of ``agent_slug`` and return a formatted
+    system-prompt section, or ``None`` if the bank surfaced nothing.
+
+    This is the ONE central integration point that makes the bank "live" for every
+    agent's real response. ``consult_for_agent`` always includes the agent's
+    AGENT_HOME domain (for paired/homed agents) and adds any cross-domain matches
+    the deterministic brain finds in ``question``. Retrieval is pure/deterministic
+    (no LLM/API call), mirroring BANK_CONSULT_MOCK_MODE behaviour.
+    """
+    try:
+        result = _bank_consult_for_agent(agent_slug, question)
+    except Exception:
+        return None
+    knowledge = (result.get("knowledge") or "").strip()
+    if not knowledge:
+        return None
+    domains = ", ".join(result.get("domains", []))
+    return (
+        "---\n# KNOWLEDGE BANK CONSULTATION\n"
+        f"Expert knowledge retrieved for this turn (domains: {domains}). "
+        "Ground your answer in it; do not cite it as a source.\n\n"
+        f"{knowledge}"
+    )
+
+
+def build_system_blocks(agent: dict, artist_id: str = "", voice_mode: bool = True, has_history: bool = False, question: str = "") -> list:
     """
     Returns system prompt as cacheable content blocks.
 
     Block 1 (cached): SKILL.md + KNOWLEDGE.md  — static, large, 90% cheaper on cache hit.
-    Block 2 (live):   Artist profile + mode rules — varies per request, not cached.
+    Block 2 (live):   Artist profile + bank consultation + mode rules — varies per
+                      request (the bank block depends on ``question``), not cached.
     """
     skill_text = load_skill(agent["skill"])
     knowledge  = load_knowledge()
@@ -848,6 +876,9 @@ def build_system_blocks(agent: dict, artist_id: str = "", voice_mode: bool = Tru
         dynamic_parts.append("RETURNING CONVERSATION: This artist has spoken with you before. Do NOT introduce yourself by name or title. Greet them naturally and continue from where you left off.")
     if artist:
         dynamic_parts.append(f"---\n# CURRENT ARTIST PROFILE\n{json.dumps(artist, indent=2)}")
+    bank_block = build_bank_block(agent["id"], question)
+    if bank_block:
+        dynamic_parts.append(bank_block)
     dynamic_parts.append(_VOICE_RULES if voice_mode else _TEXT_RULES)
     blocks.append({"type": "text", "text": "\n\n".join(dynamic_parts)})
 
@@ -1435,8 +1466,11 @@ async def handoff(
     # Full conversation history — receiving agent gets complete context
     trimmed_history = trim_history(history_list, HISTORY_CAP_HANDOFF)
 
-    # Pass has_history so receiving agent doesn't intro themselves when context exists
-    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=bool(trimmed_history))
+    # Pass has_history so receiving agent doesn't intro themselves when context exists.
+    # The latest user message seeds the bank consultation so the receiving agent's
+    # greeting is grounded in the relevant domain(s) — its home plus any cross-domain match.
+    _last_user_msg = next((t["content"] for t in reversed(trimmed_history) if t.get("role") == "user"), "")
+    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=bool(trimmed_history), question=_last_user_msg)
 
     # Build rich handoff context: last 3 user messages (topic) + any actions already taken by from_agent
     user_msgs    = [t["content"] for t in trimmed_history if t.get("role") == "user"]
@@ -1545,7 +1579,7 @@ async def chat_stream(req: ChatStreamRequest):
     else:
         has_history = len(history_list) > 0
 
-    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=has_history)
+    system_blocks = build_system_blocks(agent, artist_id=artist_id, voice_mode=do_tts, has_history=has_history, question=message)
 
     # Use tighter history cap for voice (faster, cheaper); wider for text (more context)
     history_cap = HISTORY_CAP_VOICE if do_tts else HISTORY_CAP_TEXT
