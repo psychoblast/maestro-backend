@@ -1595,6 +1595,20 @@ async def chat_stream(req: ChatStreamRequest):
 
     print(f"[ROUTE] {agent['name']} | tier={tier or 'default'} | model={model.split('-')[1]} | voice={do_tts} | history={len(messages)-1} turns | max_tok={max_tokens}")
 
+    # Knowledge-bank experts consulted for this turn (deterministic, NO LLM) — the
+    # same pure retrieval build_system_blocks already ran, surfaced to the client so
+    # the UI can show which expert domains grounded the answer. home_domain first.
+    experts_event = None
+    try:
+        _consult = _bank_consult_for_agent(agent["id"], message)
+        experts_event = {
+            "type":        "experts",
+            "home_domain": _consult.get("home_domain"),
+            "domains":     _consult.get("domains", []),
+        }
+    except Exception:
+        experts_event = None
+
     async def generate():
         full_text = ""
 
@@ -1710,6 +1724,8 @@ async def chat_stream(req: ChatStreamRequest):
                 "agent_voice": route["voice"],
                 "agent_slug":  slug,
             })
+        if experts_event:
+            yield sse(experts_event)
         yield sse({"type": "done", "full_text": full_text})
 
         # Persist exchange to history DB (skip greeting pings)
