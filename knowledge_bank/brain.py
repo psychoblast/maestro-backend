@@ -91,6 +91,24 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "benford", "duplicate payment", "duplicate-payment", "anomaly detection",
         "gaap", "certifiable",
     ),
+    "data_analytics": (
+        "analytics", "data analy", "data analyst", "data and analytics",
+        "metric", "kpi", "denominator", "decision-grade", "decision grade",
+        "save rate", "skip rate", "completion rate", "save-rate", "skip-rate",
+        "listener-to-stream", "listener to stream", "streams per listener",
+        "monthly listeners", "source of stream", "source-of-stream",
+        "cohort", "retention", "churn", "trajectory", "decay curve", "decay rate",
+        "forecast", "projection", "project the streams",
+        "anomaly", "outlier", "stream spike", "level shift", "series break",
+        "z-score", "z score", "standard deviation", "control chart",
+        "statistical", "seasonal decomposition", "reference class",
+        "benchmark", "comparable case", "like-for-like", "like for like",
+        "artificial streaming", "bot stream", "stream farming", "fake streams",
+        "streaming data", "stream count", "dsp metric", "dsp data",
+        "spotify for artists", "apple music for artists",
+        "chartmetric", "luminate", "songstats", "soundcharts",
+        "chart position", "chart mechanics", "playlist add velocity",
+    ),
 }
 
 
