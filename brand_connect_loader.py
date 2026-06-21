@@ -1,9 +1,9 @@
 """
-PLMKR Grid Prophet — context loader.
+PLMKR Brand Connect — context loader.
 
-Reads the knowledge MANIFEST.json and assembles the full marketing system prompt
-for the /api/agents/brand-connect/assess route. Separate from the general
-load_knowledge() path so it doesn't affect other agents.
+Reads the knowledge MANIFEST.json and assembles the full brand partnerships
+system prompt for the /api/agents/brand-connect/assess route. Separate from the
+general load_knowledge() path so it doesn't affect other agents.
 """
 import json
 from pathlib import Path
@@ -13,7 +13,7 @@ _BASE = Path(__file__).parent
 
 def load_brand_connect_knowledge(skills_dir: Path | None = None) -> str:
     """
-    Load all Grid-Prophet knowledge files in manifest order and return as a
+    Load all Brand Connect knowledge files in manifest order and return as a
     single concatenated string. Files are joined with section headers so
     the model can orient itself within the knowledge base.
     """
@@ -51,7 +51,7 @@ def build_brand_connect_system_prompt(
     skill_text: str | None = None,
 ) -> str:
     """
-    Assemble the complete system prompt for the Grid-Prophet assessment route.
+    Assemble the complete system prompt for the Brand Connect assessment route.
 
     - ``skill_text``: pre-loaded SKILL.md content (or None to load from disk)
     - Returns a single string ready to pass as the Anthropic system param
