@@ -68,6 +68,15 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "stems", "vocal production", "loudness", "lufs", "true peak", "daw",
         "arrangement",
     ),
+    "capital_funding": (
+        "capital", "fund", "financ", "invest", "raise capital", "capital raise",
+        "capital stack", "non-dilutive", "nondilutive", "dilut", "equity",
+        "cap table", "valuation", "term sheet", "convertible", "safe note",
+        "venture", "angel", "loan", "credit facility", "line of credit",
+        "debt financing", "mezzanine", "covenant", "due diligence", "runway",
+        "burn rate", "grant", "tax credit", "subsidy", "revenue-based",
+        "war chest", "liquidation preference",
+    ),
 }
 
 
