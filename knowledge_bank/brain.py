@@ -77,6 +77,20 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "burn rate", "grant", "tax credit", "subsidy", "revenue-based",
         "war chest", "liquidation preference",
     ),
+    "controller": (
+        "controller", "ledger", "general ledger", "ledger integrity",
+        "reconcil", "bank reconciliation", "balance sheet reconciliation",
+        "period close", "month-end close", "month end close", "close the books",
+        "close package", "close calendar", "closing the books",
+        "audit trail", "audit-ready", "audit ready", "audit package",
+        "audit readiness", "internal control", "segregation of duties",
+        "revenue recognition", "rev-rec", "asc 606", "ifrs 15",
+        "deferred revenue", "journal entry", "journal entries", "intercompany",
+        "cost allocation", "misstatement", "materiality", "coso",
+        "trial balance", "chart of accounts", "cut-off", "cutoff", "accrual",
+        "benford", "duplicate payment", "duplicate-payment", "anomaly detection",
+        "gaap", "certifiable",
+    ),
 }
 
 
