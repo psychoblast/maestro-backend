@@ -20,35 +20,50 @@ from entity_wall_terms import assert_no_forbidden_terms
 
 # ── direct (no HTTP) proofs ──────────────────────────────────────────────────────
 
-def test_unpaired_agent_reaches_never_paired_domain():
+def test_homed_agent_reaches_beyond_its_home_domain():
     """
-    THE PROOF: merch-empire is unpaired (home None) yet a royalty/publishing query
-    reaches finance_royalties (and publishing) — domains it was never paired with.
+    THE PROOF: merch-empire is homed to bizdev yet a royalty/publishing query ALSO
+    reaches finance_royalties and publishing — domains it was never paired with.
+    Cross-domain retrieval works regardless of an agent's home.
     """
     result = consult_for_agent(
         "merch-empire",
         "how do mechanical royalties and publishing splits work on a track bundled with my merch",
     )
-    assert result["home_domain"] is None
+    assert result["home_domain"] == "bizdev"
     assert result["agent"] == "merch-empire"
-    assert "finance_royalties" in result["domains"]
-    assert "publishing" in result["domains"]
+    assert result["domains"][0] == "bizdev"          # home is always first
+    assert "finance_royalties" in result["domains"]  # cross-domain match
+    assert "publishing" in result["domains"]          # cross-domain match
     assert result["knowledge"].strip()
 
 
-def test_unpaired_agent_with_no_keyword_match_gets_nothing():
-    """An unpaired agent + a query with no triggers → no domains, empty knowledge."""
-    result = consult_for_agent("storefront", "good morning, how are you today")
+def test_homeless_slug_with_no_keyword_match_gets_nothing():
+    """An unmapped slug + a query with no triggers → no domains, empty knowledge.
+
+    Every agent in the roster now has a home, so this exercises the home=None path
+    via a slug that is not in AGENT_HOME at all.
+    """
+    result = consult_for_agent("not-a-real-agent", "good morning, how are you today")
     assert result["home_domain"] is None
     assert result["domains"] == []
     assert result["knowledge"] == ""
 
 
-def test_home_domain_lookup_paired_vs_unpaired():
+def test_homed_agent_no_keyword_match_returns_home_only():
+    """A homed agent + a query with no triggers → exactly its home domain."""
+    result = consult_for_agent("storefront", "good morning, how are you today")
+    assert result["home_domain"] == "bizdev"
+    assert result["domains"] == ["bizdev"]
+    assert result["knowledge"].strip()
+
+
+def test_home_domain_lookup():
     assert home_domain("royalty-doctor") == "finance_royalties"
     assert home_domain("ar-scout") == "ar"
-    assert home_domain("merch-empire") is None
-    assert home_domain("storefront") is None
+    assert home_domain("merch-empire") == "bizdev"
+    assert home_domain("storefront") == "bizdev"
+    assert home_domain("not-a-real-agent") is None
 
 
 def test_paired_agent_gets_home_by_default():
@@ -88,8 +103,8 @@ def _load_app(monkeypatch, tmp_path, *, mock_mode: str = "true"):
         return TestClient(m.app)
 
 
-def test_route_unpaired_cross_domain_returns_200(monkeypatch, tmp_path):
-    """POST /api/bank/consult for an unpaired agent + cross-domain query → 200."""
+def test_route_homed_cross_domain_returns_200(monkeypatch, tmp_path):
+    """POST /api/bank/consult for a homed agent + cross-domain query → 200."""
     client = _load_app(monkeypatch, tmp_path, mock_mode="true")
     resp = client.post("/api/bank/consult", json={
         "agent": "merch-empire",
@@ -99,7 +114,7 @@ def test_route_unpaired_cross_domain_returns_200(monkeypatch, tmp_path):
     body = resp.json()
     assert body["mock"] is True
     assert body["agent"] == "merch-empire"
-    assert body["home_domain"] is None
+    assert body["home_domain"] == "bizdev"
     assert "finance_royalties" in body["domains"]
     assert "publishing" in body["domains"]
     assert body["knowledge"].strip()
@@ -120,14 +135,15 @@ def test_route_paired_agent_includes_home(monkeypatch, tmp_path):
 
 
 def test_route_no_match_no_home_empty(monkeypatch, tmp_path):
-    """Unpaired agent + irrelevant query → 200, no domains, empty knowledge."""
+    """Unmapped slug + irrelevant query → 200, no domains, empty knowledge."""
     client = _load_app(monkeypatch, tmp_path, mock_mode="true")
     resp = client.post("/api/bank/consult", json={
-        "agent": "storefront",
+        "agent": "not-a-real-agent",
         "query": "the weather is lovely today",
     })
     assert resp.status_code == 200, resp.text
     body = resp.json()
+    assert body["home_domain"] is None
     assert body["domains"] == []
     assert body["knowledge"] == ""
 
