@@ -23,50 +23,72 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "demo submission", "artist development", "develop the artist",
         "roster", "emerging artist", "breakout", "discovery", "prospect",
         "song selection", "single selection", "pick the song",
+        # enriched: signing/talent pipeline coverage
+        "sign the artist", "new signing", "talent deal", "up-and-coming",
     ),
     "marketing": (
         "marketing", "campaign", "audience", "fanbase", "fan base", "growth",
         "social media", "instagram", "tiktok", "content strategy", "engagement",
         "playlist", "follower", "reach", "impressions", "ad spend", "rollout",
         "release strategy", "go-to-market", "go to market", "press strategy",
+        # enriched: digital/performance marketing channels
+        "email campaign", "email marketing", "paid media", "digital marketing",
+        "fan acquisition", "brand marketing",
     ),
     "sync": (
         "sync", "synchronization", "licens", "placement", "film", "tv",
         "television", "advert", "trailer", "commercial spot", "cue sheet",
         "video game", "needle drop", "master use", "music supervisor", "spot ad",
+        # enriched: sync fee and background-score contexts
+        "sync fee", "sync deal", "background score", "music for ads",
     ),
     "bizdev": (
         "brand", "sponsor", "partnership", "partner ", "endorsement",
         "activation", "ambassador", "collaboration deal", "b2b",
         "business development", "brand deal", "commercial partnership",
+        # enriched: merchandise and brand-tour contexts
+        "merch", "merchandise", "merch deal", "merchandise deal",
+        "brand tour", "touring partnership",
     ),
     "legal": (
         "contract", "clause", "indemnit", "liabilit", "breach", "warrant",
         "copyright", "trademark", "infringement", "nda", "work for hire",
         "work-for-hire", "governing law", "jurisdiction", "rights", "dispute",
         "legal", "negotiat",
+        # enriched: pre-signing deal instruments
+        "deal memo", "term sheet", "letter of intent",
     ),
     "live_touring": (
         "tour", "touring", "concert", "gig", "venue", "booking", "stage",
         "live show", "setlist", "rider", "load-in", "load in", "promoter",
         "box office", "ticketing", "ticket", "festival", "routing", "on the road",
+        # enriched: performance economics and billing
+        "performance fee", "show fee", "headliner", "support act", "opening act",
+        "festival appearance", "festival lineup",
     ),
     "publishing": (
         "publish", "composition", "songwrit", "co-write", "cowrite", "co write",
         "catalog", "catalogue", "administration", "sub-publish", "subpublish",
         "writer share", "writer's share", "split sheet",
+        # enriched: sync-admin, publishing deal types, and PRO angles
+        "sync admin", "publishing deal", "publishing admin",
+        "performance rights", "songwriter deal",
     ),
     "finance_royalties": (
         "royalt", "mechanical", "ascap", "bmi", "sesac", "performing rights org",
         "performance royalt", "splits", "split ", "recoup", "advance",
         "statement", "accounting", "collection society", "neighbouring rights",
         "neighboring rights", "points", "audit the label",
+        # enriched: live income, streaming income, and income-split contexts
+        "tour revenue", "streaming income", "income split", "show income",
     ),
     "production": (
         "production", "producer", "beatmaker", "beat-maker", "mixing",
         "mix engineer", "mastering", "studio", "recording session",
         "stems", "vocal production", "loudness", "lufs", "true peak", "daw",
         "arrangement",
+        # enriched: sample clearance and interpolation contexts
+        "sample clearance", "sample clear", "interpolat", "music composition",
     ),
     "capital_funding": (
         "capital", "fund", "financ", "invest", "raise capital", "capital raise",
@@ -76,6 +98,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "debt financing", "mezzanine", "covenant", "due diligence", "runway",
         "burn rate", "grant", "tax credit", "subsidy", "revenue-based",
         "war chest", "liquidation preference",
+        # enriched: crowdfunding and music-specific funding vehicles
+        "crowdfund", "pre-sale financ", "music fund",
     ),
     "controller": (
         "controller", "ledger", "general ledger", "ledger integrity",
@@ -90,6 +114,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "trial balance", "chart of accounts", "cut-off", "cutoff", "accrual",
         "benford", "duplicate payment", "duplicate-payment", "anomaly detection",
         "gaap", "certifiable",
+        # enriched: role-label and day-to-day bookkeeping surface
+        "financial controller", "bookkeep", "payroll", "expense report",
     ),
     "data_analytics": (
         "analytics", "data analy", "data analyst", "data and analytics",
@@ -108,6 +134,9 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "spotify for artists", "apple music for artists",
         "chartmetric", "luminate", "songstats", "soundcharts",
         "chart position", "chart mechanics", "playlist add velocity",
+        # enriched: audience and social-analytics entry points
+        "streaming analysis", "audience data", "fan insight",
+        "social metric", "growth metric", "performance insight",
     ),
     "digital_ops": (
         "digital operations", "digital ops", "metadata", "ddex", "ern",
@@ -122,6 +151,9 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "territory configuration", "territory availability", "rights coverage",
         "iswc", "pre-delivery qc", "pre delivery qc", "metadata completeness",
         "deduplication", "split isrc", "duplicate isrc", "isrc conflict",
+        # enriched: asset-upload and batch-delivery entry points
+        "audio file delivery", "release upload", "music upload",
+        "batch delivery", "catalog ingestion",
     ),
     "executive": (
         "executive", "ceo", "chief executive", "c-suite", "c suite",
@@ -156,6 +188,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "crisis leadership", "crisis response", "spend authority",
         "decision rights", "competing priorities", "conflicting advice",
         "reconcile", "should we sign", "should we acquire", "should we enter",
+        # enriched: plain-language decision triggers
+        "business case", "make the call",
     ),
     "fan_social": (
         "superfan", "super-fan", "super fan", "fandom", "parasocial",
@@ -174,6 +208,9 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "user generated content", "behind-the-scenes content", "artist-voice content",
         "community health", "engagement rate", "save rate", "email list",
         "sms list", "fanbase health", "fan-base health", "build the community",
+        # enriched: newsletter, VIP, and superfan conversion paths
+        "newsletter", "fan newsletter", "vip experience", "meet and greet",
+        "superfan conversion", "community monetization",
     ),
     "intelligence": (
         "intelligence", "market intelligence", "competitive intelligence",
@@ -195,6 +232,9 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "strategy-invalidator", "opportunity-creator", "monitoring signal",
         "not evaluable", "quiet week", "quiet cycle", "trigger vs weekly",
         "route the development", "territory lens", "territory scan", "newsworth",
+        # enriched: plain-language market/trend entry points
+        "market trend", "industry trend", "competitive landscape",
+        "market shift", "streaming market", "music market",
     ),
     "label_ops": (
         "label ops", "label operations", "label operation", "label gm",
@@ -232,6 +272,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "a&r handoff", "a&r-to-ops", "handoff failure", "label head",
         "label tech stack", "four-layer stack", "rights management system",
         "master isrc registry", "spatial audio", "dolby atmos",
+        # enriched: artist-signing and label-intake contexts
+        "label signing", "sign to the label",
     ),
     "management": (
         "artist manager", "artist management", "personal manager",
@@ -260,6 +302,8 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "crisis management", "reputation management", "crisis triage",
         "image risk", "morality clause", "category exclusivity",
         "not ready for editorial", "say no to the artist", "protect the artist",
+        # enriched: career-advisory and talent-management entry points
+        "career advisor", "talent manager", "manage a career",
     ),
     "playlist_dsp": (
         "playlist", "playlisting", "dsp", "dsp strategy", "streaming platform",
@@ -279,6 +323,9 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "pitch window", "pitch tool", "pre-save", "presave",
         "save rate by source", "follow conversion", "list refresh",
         "audience contract", "trust account", "pay-for-play", "pay for play",
+        # enriched: radio/airplay plugging and platform-editorial shortcuts
+        "airplay", "radio promotion", "radio pitch", "radio plugging",
+        "spotify editorial", "apple music editorial",
     ),
 }
 
