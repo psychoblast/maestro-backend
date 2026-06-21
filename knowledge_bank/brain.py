@@ -175,6 +175,27 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "community health", "engagement rate", "save rate", "email list",
         "sms list", "fanbase health", "fan-base health", "build the community",
     ),
+    "intelligence": (
+        "intelligence", "market intelligence", "competitive intelligence",
+        "industry intelligence", "industry scan", "scan the industry",
+        "scan the market", "weekly scan", "intelligence scan", "intelligence feed",
+        "industry news", "industry development", "structural development",
+        "structural shift", "market structure shift", "what's changing",
+        "what is changing", "keep us current", "stay current", "stay ahead",
+        "early warning", "early-warning", "industry monitoring", "monitor the industry",
+        "decision-relevant", "decision relevant", "decision-change", "decision change test",
+        "so what test", "so-what test", "consequential development", "cdm class",
+        "four-filter", "four filter", "signal vs noise", "signal-to-noise",
+        "signal to noise", "source tier", "trust tier", "sourcing tier",
+        "tier a", "tier b", "tier d", "primary source", "trade source",
+        "strong trade", "corroborat", "triangulat", "star protocol",
+        "rumor", "unconfirmed", "anti-fabrication", "temporal fabrication",
+        "stale data", "recency", "currency with consequence",
+        "trigger fatigue", "alert fatigue", "rule-changer", "rule changer",
+        "strategy-invalidator", "opportunity-creator", "monitoring signal",
+        "not evaluable", "quiet week", "quiet cycle", "trigger vs weekly",
+        "route the development", "territory lens", "territory scan", "newsworth",
+    ),
 }
 
 
