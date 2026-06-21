@@ -1,0 +1,92 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Artist management knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "management-doctrine",
+      "path": "knowledge_bank/domains/management/management-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Specialist identity and mission (the manager as integrator of the artist's entire professional life, maximizing long-term career value and operational clarity), the core principle (the manager who cannot say no cannot protect the artist), the philosophy (long-term career architecture over short-term capture; integrator not executor; commission clarity as a prerequisite of trust; artist-facing vs. industry-facing advice; momentum as the most finite resource; the artist's personal operating system), decision style and biases (career-phase first, skeptical of urgency, team completeness before deal complexity, conservative on commission scope, structured communication, anti-reactive on crises, reversibility, scope-creep skepticism), the eight hard refusals with handoffs, communication style, and the anti-fabrication sourcing discipline"
+    },
+    {
+      "id": "management-agreements-and-commission",
+      "path": "knowledge_bank/domains/management/management-agreements-and-commission.md",
+      "role": "agreements",
+      "required": true,
+      "description": "The three commission structure types (gross, net, modified net/adjusted gross) and why the distinction compounds over a career, commission-rate conventions by artist tier described qualitatively without fabricated benchmarks, recording vs. touring commission differentiation, term structure (initial term, option-period types, key-person clause), post-term/sunset provisions (none, hard, graduated) with the post-term litigation insight, scope definitions, and the red-flag clause taxonomy that triggers legal escalation"
+    },
+    {
+      "id": "career-strategy-and-positioning",
+      "path": "knowledge_bank/domains/management/career-strategy-and-positioning.md",
+      "role": "career-strategy",
+      "required": true,
+      "description": "The five-phase career model defined by structural signals (development, breakthrough, peak, sustained, legacy) with the priority and strategic error of each, the opportunity stack triage framework (phase fit, positioning consistency, relationship quality, economic terms, timing/reversibility), the positioning triangle (commercial, creative, cultural) with the one-sentence diagnostic, the momentum management framework (building, spending, preserving, rebuilding states and anti-patterns), and milestone sequencing by phase with the peak-to-sustained failure insight"
+    },
+    {
+      "id": "team-assembly-and-coordination",
+      "path": "knowledge_bank/domains/management/team-assembly-and-coordination.md",
+      "role": "team-coordination",
+      "required": true,
+      "description": "The core team assembly sequence and the attorney-before-manager rule, the team role matrix with decision authority and manager interface, the hiring signal framework per role, the internal communication protocol (cadence, decision documentation, memo format, meeting structure), the three-level team conflict resolution (scope, performance, artist-manager), and when to part ways with a team member including the loyalty-tax insight"
+    },
+    {
+      "id": "artist-operations-and-gatekeeping",
+      "path": "knowledge_bank/domains/management/artist-operations-and-gatekeeping.md",
+      "role": "operations",
+      "required": true,
+      "description": "What actually fills a manager's day vs. artist assumptions, the approval funnel (artist-approval-required, manager-discretion, manager-handles categories), the gatekeeping protocol (access, opportunity flow, narrative context) with under/over-gatekeeping anti-patterns, the inbound request triage matrix with response windows and artist-involvement rules, the communication cadence framework with escalation triggers, and artist availability management across touring and creative cycles"
+    },
+    {
+      "id": "label-and-deal-relationships",
+      "path": "knowledge_bank/domains/management/label-and-deal-relationships.md",
+      "role": "label-relations",
+      "required": true,
+      "description": "The label relationship stack (A&R, marketing, business affairs, touring/live, digital/DSP) with what the manager uses each for and how to maintain it, the label priority framework (high vs. declining priority signals and the manager's response), the deal positioning decision logic (manager defines parameters and intelligence, attorney executes), the A&R relationship maintenance protocol with deterioration warning signs, and the three-stage label deterioration escalation protocol"
+    },
+    {
+      "id": "live-and-brand-business",
+      "path": "knowledge_bank/domains/management/live-and-brand-business.md",
+      "role": "live-and-brand",
+      "required": true,
+      "description": "The manager's role in tour economics (the four management-level tour questions), the offer evaluation checklist (guarantee vs. backend, net-to-artist, recoupable tour support, venue tier alignment, market selection, timing), the manager-booking-agent interface (authority split and coordination-failure anti-patterns), the routing decision framework, the brand tier matrix (luxury, mass-market, lifestyle, technology), category exclusivity scope, brand deal structure types, the image-risk assessment dimensions and high-scrutiny categories, and approval-rights architecture"
+    },
+    {
+      "id": "business-and-development",
+      "path": "knowledge_bank/domains/management/business-and-development.md",
+      "role": "business-and-development",
+      "required": true,
+      "description": "The artist cash flow cycle (recording, touring, publishing/royalty timing) and the income-gap problem, tax awareness for touring artists (multi-state filing obligations, international withholding) as framework-only knowledge, the infrastructure setup sequence (entity formation logic, the loan-out company, timeline by stage), budget structure and the emergency-fund convention, the manager's financial monitoring role, the development-vs-market gate sequence, development vs. market-mode investment, A&R judgment from the manager's perspective, and the premature-showcase illustrative scenario"
+    },
+    {
+      "id": "crisis-and-reputation",
+      "path": "knowledge_bank/domains/management/crisis-and-reputation.md",
+      "role": "crisis",
+      "required": true,
+      "description": "Crisis triage severity classification (operational, reputation/press, legal/HR/safety, personal/health) with who leads and the explicit legal-specialist scope boundary at level 3, the first response protocol (the cooling-off hold rule, the journalist deadline handling, post-crisis remediation), the response decision logic by accuracy and exposure and scope, the label relationship crisis protocol, artist-manager conflict resolution (strategic disagreement, pattern, trust breakdown), and internal team crisis handling"
+    },
+    {
+      "id": "management-judgment-and-triage",
+      "path": "knowledge_bank/domains/management/management-judgment-and-triage.md",
+      "role": "judgment-doctrine",
+      "required": true,
+      "description": "Ten encoded judgment defaults (agreement evaluation, team-building sequencing, commission calculation, offer evaluation framework, the NOT EVALUABLE protocol, anti-fabrication symmetry, label relationship escalation, crisis triage, opportunity triage cadence, artist development gate), plus context-assembly discipline and output discipline with scope fences and the falsifiability condition"
+    }
+  ],
+  "load_order": [
+    "management-doctrine",
+    "management-agreements-and-commission",
+    "career-strategy-and-positioning",
+    "team-assembly-and-coordination",
+    "artist-operations-and-gatekeeping",
+    "label-and-deal-relationships",
+    "live-and-brand-business",
+    "business-and-development",
+    "crisis-and-reputation",
+    "management-judgment-and-triage"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external toolchains, rubric identifiers, sibling products, prior owning entities, numbered-agent routing, or source file paths from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}

@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "description": "PLMKR Label operations knowledge base — load order for knowledge assembly",
+  "files": [
+    {
+      "id": "label-operations-doctrine",
+      "path": "knowledge_bank/domains/label_ops/label-operations-doctrine.md",
+      "role": "core-doctrine",
+      "required": true,
+      "description": "Specialist identity and mission (the operational backbone that turns A&R, marketing, and legal decisions into executed campaigns, accurate royalty flows, and maintained catalog; maximizes commercial yield delivered on time and on brief without costly operational failures), the philosophy (operational failures are commercial failures; the release window is non-renewable; catalog is a business not a library; distribution is strategic; recoupment is the most misunderstood P&L lever), decision style and biases (readiness margins, clean metadata, stage-matched distribution, conservative recoupment), the six hard refusals, communication style, and the anti-fabrication sourcing discipline"
+    },
+    {
+      "id": "release-planning-and-workflow",
+      "path": "knowledge_bank/domains/label_ops/release-planning-and-workflow.md",
+      "role": "release-planning",
+      "required": true,
+      "description": "Release types taxonomy and the work-backward rule, the five-phase release campaign arc (operational foundation, delivery and pitch, pre-release activation, release week, post-release) with the first-48-hour algorithmic signal window, the Friday release convention and the mid-week tactical exception, milestone timeline templates, DSP delivery requirements per major platform, and the pre-delivery QC checklist with common failures"
+    },
+    {
+      "id": "distribution-and-delivery",
+      "path": "knowledge_bank/domains/label_ops/distribution-and-delivery.md",
+      "role": "distribution",
+      "required": true,
+      "description": "The three-tier distributor taxonomy (DIY aggregator, mid-tier partner, full-service) described by economic model not by quotable percentages, the four-gate distribution selection decision matrix (scale, editorial ambition, advance needs, control and ownership), DSP delivery technical standards (audio, metadata, artwork, lead times), the delivery failure playbook, the structural shift to distribution as financial infrastructure, and the editorial-independence consideration"
+    },
+    {
+      "id": "catalog-management",
+      "path": "knowledge_bank/domains/label_ops/catalog-management.md",
+      "role": "catalog",
+      "required": true,
+      "description": "The six-dimension catalog audit framework (ownership and chain of title, rights registration, metadata quality, revenue yield, sync history and placement log, reversion and termination risk), the five-type exploitation strategy matrix (DSP optimization, re-release/remaster, sync campaign, catalog licensing, sale or partial sale), the metadata governance protocol with quarterly and triggered reviews, rights-society and mechanical-collective registration hygiene as the most common zero-cost revenue leak, neighboring rights, and the catalog reversion clock"
+    },
+    {
+      "id": "deal-structures-and-recoupment",
+      "path": "knowledge_bank/domains/label_ops/deal-structures-and-recoupment.md",
+      "role": "deal-structures",
+      "required": true,
+      "description": "The five recording-contract types (traditional, multiple-rights/360, production/vanity, distribution/label deal, licensing), royalty and recoupment waterfall mechanics and why most artists never recoup, cross-collateralization as the hidden multiplier with its negotiation points, controlled composition clause mechanics, the five deal anti-patterns, and practitioner insight on most-favored-nations and pipeline provisions"
+    },
+    {
+      "id": "label-economics",
+      "path": "knowledge_bank/domains/label_ops/label-economics.md",
+      "role": "economics",
+      "required": true,
+      "description": "The label P&L structure (revenue lines and the five-cost-center taxonomy with recoupability), directional margin benchmarks by tier and the revenue-concentration rule, advance sizing with the four pricing variables and the advance-sizing gate, the eight-tier royalty waterfall, recoupment projection modeling (the recoupment clock and front-loading discount), the recoupable vs non-recoupable cost convention table, and practitioner insight on the net-receipts definition, the tour-support trap, the sync margin, and the distribution fee"
+    },
+    {
+      "id": "roster-coordination",
+      "path": "knowledge_bank/domains/label_ops/roster-coordination.md",
+      "role": "roster",
+      "required": true,
+      "description": "The five core label functions and their handoff sequence with the most failure-prone transitions, the project kickoff protocol and the release-date-setting rule, the four release readiness gates (legal, creative, marketing, operational), artist communication frameworks with the not-ready-for-editorial protocol and communication anti-patterns, the priority stack for concurrent releases, crisis communication for recoverable vs non-recoverable crises, internal approval chains, and the A&R-to-ops handoff failure modes"
+    },
+    {
+      "id": "operations-systems-and-qc",
+      "path": "knowledge_bank/domains/label_ops/operations-systems-and-qc.md",
+      "role": "systems",
+      "required": true,
+      "description": "The four-layer label tech stack (rights management, metadata management, royalty accounting, release tracking) and rights-tool selection rule, how metadata flows from label to DSP via the standardized exchange and reporting formats, the metadata error cost model, royalty statement anatomy and accounting failure modes, the five-step delivery QC workflow, where systemic failures occur, the critical integration points, the DIY-vs-enterprise royalty-accounting failure point, and practitioner insight on configuration and the master ISRC registry"
+    },
+    {
+      "id": "judgment-and-triage",
+      "path": "knowledge_bank/domains/label_ops/judgment-and-triage.md",
+      "role": "judgment-doctrine",
+      "required": true,
+      "description": "Eight encoded judgment defaults (release timing logic, distribution partner selection, editorial pitch filing, recoupment calculation approach, the NOT EVALUABLE protocol, the anti-fabrication symmetry rule, the release delay trigger protocol, and metadata error triage), plus context-assembly discipline and output discipline with falsifiability conditions"
+    }
+  ],
+  "load_order": [
+    "label-operations-doctrine",
+    "release-planning-and-workflow",
+    "distribution-and-delivery",
+    "catalog-management",
+    "deal-structures-and-recoupment",
+    "label-economics",
+    "roster-coordination",
+    "operations-systems-and-qc",
+    "judgment-and-triage"
+  ],
+  "notes": {
+    "entity_wall": "These files are PLMKR-owned originals. Do not reference external toolchains, rubric identifiers, sibling products, prior owning entities, or numbered-agent routing from any source material.",
+    "mock_mode": "Deterministic knowledge assembly only — no live LLM/API calls during loading or testing."
+  }
+}

@@ -47,6 +47,8 @@ _DOMAINS: tuple[Domain, ...] = (
     Domain("executive",         "executive",        "Executive strategy", _BASE / "knowledge_bank" / "domains" / "executive"),
     Domain("fan_social",        "fan-social",       "Fan and social", _BASE / "knowledge_bank" / "domains" / "fan_social"),
     Domain("intelligence",      "intelligence",     "Market intelligence", _BASE / "knowledge_bank" / "domains" / "intelligence"),
+    Domain("label_ops",         "label-ops",        "Label operations", _BASE / "knowledge_bank" / "domains" / "label_ops"),
+    Domain("management",        "management",       "Artist management", _BASE / "knowledge_bank" / "domains" / "management"),
 )
 
 _DOMAINS_BY_KEY: dict[str, Domain] = {d.key: d for d in _DOMAINS}
