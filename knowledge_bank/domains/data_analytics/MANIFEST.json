@@ -24,11 +24,25 @@
       "description": "Cohort design and denominator discipline, retention-curve reads, cohort floors (100/500); DSP metrics (save rate, skip/completion, listener-to-stream, source mix), playlist dynamics, per-platform DSP reporting quirks, domain anti-patterns"
     },
     {
+      "id": "platform-algorithm-mechanics",
+      "path": "knowledge_bank/domains/data_analytics/platform-algorithm-mechanics.md",
+      "role": "algorithm-mechanics",
+      "required": true,
+      "description": "Spotify and Apple Music algorithmic surfaces (Release Radar, Discover Weekly, Radio/Autoplay, Daily Mix, New Music Mix); trigger conditions, refresh cadences, analytics signatures; how to read whether a release earned algorithmic pick-up; save rate as algorithmic fuel; skip/completion as distribution gate; algorithmic half-life concept; pre-save mechanics and 48-hour indexing window; editorial pitch workflow and editorial-algorithmic interaction; common analyst errors on algorithmic reads"
+    },
+    {
       "id": "anomaly-detection",
       "path": "knowledge_bank/domains/data_analytics/anomaly-detection.md",
       "role": "anomaly-detection",
       "required": true,
       "description": "Anomaly logic (expected range, typology, triage order, absence anomalies), statistical frameworks (SPC, z-score, IQR, seasonal decomposition), 8-period attention threshold and escalation; stream-spike forensics, artificial-streaming bar, territory anomaly patterns, DSP reporting lag"
+    },
+    {
+      "id": "data-reconciliation-and-attribution",
+      "path": "knowledge_bank/domains/data_analytics/data-reconciliation-and-attribution.md",
+      "role": "reconciliation-and-attribution",
+      "required": true,
+      "description": "Source hierarchy and trust tiers (Tier 1 DSP dashboard through Tier 4 self-reported); common reconciliation gaps (settlement lag, threshold differences, territory bucketing, currency timing, bundle accounting, per-stream rate variation); six-step reconciliation workflow with tolerance bands; attribution methodology (source-of-stream, territory-time correlation, pre/post design, lift methodology, in-campaign conversion rates); territory-based and time-based A/B testing discipline with named confounds; attribution anti-patterns"
     },
     {
       "id": "benchmark-comparison",
@@ -56,7 +70,9 @@
     "analytics-doctrine",
     "forecasting",
     "cohort-and-retention",
+    "platform-algorithm-mechanics",
     "anomaly-detection",
+    "data-reconciliation-and-attribution",
     "benchmark-comparison",
     "three-band-scorecard",
     "output-templates-and-handoffs"
