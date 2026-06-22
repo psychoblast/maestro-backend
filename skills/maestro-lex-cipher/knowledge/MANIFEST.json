@@ -36,6 +36,13 @@
       "role": "output-format",
       "required": true,
       "description": "Four output templates: Contract/Deal Review, Copyright Infringement Preliminary Analysis, IP Chain-of-Title Checklist, Business Entity Identification — each with the mandatory counsel footer and negotiation-routing discipline"
+    },
+    {
+      "id": "music-law-mechanics",
+      "path": "skills/maestro-lex-cipher/knowledge/music-law-mechanics.md",
+      "role": "statutory-and-deal-mechanics",
+      "required": true,
+      "description": "Statutory framework and deal anatomy reference: Section 203/304 termination rights, Section 115 compulsory mechanical licensing and MMA/MLC mechanics, 360-degree deal anatomy, sample clearance workflow, digital-era licensing architecture, contract formation traps, key US statutes reference, recoupment accounting mechanics, copyright registration workflow, and royalty audit protocol"
     }
   ],
   "load_order": [
@@ -43,7 +50,8 @@
     "deal-quality-rubric",
     "contract-architecture",
     "copyright-ip-international",
-    "output-templates"
+    "output-templates",
+    "music-law-mechanics"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, prior toolchain names, or entity names from source material.",
