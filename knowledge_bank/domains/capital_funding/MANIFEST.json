@@ -43,6 +43,20 @@
       "role": "output-format",
       "required": true,
       "description": "Five output templates (Capital Raise Recommendation, Soundness Scorecard, Non-Dilutive Opportunity Assessment, Term Sheet Red-Flag Analysis, Capital Stack Summary), adversarial FUNDABLE/WITH CONDITIONS/NOT FUNDABLE verdict, handoff boundaries, hard refusals"
+    },
+    {
+      "id": "tax-incentives-and-grants-mechanics",
+      "path": "knowledge_bank/domains/capital_funding/tax-incentives-and-grants-mechanics.md",
+      "role": "operational-mechanics",
+      "required": true,
+      "description": "Sound recording production credit mechanics (refundable vs non-refundable, eligible expenditures, management-commission exclusion), tax credit bridge financing (LTV, directed-payment, true cost), arts council grant application lifecycle, multi-program stacking discipline, export and market-development programs, multi-year grant calendar, common compliance failures, cross-jurisdiction complexity"
+    },
+    {
+      "id": "music-sector-funder-landscape-and-raise-process",
+      "path": "knowledge_bank/domains/capital_funding/music-sector-funder-landscape-and-raise-process.md",
+      "role": "raise-process",
+      "required": true,
+      "description": "Music-sector funder typology (grant bodies, tax credit programs, revenue-based lenders, catalog-backed lenders, label/distributor advance providers, venture/growth equity, sector banks), underwriting criteria by funder type, capital raise process phases (preparation, outreach, diligence, close), data room assembly, pipeline management, funder-type-specific ask formats, closing mechanics, common process failures"
     }
   ],
   "load_order": [
@@ -51,7 +65,9 @@
     "debt-and-dilutive-structures",
     "terms-and-covenant-analysis",
     "capital-soundness-scorecard",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "tax-incentives-and-grants-mechanics",
+    "music-sector-funder-landscape-and-raise-process"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
