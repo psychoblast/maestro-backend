@@ -57,6 +57,27 @@
       "role": "output-format",
       "required": true,
       "description": "Output discipline (dated, sourced, confidence-tagged; no recommendation section), the standard entry format, the three-sentence alert format, the quiet-cycle report, the NOT EVALUABLE entry, and the handoff boundaries to every downstream specialist with the hard refusals at the boundary"
+    },
+    {
+      "id": "scan-operations-and-watchlist",
+      "path": "knowledge_bank/domains/intelligence/scan-operations-and-watchlist.md",
+      "role": "operations",
+      "required": true,
+      "description": "Operational scan mechanics: the three-tier cadence (daily signal check, weekly structured scan, monthly deep scan), source watch list structure with cadence elevation and demotion rules, open-item and developing-story tracking with four-status field (DEVELOPING/CONFIRMED/NOT EVALUABLE/CLOSED), the standard weekly scan seven-step workflow, the scan log format with drop counts by filter, three legitimate close conditions for developing stories, and the monthly watch-list audit protocol"
+    },
+    {
+      "id": "music-industry-source-taxonomy",
+      "path": "knowledge_bank/domains/intelligence/music-industry-source-taxonomy.md",
+      "role": "source-taxonomy",
+      "required": true,
+      "description": "Six primary source categories in music intelligence: streaming platform official documents, rights body and CMO documents, chart authority publications, label group and publisher financial disclosures, regulatory and legislative filings, and technology/AI primary documents; the four-step trade-to-primary navigation protocol; cross-border source navigation by legal-system type; and the source discovery protocol for adding new sources to the watch list"
+    },
+    {
+      "id": "streaming-economics-intelligence-depth",
+      "path": "knowledge_bank/domains/intelligence/streaming-economics-intelligence-depth.md",
+      "role": "domain-depth",
+      "required": true,
+      "description": "Royalty pool construction (total revenue, music allocation, rights-type split), pro-rata vs. user-centric distribution mechanics and CDM classification, minimum stream length requirements and anti-manipulation policies, playlist intelligence by type (editorial/algorithmic/personalized/genre), pitch window mechanics, short-video platform creator fund mechanics, album-equivalent unit (AEU/TEA/SEA) mechanics and chart eligibility rules, earnings release extraction for music intelligence, AI-generated content structural intelligence questions (training data licensing, royalty eligibility, attribution requirements, voice protection), and a worked routing table for common streaming economics developments"
     }
   ],
   "load_order": [
@@ -67,7 +88,10 @@
     "triage-and-routing",
     "territory-intelligence",
     "intelligence-quality-scorecard",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "scan-operations-and-watchlist",
+    "music-industry-source-taxonomy",
+    "streaming-economics-intelligence-depth"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external toolchains, rubric identifiers, sibling products, or entity names from any source material.",
