@@ -57,6 +57,20 @@
       "role": "output-format",
       "required": true,
       "description": "Certification verdict (CERTIFIABLE / WITH NOTES / NOT CERTIFIABLE), six output templates (Integrity Assessment, Close Package Review, Reconciliation Status, Rev-Rec Memo, Controls Gap Analysis, Fraud Alert), handoff boundaries, escalation flag, hard refusals"
+    },
+    {
+      "id": "chart-of-accounts-and-account-architecture",
+      "path": "knowledge_bank/domains/controller/chart-of-accounts-and-account-architecture.md",
+      "role": "account-architecture",
+      "required": true,
+      "description": "COA design principles (reconciliation-tractable, revenue disaggregated, advances isolated, intercompany segregated); numeric block assignments for music enterprises; streaming block disaggregation; royalty payable recipient-level vs. tier-level design; recoupable advance sub-accounting; intercompany account discipline; close-sequence review order; misclassification patterns; COA maintenance controls"
+    },
+    {
+      "id": "catalog-acquisition-and-intangible-assets",
+      "path": "knowledge_bank/domains/controller/catalog-acquisition-and-intangible-assets.md",
+      "role": "intangible-assets",
+      "required": true,
+      "description": "Asset acquisition vs. business combination determination (ASC 805); purchase price allocation for music catalogs; identifying acquired intangibles (masters, publishing rights, neighboring rights, distribution agreements, non-competes); useful life determination (finite vs. indefinite) for composition copyrights, master recordings, distribution agreements; amortization method and schedule; impairment testing (ASC 350 / ASC 360) and music-specific indicators; royalty-relief method review; post-acquisition integration checklist; common controller findings"
     }
   ],
   "load_order": [
@@ -67,7 +81,9 @@
     "multi-entity-and-cost-allocation",
     "fraud-anomaly-and-cash",
     "ledger-integrity-scorecard",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "chart-of-accounts-and-account-architecture",
+    "catalog-acquisition-and-intangible-assets"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
