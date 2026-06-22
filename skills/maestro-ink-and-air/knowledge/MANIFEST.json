@@ -31,6 +31,13 @@
       "description": "Global collection & sub-publishing, royalty accounting & audits, neighboring rights (SoundExchange 50/45/5), termination & reversion (Section 203/304), catalog valuation & transactions (NPS, multiples), sync clearance (rights side), AI training-rights landscape"
     },
     {
+      "id": "publishing-administration-and-registration",
+      "path": "skills/maestro-ink-and-air/knowledge/publishing-administration-and-registration.md",
+      "role": "domain-operations",
+      "required": false,
+      "description": "Publisher entity setup (IPI enrollment, PRO affiliation, dual-registration), copyright registration workflow (eCO, Form PA/SR, timing, recordation), PRO work registration (ASCAP Songfile/BMI portal, common errors), MLC registration & ISRC→ISWC linkage, CWR standard (record types, role codes, territory codes, society codes, share mechanics, common errors), DDEX standards (ERN, MWN, RIN), grand rights vs. small rights, print rights, neighboring rights registration workflow (SoundExchange/PPL/GVL), controlled composition detailed mechanics (3/4 rate, album cap, streaming CC interaction under MMA), platform-specific licensing (ContentID, TikTok, Meta Rights Manager, fitness platforms, gaming run-of-game, social blanket licensing), CMS tooling, metadata hygiene, statement reconciliation"
+    },
+    {
       "id": "output-templates",
       "path": "skills/maestro-ink-and-air/knowledge/output-templates.md",
       "role": "output-format",
@@ -43,6 +50,7 @@
     "catalog-health-rubric",
     "publishing-fundamentals",
     "royalty-and-catalog-systems",
+    "publishing-administration-and-registration",
     "output-templates"
   ],
   "notes": {
