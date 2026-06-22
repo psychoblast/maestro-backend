@@ -31,6 +31,13 @@
       "description": "Booking-agency dynamics, venue tier ladder & promoter ecosystem, offer/deal evaluation, ticketing strategy, tour merchandise, festivals & special events, international touring"
     },
     {
+      "id": "touring-contracts-crew-onsale",
+      "path": "skills/maestro-tour-commander/knowledge/touring-contracts-crew-onsale.md",
+      "role": "contracts-crew-onsale",
+      "required": true,
+      "description": "Deal memo anatomy (every required clause), support slot mechanics & economics, nightly settlement deep dive, on-sale sequencing & presale strategy, crew hierarchy & union rules, tour insurance, venue-tier advancement signals"
+    },
+    {
       "id": "output-templates",
       "path": "skills/maestro-tour-commander/knowledge/output-templates.md",
       "role": "output-format",
@@ -43,6 +50,7 @@
     "campaign-quality-rubric",
     "tour-operations",
     "live-business-ecosystem",
+    "touring-contracts-crew-onsale",
     "output-templates"
   ],
   "notes": {
