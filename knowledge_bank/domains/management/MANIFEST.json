@@ -71,6 +71,20 @@
       "role": "judgment-doctrine",
       "required": true,
       "description": "Ten encoded judgment defaults (agreement evaluation, team-building sequencing, commission calculation, offer evaluation framework, the NOT EVALUABLE protocol, anti-fabrication symmetry, label relationship escalation, crisis triage, opportunity triage cadence, artist development gate), plus context-assembly discipline and output discipline with scope fences and the falsifiability condition"
+    },
+    {
+      "id": "record-deal-mechanics-and-structures",
+      "path": "knowledge_bank/domains/management/record-deal-mechanics-and-structures.md",
+      "role": "deal-mechanics",
+      "required": true,
+      "description": "The five recording deal structures (major-label, P&D, label-services, distribution, self-release via aggregator) and the manager's strategic lens on each; advance and recoupment mechanics (what is charged, cross-collateralization and why to resist it); royalty rate structure (all-in rate, producer royalty points, royalty reductions, the royalty base for digital vs. physical); controlled composition clause mechanics and the three-quarter-rate reduction; 360-deal provisions and the negotiating framework for enumerating each income stream; release and marketing commitments (delivery criteria, commercially-acceptable clause red flag, reversion-for-non-release, marketing commitment documentation); and the red-flag clause taxonomy for recording agreements requiring immediate attorney escalation"
+    },
+    {
+      "id": "royalty-income-monitoring",
+      "path": "knowledge_bank/domains/management/royalty-income-monitoring.md",
+      "role": "income-monitoring",
+      "required": true,
+      "description": "The recording and publishing income pipelines from streams to artist payment with delay mechanics; statement frequency standards by deal type (major label semi-annual, distribution monthly, PRO quarterly); recoupment status monitoring and cross-collateralization's effect on recoupment visibility; royalty statement anatomy checklist (period coverage, balance continuity, volume sanity check, rate applied, deductions, reserves, foreign income, controlled composition calculations); the seven most common royalty accounting errors; conditions warranting a formal royalty audit, the audit process and look-back window obligations, and cost structure; and income tracking minimum standards (statement receipt log, recoupment tracker, publishing registration audit, income-expectation calendar)"
     }
   ],
   "load_order": [
@@ -83,7 +97,9 @@
     "live-and-brand-business",
     "business-and-development",
     "crisis-and-reputation",
-    "management-judgment-and-triage"
+    "management-judgment-and-triage",
+    "record-deal-mechanics-and-structures",
+    "royalty-income-monitoring"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external toolchains, rubric identifiers, sibling products, prior owning entities, numbered-agent routing, or source file paths from any source material.",
