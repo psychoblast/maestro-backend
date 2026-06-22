@@ -50,6 +50,27 @@
       "role": "output-format",
       "required": true,
       "description": "Mandatory core and conditional-module matrix, four deliverable templates (Digital Release QC Report, Metadata Error Remediation Plan, Rights Hygiene Audit Report, Content Recognition Claim Evaluation), handoff boundaries, escalation flags, hard refusals"
+    },
+    {
+      "id": "distributor-landscape-and-mechanics",
+      "path": "knowledge_bank/domains/digital_ops/distributor-landscape-and-mechanics.md",
+      "role": "distributor-mechanics",
+      "required": true,
+      "description": "Five distributor model types (revenue-share subscription, per-release flat fee, percentage, label services, aggregator), ISRC registrant-code ownership implications, UPC assignment, rights-system access dependency, split payment mechanics and limitations, catalog transfer workflow (pre-transfer preparation, new delivery setup, takedown sequencing, dark window management, ISRC continuity), distributor selection decision framework"
+    },
+    {
+      "id": "audio-mastering-and-loudness-standards",
+      "path": "knowledge_bank/domains/digital_ops/audio-mastering-and-loudness-standards.md",
+      "role": "loudness-and-mastering",
+      "required": true,
+      "description": "LUFS/LKFS loudness normalization mechanics (ITU-R BS.1770), per-platform loudness targets, true peak limits (dBTP), why over-limiting is a practitioner error, dynamic range and DR ratings, hi-res and lossless delivery tiers (Apple Music ALAC, Tidal MQA, Amazon Ultra HD, Qobuz), Dolby Atmos spatial audio delivery requirements and ADM BWF format, audio format common errors (MP3 delivery, sample-rate mismatch, bit-depth downgrade, upsampled hi-res, missing dithering, clipped render), loudness and format pre-delivery QC extensions"
+    },
+    {
+      "id": "dsp-product-configuration-and-store-mechanics",
+      "path": "knowledge_bank/domains/digital_ops/dsp-product-configuration-and-store-mechanics.md",
+      "role": "product-config-and-store",
+      "required": true,
+      "description": "Product type classification (single/EP/album) and threshold conventions, release version types requiring new UPCs (deluxe, clean/explicit, remaster, digital-only), pre-order mechanics (instant gratification tracks, submission lead time), pre-save mechanics (activation conditions, analytics significance, broken-link error), canonical artist pages and fragmented-page causes/remediation, platform verification and artist-pick mechanics, correction mechanics (portal update vs full redelivery), editorial pitch submission mechanics and pitch window as hard deadline constraint"
     }
   ],
   "load_order": [
@@ -59,7 +80,10 @@
     "rights-systems-and-content-id",
     "catalog-governance-and-rights-hygiene",
     "release-quality-scorecard",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "distributor-landscape-and-mechanics",
+    "audio-mastering-and-loudness-standards",
+    "dsp-product-configuration-and-store-mechanics"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
