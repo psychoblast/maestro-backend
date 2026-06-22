@@ -24,6 +24,13 @@
       "description": "Beat licensing tiers, beat sourcing platforms, global producer community, AI beat generation (reference-first + rights caution), producer/engineer economics (fee/advance/recoupment, WFH-vs-royalty ownership consequence, role-by-role conventions, casting reconciliation, deal-structure failure modes), studio & recording budget (constraint map, phase/irreversibility, studio tiers and market rates, contingency, reconciliation, change-order discipline, tier-aware response depth)"
     },
     {
+      "id": "production-workflow-and-craft",
+      "path": "skills/maestro-producer-connect/knowledge/production-workflow-and-craft.md",
+      "role": "domain-advanced",
+      "required": false,
+      "description": "Pre-production workflow (arrangement map, pre-production session protocol, production-ready gate), tracking session management (take types, session sign-off, vocal direction discipline), vocal production (comp workflow, pitch correction approach and disclosure, layering and texture), mixing workflow and discipline (bus structure, low-end management, revision discipline), mastering essentials (what mastering does/doesn't do, mastering brief, stem mastering, Dolby Atmos/spatial audio), genre-specific production conventions (hip-hop/trap, R&B, Afrobeats, UK/NY drill, pop, reggaeton), multi-song production arc (cohesion tools, EP vs album scope, inter-track level matching), sync-ready production (split mix specification, music-to-picture timing)"
+    },
+    {
       "id": "audio-and-delivery-systems",
       "path": "skills/maestro-producer-connect/knowledge/audio-and-delivery-systems.md",
       "role": "domain-advanced",
@@ -42,6 +49,7 @@
     "production-doctrine",
     "production-readiness-rubric",
     "production-fundamentals",
+    "production-workflow-and-craft",
     "audio-and-delivery-systems",
     "output-templates"
   ],
