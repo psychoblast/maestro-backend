@@ -31,6 +31,20 @@
       "description": "Six dials of a license, negotiation structures, fee tiering, quote posture doctrine, gratis-use doctrine"
     },
     {
+      "id": "pitch-strategy",
+      "path": "skills/maestro-sync-agent/knowledge/pitch-strategy.md",
+      "role": "pitch-doctrine",
+      "required": true,
+      "description": "Reference-track decoding, pitch execution, buyer ecosystem mechanics (TV/film/ad/trailer), music library mechanics, supervisor relationship management"
+    },
+    {
+      "id": "backend-royalties",
+      "path": "skills/maestro-sync-agent/knowledge/backend-royalties.md",
+      "role": "backend-doctrine",
+      "required": true,
+      "description": "Cue sheet mechanics and filing, PRO registration and collection, ISRC/ISWC standards, territory clearance splits, neighboring rights, backend royalty flow"
+    },
+    {
       "id": "output-template",
       "path": "skills/maestro-sync-agent/knowledge/output-template.md",
       "role": "output-format",
@@ -43,6 +57,8 @@
     "buyer-psychology",
     "clearance-workflow",
     "licensing-deal-logic",
+    "pitch-strategy",
+    "backend-royalties",
     "output-template"
   ],
   "notes": {
