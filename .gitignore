@@ -36,3 +36,10 @@ PHASE2_LOG.md
 .session_log.txt
 .phase3e_log
 .phase3e_log.txt
+.session_log
+.p3e_log
+p3e_runs.log
+
+.phase3e_session_log.txt
+.phase3f_session_log.txt
+.phase*_session_log.txt
