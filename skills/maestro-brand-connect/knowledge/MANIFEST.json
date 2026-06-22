@@ -50,6 +50,13 @@
       "role": "output-format",
       "required": true,
       "description": "Three output templates: Deal Quality Assessment Memo, Partnership Brief, Contract Red Flag Checklist"
+    },
+    {
+      "id": "negotiation-playbook",
+      "path": "skills/maestro-brand-connect/knowledge/negotiation-playbook.md",
+      "role": "negotiation-doctrine",
+      "required": true,
+      "description": "Deal origination modes and leverage implications, pre-negotiation information stack, opening position doctrine by deal type, term hierarchy (defend vs. trade), counter-offer sequencing, walk-away triggers, common brand negotiating tactics and counters, intermediary dynamics, LOI vs. direct-to-contract close mechanics, and post-deal activation protocol"
     }
   ],
   "load_order": [
@@ -59,7 +66,8 @@
     "deal-structure-and-terms",
     "partner-due-diligence",
     "brand-platform-deals",
-    "output-templates"
+    "output-templates",
+    "negotiation-playbook"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
