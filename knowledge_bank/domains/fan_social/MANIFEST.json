@@ -78,6 +78,20 @@
       "role": "output-format",
       "required": true,
       "description": "Output discipline (mandatory core, decision-type fields, conditional modules), the module table, the four templates (fanbase health evaluation, fan strategy recommendation, platform investment decision, community crisis response with the financially-affected-fans protocol), handoff boundaries to other domains, and hard refusals"
+    },
+    {
+      "id": "live-events-and-fan-experience",
+      "path": "knowledge_bank/domains/fan_social/live-events-and-fan-experience.md",
+      "role": "live-events",
+      "required": true,
+      "description": "The live-conversion stack (festival → support → headline → VIP scaling by depth); presale architecture with tier sequencing rule (fan-club before platform presale); VIP package design taxonomy with the photo-op trap and the intimacy compression principle; virtual concert mechanics and pricing; post-show 72-hour engagement window protocol; venue fan-experience design (queue, merch table, setlist, fan sections); tour merchandise commission structure and D2C integration; festival vs. headline show strategy distinction; listening-party production mechanics; multi-market on-sale sequencing"
+    },
+    {
+      "id": "email-and-sms-owned-channel-mechanics",
+      "path": "knowledge_bank/domains/fan_social/email-and-sms-owned-channel-mechanics.md",
+      "role": "owned-channel-mechanics",
+      "required": true,
+      "description": "Four core automation sequences (welcome, pre-release, post-purchase, win-back) with the 72-hour trigger rule; welcome sequence structure (5-email, day-by-day); email deliverability mechanics (sender reputation, complaint rate thresholds, list hygiene, domain authentication — SPF/DKIM/DMARC); SMS compliance framework by jurisdiction (TCPA, GDPR, ePrivacy, A2P 10DLC, short codes, double opt-in); SMS character-limit and Unicode-encoding mechanics; frequency caps; six-tier behavioral list segmentation with segment-first deployment protocol; release-cycle email sequence; SMS cadence for tour on-sale; email A/B testing sample-size framework; list growth capture-touchpoint ranking; the 90-day engagement cliff practitioner insight"
     }
   ],
   "load_order": [
@@ -91,7 +105,9 @@
     "content-for-fans",
     "ambassador-programs",
     "fanbase-health-scorecard",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "live-events-and-fan-experience",
+    "email-and-sms-owned-channel-mechanics"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
