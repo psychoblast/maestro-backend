@@ -64,6 +64,27 @@
       "role": "judgment-doctrine",
       "required": true,
       "description": "Eight encoded judgment defaults (release timing logic, distribution partner selection, editorial pitch filing, recoupment calculation approach, the NOT EVALUABLE protocol, the anti-fabrication symmetry rule, the release delay trigger protocol, and metadata error triage), plus context-assembly discipline and output discipline with falsifiability conditions"
+    },
+    {
+      "id": "radio-and-broadcast-promotion",
+      "path": "knowledge_bank/domains/label_ops/radio-and-broadcast-promotion.md",
+      "role": "radio-promotion",
+      "required": true,
+      "description": "Radio format taxonomy (CHR/Top 40, Hot AC, AC, AAA, Country, Urban, Americana, college/non-commercial, Rock), independent radio promoter mechanics (indie promo, what it is and is not, payola distinction), add dates and the weekly format cycle, Mediabase and BDS airplay monitoring (panel alignment, spins vs. adds), chart position methodology and commercial significance (weighted audience impressions, chart as verifiable signal), satellite radio distinctions (SiriusXM, SoundExchange performance royalties), campaign economics and decision framework (6-week minimum, regional-build arc), and practitioner insight on passive adds, promoter territory exclusivity, radio-sync reinforcement, and recoupability of promo costs"
+    },
+    {
+      "id": "sync-licensing-operations",
+      "path": "knowledge_bank/domains/label_ops/sync-licensing-operations.md",
+      "role": "sync-operations",
+      "required": true,
+      "description": "The dual-license requirement (synchronization license for composition; master use license for recording; both independently required; one-stop clearance advantage), placement type taxonomy with directional fee tiers (theatrical, TV/streaming, advertising, trailers, video games, social), gratis use protocol with decision rules by placement context, the pitch-to-placement pipeline (seven stages from brief to backend collection), clearance speed as competitive advantage (24-hour response discipline, pre-authorized fee tiers, stems delivery), one-sheet format (ten required elements, specificity discipline), stems management and retention policy, income collection timeline by income type (sync fee, PRO backend, SoundExchange), and practitioner insight on the sample trap, backend royalties as durable income, supervisor relationship risk, and international territorial fee scope"
+    },
+    {
+      "id": "physical-product-and-manufacturing",
+      "path": "knowledge_bank/domains/label_ops/physical-product-and-manufacturing.md",
+      "role": "physical-operations",
+      "required": true,
+      "description": "Vinyl manufacturing lead times and the capacity environment (12–20 weeks baseline; planning implication that physical must lead digital), test pressing protocol (TP review gate, rejection consequence), the pressing plant ecosystem (major US plants, European plants, direct vs. broker access), manufacturing cost drivers (run size as primary variable; weight, color, packaging, lacquer cutting), retail distribution structures (independent distributors/one-stops, major-affiliated, direct-to-store, DTC), consignment vs. buy/sell commercial terms and consignment cash-flow risk, returns risk and returns reserve accounting (15–25% of gross; sell-in vs. sell-through discipline), Record Store Day mechanics (submission timeline, exclusivity requirement, manufacturing lead time for RSD, over-pressing risk), CD and cassette economics by territory and channel, physical/digital release coordination and embargo considerations, and practitioner insight on vinyl mastering for loudness-compressed masters, color variant proliferation, inventory as cash liability, and the test pressing review gate"
     }
   ],
   "load_order": [
@@ -75,7 +96,10 @@
     "label-economics",
     "roster-coordination",
     "operations-systems-and-qc",
-    "judgment-and-triage"
+    "judgment-and-triage",
+    "radio-and-broadcast-promotion",
+    "sync-licensing-operations",
+    "physical-product-and-manufacturing"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external toolchains, rubric identifiers, sibling products, prior owning entities, or numbered-agent routing from any source material.",
