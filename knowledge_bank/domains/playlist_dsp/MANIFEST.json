@@ -57,6 +57,27 @@
       "role": "output-format",
       "required": true,
       "description": "Mandatory core (work product, decision summary, confidence), conditional-module matrix, three deliverable templates (Pitch Package, Strategy Memo, Post-Placement Read), refusal-with-next-step discipline, handoff boundaries and escalation flags"
+    },
+    {
+      "id": "algorithmic-optimization-mechanics",
+      "path": "knowledge_bank/domains/playlist_dsp/algorithmic-optimization-mechanics.md",
+      "role": "algorithmic-mechanics",
+      "required": true,
+      "description": "Algorithmic vs editorial access distinction, signal hierarchy (save rate, completion, early-skip, user-playlist adds, follow conversion, re-listen rate), source diversity as signal quality modifier, editorial-to-algorithmic amplification chain, pre-save mechanics and algorithmic value, release velocity and follower-reach gap requirements, discovery-enrollment royalty-reduction decision framework, cross-platform signal spillover, algorithm-hostile patterns"
+    },
+    {
+      "id": "playlist-health-vetting-playbook",
+      "path": "knowledge_bank/domains/playlist_dsp/playlist-health-vetting-playbook.md",
+      "role": "vetting-methodology",
+      "required": true,
+      "description": "Why vetting is non-negotiable (account risk, analytics corpus damage, enforcement asymmetry), publicly observable vs tool-gated signals, evidence hierarchy in vetting, seven-step vetting process (identity/association, fee-for-add, follower-to-stream ratio, growth trajectory, add-removal churn, geographic distribution, genre fit confirmation), vetting outcome states and pitch-permission consequences, target record maintenance, submission-review-fee nuanced case"
+    },
+    {
+      "id": "release-campaign-sequencing",
+      "path": "knowledge_bank/domains/playlist_dsp/release-campaign-sequencing.md",
+      "role": "campaign-sequencing",
+      "required": true,
+      "description": "Campaign arc (pre-release/release-window/post-release phases), cross-economy sequencing logic (independent first, editorial next, algorithmic at release), pre-release calendar T-8 to T-1 weeks, release week mechanics T+0 to T+7, post-release management T+8 to T+90, fast starter vs slow starter vs no-data protocols, multi-release catalog campaign management, campaign completion and prediction-log closure"
     }
   ],
   "load_order": [
@@ -67,7 +88,10 @@
     "dsp-platform-mechanics",
     "international-editorial",
     "scoring-rubric",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "algorithmic-optimization-mechanics",
+    "playlist-health-vetting-playbook",
+    "release-campaign-sequencing"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
