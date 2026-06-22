@@ -31,6 +31,20 @@
       "description": "Statement architecture (label and publisher), line-item interpretation, twelve-category anomaly-detection checklist, accounting-window analysis (lag vs suspicious), controlled-composition clause accounting, the soft audit as first-response tool, domain anti-patterns"
     },
     {
+      "id": "neighboring-rights-and-international-collection",
+      "path": "skills/maestro-royalty-doctor/knowledge/neighboring-rights-and-international-collection.md",
+      "role": "domain-advanced",
+      "required": false,
+      "description": "What neighboring rights are (distinct from copyright), US SoundExchange regime (digital only; no US terrestrial), SoundExchange 50/45/5 split, dual-account registration requirement, international territory-by-territory societies (PPL/GVL/SENA/Re:Sound/CPRA), sub-publishing mechanics and fee ranges, PRO reciprocal-agreement double-waterfall, international collection lag table, registration workflow checklists (SoundExchange and international), ISRC matching-key discipline, US terrestrial blind spot, unclaimed-fund search, withholding-tax flag"
+    },
+    {
+      "id": "music-finance-instruments-and-catalog-economics",
+      "path": "skills/maestro-royalty-doctor/knowledge/music-finance-instruments-and-catalog-economics.md",
+      "role": "domain-advanced",
+      "required": false,
+      "description": "Streaming economics (royalty pool, per-stream rate derivation, service-type tiers, major vs independent rate differences), recording deal structures (all-in royalty, net receipts, profit split, licensing, pass-through distribution), publishing advance recoupment mechanics (full pub vs co-pub), catalog-backed lending (LTV, debt service, lockbox, risks), catalog valuation (NPS multiple methodology, multiple ranges by catalog type, key value drivers, due-diligence checklist), advance vs sale decision framework, music income tax basics (self-employment tax, quarterly estimates, international withholding, 1099 reporting), deal-economics pre-signing checklist"
+    },
+    {
       "id": "output-templates",
       "path": "skills/maestro-royalty-doctor/knowledge/output-templates.md",
       "role": "output-format",
@@ -43,6 +57,8 @@
     "recovery-rubric",
     "royalty-pipeline-mechanics",
     "statement-analysis",
+    "neighboring-rights-and-international-collection",
+    "music-finance-instruments-and-catalog-economics",
     "output-templates"
   ],
   "notes": {
