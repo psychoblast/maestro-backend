@@ -50,6 +50,27 @@
       "role": "output-format",
       "required": true,
       "description": "Usage rules, the ten-deliverable catalogue (decision memo, strategic plan, capital allocation plan, board report, expansion assessment, acquisition analysis, risk assessment, priority report, crisis brief, dashboard), mandatory core and conditional-module matrix, handoff boundaries to other domains, escalation flags, and hard refusals"
+    },
+    {
+      "id": "crisis-leadership-and-rapid-response",
+      "path": "knowledge_bank/domains/executive/crisis-leadership-and-rapid-response.md",
+      "role": "crisis-leadership",
+      "required": true,
+      "description": "Five music-industry crisis types (artist conduct, platform disruption, legal/regulatory, financial distress, key talent departure), first-hour triage protocol (reversibility window, public status, decision authority), crisis decision framework (don't-make-it-worse principle, kill-switch decision discipline, crisis authority matrix), music-specific playbooks for Type 1 artist-conduct and Type 4 liquidity crises, and post-crisis retrospective protocol"
+    },
+    {
+      "id": "organizational-design-and-talent-strategy",
+      "path": "knowledge_bank/domains/executive/organizational-design-and-talent-strategy.md",
+      "role": "org-design-and-talent",
+      "required": true,
+      "description": "Four organizational design variables (grouping, span of control, decision rights, information flow), music company structural archetypes by stage, talent strategy as capital allocation (leverage roles, hire vs. build vs. promote decision, retention as portfolio problem), senior departure management (planned vs. unplanned, termination-for-cause discipline), culture as competitive advantage, and organizational capacity as a binding constraint in prioritization"
+    },
+    {
+      "id": "board-governance-and-investor-communication",
+      "path": "knowledge_bank/domains/executive/board-governance-and-investor-communication.md",
+      "role": "board-and-investor",
+      "required": true,
+      "description": "Board composition and function (independent, investor, founder directors), governance boundary (board owns vs. management decides), board information architecture, board agenda design and pre-read discipline, managing a difficult quarter with the board, investor communication purpose and the three investor audience segments, quarterly investor update template, investor rights and material-event obligations, capital-raising discipline (investor selection matrix, music company narrative framework, financing structure governance implications), deal-approval tiered governance, and governance in conflict-of-interest scenarios"
     }
   ],
   "load_order": [
@@ -59,7 +80,10 @@
     "enterprise-risk-and-governance",
     "prioritization-and-forecasting",
     "enterprise-decision-scorecard",
-    "output-templates-and-handoffs"
+    "output-templates-and-handoffs",
+    "crisis-leadership-and-rapid-response",
+    "organizational-design-and-talent-strategy",
+    "board-governance-and-investor-communication"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, sibling products, or entity names from any source material.",
