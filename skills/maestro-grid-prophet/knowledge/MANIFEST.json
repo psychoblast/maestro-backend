@@ -50,6 +50,20 @@
       "role": "pr-doctrine",
       "required": false,
       "description": "Press tier architecture, pitch format mechanics, pitch construction framework, PR infrastructure decision, Canada-specific outlets, EPK standards"
+    },
+    {
+      "id": "marketing-analytics-and-attribution",
+      "path": "skills/maestro-grid-prophet/knowledge/marketing-analytics-and-attribution.md",
+      "role": "analytics-doctrine",
+      "required": true,
+      "description": "Full measurement stack (reach/engagement/conversion/LTV layers), UTM taxonomy, attribution model selection and bias, pixel and tracking architecture, streaming attribution windows, decision-grade vs. vanity metrics, campaign post-mortem framework, dashboard architecture, and structural anti-patterns in music marketing analytics"
+    },
+    {
+      "id": "release-strategy-decisions",
+      "path": "skills/maestro-grid-prophet/knowledge/release-strategy-decisions.md",
+      "role": "release-strategy",
+      "required": true,
+      "description": "Release format decision framework (single vs. EP vs. album by career phase), release cadence logic and anti-patterns, release timing decisions (day-of-week, seasonal windows, competition avoidance), multi-release arc sequencing (lead single criteria, follow-up single criteria, album announcement timing), and the premature album announcement pitfall"
     }
   ],
   "load_order": [
@@ -59,7 +73,9 @@
     "output-templates",
     "social-community",
     "content-and-lifecycle",
-    "pr-press-strategy"
+    "pr-press-strategy",
+    "marketing-analytics-and-attribution",
+    "release-strategy-decisions"
   ],
   "notes": {
     "entity_wall": "These files are PLMKR-owned originals. Do not reference external sources, rubric identifiers, or entity names from source material.",
