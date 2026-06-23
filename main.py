@@ -1100,6 +1100,7 @@ async def _generic_error_handler(request: Request, exc: Exception):
     )
 
 # ── Phase 1 — Pitch service (Gmail, curators, pitch tracking) ─────────────────
+import pitch_service  # noqa: E402  (module ref for Marcus tool_use handlers, Unit 1.7)
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
 
@@ -1524,6 +1525,129 @@ async def handoff(
 
     return {"reply": reply, "audio": audio_b64}
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Unit 1.7 — Marcus (puppet-master) tool_use: search_curators + send_pitch_email
+# ═══════════════════════════════════════════════════════════════════════════════
+# These tools are passed to the Anthropic API for the puppet-master agent ONLY
+# (see the gate in chat_stream). Every other agent takes the unchanged text-stream
+# path and never receives `tools`. Handlers map straight onto EXISTING pitch_service
+# functions — they do not reimplement curator search or email sending.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+MARCUS_MAX_TOOL_ITERS = 5
+
+MARCUS_TOOLS = [
+    {
+        "name": "search_curators",
+        "description": "Search curator database by genre, platform, or follower count",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "platform": {"type": "string", "enum": ["spotify", "apple_music", "youtube"]},
+                "min_followers": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "send_pitch_email",
+        "description": "Draft and send a pitch email to a curator on behalf of the artist",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "curator_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["curator_id", "subject", "body"],
+        },
+    },
+]
+
+
+async def _execute_marcus_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Marcus tool call against existing pitch_service functions.
+
+    Returns (result_for_model, action_summary, gmail_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions_taken SSE event.
+      - gmail_not_connected: True when the send was blocked on missing/expired Gmail auth.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Marcus can explain the outcome to the artist.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_curators":
+        genre = (tool_input.get("genre") or "").strip()
+        # The curators table is keyed on genre/tier (no platform/followers columns),
+        # so platform/min_followers are accepted per the schema but not used to filter.
+        rows = pitch_service._db_list_curators(genre=genre)
+        curators = [
+            {
+                "id": r.get("id"),
+                "name": r.get("name"),
+                "outlet": r.get("outlet", ""),
+                "genres": r.get("genres", []),
+                "tier": r.get("tier", ""),
+                "email": r.get("contact_email", ""),
+            }
+            for r in rows[:20]
+        ]
+        result = {"curators": curators, "count": len(rows)}
+        summary = {
+            "input": f"genre={genre or 'any'}",
+            "result": f"{len(rows)} curator(s) found",
+        }
+        return result, summary, False
+
+    if name == "send_pitch_email":
+        curator_id = (tool_input.get("curator_id") or "").strip()
+        subject    = tool_input.get("subject") or ""
+        body       = tool_input.get("body") or ""
+        curator    = pitch_service._db_get_curator(curator_id)
+        if not curator:
+            return (
+                {"error": "curator_not_found", "curator_id": curator_id},
+                {"input": f"curator_id={curator_id}", "result": "curator not found"},
+                False,
+            )
+        to = curator.get("contact_email", "")
+        cname = curator.get("name", curator_id)
+        try:
+            sent = await pitch_service.send_email(artist_id, to, subject, body)
+            return (
+                {"status": "sent", "message_id": sent.get("message_id"), "curator": cname},
+                {"input": f"curator={cname} subject={subject[:40]}", "result": "email sent"},
+                False,
+            )
+        except pitch_service.GmailNotConnected:
+            return (
+                {
+                    "gmail_not_connected": True,
+                    "message": ("Artist has not connected Gmail. Tell them to connect it at "
+                                "/api/gmail/auth before you can send pitches."),
+                },
+                {"input": f"curator={cname}", "result": "gmail_not_connected"},
+                True,
+            )
+        except pitch_service.GmailAuthExpired:
+            return (
+                {
+                    "gmail_not_connected": True,
+                    "message": ("Gmail authorization expired. Tell the artist to re-connect at "
+                                "/api/gmail/auth before you can send pitches."),
+                },
+                {"input": f"curator={cname}", "result": "gmail_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
 class ChatStreamRequest(BaseModel):
     agent_id:  str
     message:   str
@@ -1732,8 +1856,182 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_marcus():
+        # Marcus-only path (Unit 1.7): a standard Anthropic tool_use loop. Runs the
+        # non-streaming messages.create with tools=MARCUS_TOOLS, executes each emitted
+        # tool_use against pitch_service, feeds tool_result back, and repeats (capped at
+        # MARCUS_MAX_TOOL_ITERS) until Marcus returns a final text answer. The final
+        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
+        # the default path uses, so the call UI behaves identically aside from the new
+        # `actions` event. Every other agent never reaches here.
+        full_text          = ""
+        actions_taken      = []
+        gmail_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _marcus_producer():
+            nonlocal full_text, actions_taken, gmail_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(MARCUS_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=MARCUS_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, gnc = await _execute_marcus_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if gnc:
+                                gmail_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_marcus_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Marcus took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                "actions",
+                "actions_taken":       actions_taken,
+                "gmail_not_connected": gmail_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    # Gate: Marcus (puppet-master) takes the tool_use path; every other agent takes
+    # the unchanged streaming `generate()` path above.
+    _stream_gen = generate_marcus if agent_id == "puppet-master" else generate
     return StreamingResponse(
-        generate(),
+        _stream_gen(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
