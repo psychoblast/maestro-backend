@@ -141,6 +141,71 @@ def test_list_curators_filter_genre(ps):
     assert len(results_miss) == 0
 
 
+def test_list_curators_filter_platform(ps):
+    ps._db_upsert_curator({
+        "id": "cur-spotify", "name": "Spotify Curator", "genres": ["indie"],
+        "tier": "B", "contact_email": "s@example.com", "platform": "spotify",
+        "followers": 1000,
+    })
+    ps._db_upsert_curator({
+        "id": "cur-apple", "name": "Apple Curator", "genres": ["indie"],
+        "tier": "B", "contact_email": "a@example.com", "platform": "apple_music",
+        "followers": 1000,
+    })
+    spotify = ps._db_list_curators(platform="spotify")
+    assert [c["id"] for c in spotify] == ["cur-spotify"]
+    assert all(c["platform"] == "spotify" for c in spotify)
+    # Non-matching platform returns zero rows.
+    assert ps._db_list_curators(platform="youtube") == []
+
+
+def test_list_curators_filter_min_followers(ps):
+    ps._db_upsert_curator({
+        "id": "cur-small", "name": "Small Curator", "genres": ["indie"],
+        "tier": "B", "contact_email": "small@example.com", "platform": "spotify",
+        "followers": 500,
+    })
+    ps._db_upsert_curator({
+        "id": "cur-big", "name": "Big Curator", "genres": ["indie"],
+        "tier": "B", "contact_email": "big@example.com", "platform": "spotify",
+        "followers": 50000,
+    })
+    # All curators when threshold not set.
+    assert len(ps._db_list_curators()) == 2
+    # Threshold filters out the small curator.
+    big = ps._db_list_curators(min_followers=10000)
+    assert [c["id"] for c in big] == ["cur-big"]
+    assert all(c["followers"] >= 10000 for c in big)
+    # Threshold above everyone returns zero rows.
+    assert ps._db_list_curators(min_followers=100000) == []
+
+
+def test_list_curators_filter_platform_and_min_followers_combined(ps):
+    ps._db_upsert_curator({
+        "id": "cur-match", "name": "Match", "genres": ["indie"], "tier": "B",
+        "contact_email": "m@example.com", "platform": "spotify", "followers": 8000,
+    })
+    ps._db_upsert_curator({
+        "id": "cur-wrong-platform", "name": "WrongPlat", "genres": ["indie"],
+        "tier": "B", "contact_email": "wp@example.com", "platform": "youtube",
+        "followers": 8000,
+    })
+    ps._db_upsert_curator({
+        "id": "cur-too-small", "name": "TooSmall", "genres": ["indie"], "tier": "B",
+        "contact_email": "ts@example.com", "platform": "spotify", "followers": 100,
+    })
+    results = ps._db_list_curators(platform="spotify", min_followers=5000)
+    assert [c["id"] for c in results] == ["cur-match"]
+
+
+def test_curator_defaults_platform_and_followers(ps):
+    # Curators seeded without platform/followers default to spotify / 0.
+    _seed_curator(ps)
+    fetched = ps._db_get_curator("cur-test-001")
+    assert fetched["platform"]  == "spotify"
+    assert fetched["followers"] == 0
+
+
 # ── 1.3 Pitch CRUD ───────────────────────────────────────────────────────────
 
 def test_create_and_get_pitch(ps):
