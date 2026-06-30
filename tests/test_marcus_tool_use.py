@@ -90,7 +90,7 @@ def test_marcus_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_p
     # Record calls into the existing pitch_service functions.
     list_calls, get_calls, send_calls = [], [], []
 
-    def fake_list_curators(genre="", tier=""):
+    def fake_list_curators(genre="", tier="", platform="", min_followers=0):
         list_calls.append({"genre": genre, "tier": tier})
         return [{
             "id": "cur-1", "name": "Test Curator", "outlet": "PlaylistX",
@@ -246,3 +246,50 @@ def test_marcus_gmail_not_connected_is_handled(monkeypatch, tmp_path):
     actions_evt = next(e for e in events if e["type"] == "actions")
     assert actions_evt["gmail_not_connected"] is True
     assert actions_evt["actions_taken"][0]["result"] == "gmail_not_connected"
+
+
+# ── (d) search_curators forwards platform + min_followers to _db_list_curators ─
+
+def test_marcus_search_curators_forwards_platform_and_min_followers(monkeypatch, tmp_path):
+    m = _load_main(monkeypatch, tmp_path)
+
+    list_calls = []
+
+    def fake_list_curators(genre="", tier="", platform="", min_followers=0):
+        list_calls.append({
+            "genre": genre, "tier": tier,
+            "platform": platform, "min_followers": min_followers,
+        })
+        return []
+
+    monkeypatch.setattr(m.pitch_service, "_db_list_curators", fake_list_curators)
+
+    responses = [
+        _Resp([_Block("tool_use", name="search_curators",
+                      input={"genre": "indie", "platform": "spotify",
+                             "min_followers": 5000}, id="t1")], "tool_use"),
+        _Resp([_Block("text", text="Here are the curators I found.")], "end_turn"),
+    ]
+    create_calls = []
+
+    async def fake_create(**kwargs):
+        create_calls.append(kwargs)
+        return responses[len(create_calls) - 1]
+
+    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
+
+    client = TestClient(m.app)
+    resp = client.post("/api/chat_stream", json={
+        "agent_id":  "puppet-master",
+        "message":   "find indie spotify curators with at least 5000 followers",
+        "artist_id": "artist-9",
+        "history":   "[]",
+        "tts":       False,
+    })
+    assert resp.status_code == 200
+
+    # platform + min_followers from tool_input reached _db_list_curators intact.
+    assert list_calls == [{
+        "genre": "indie", "tier": "",
+        "platform": "spotify", "min_followers": 5000,
+    }], list_calls

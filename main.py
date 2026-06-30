@@ -1579,9 +1579,14 @@ async def _execute_marcus_tool(name: str, tool_input: dict, artist_id: str) -> t
 
     if name == "search_curators":
         genre = (tool_input.get("genre") or "").strip()
-        # The curators table is keyed on genre/tier (no platform/followers columns),
-        # so platform/min_followers are accepted per the schema but not used to filter.
-        rows = pitch_service._db_list_curators(genre=genre)
+        platform = (tool_input.get("platform") or "").strip()
+        try:
+            min_followers = int(tool_input.get("min_followers") or 0)
+        except (TypeError, ValueError):
+            min_followers = 0
+        rows = pitch_service._db_list_curators(
+            genre=genre, platform=platform, min_followers=min_followers
+        )
         curators = [
             {
                 "id": r.get("id"),
@@ -1595,7 +1600,7 @@ async def _execute_marcus_tool(name: str, tool_input: dict, artist_id: str) -> t
         ]
         result = {"curators": curators, "count": len(rows)}
         summary = {
-            "input": f"genre={genre or 'any'}",
+            "input": f"genre={genre or 'any'}, platform={platform or 'any'}, min_followers={min_followers}",
             "result": f"{len(rows)} curator(s) found",
         }
         return result, summary, False

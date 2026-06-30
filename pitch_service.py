@@ -76,6 +76,8 @@ def init_pitch_db():
             notes           TEXT DEFAULT '',
             last_pitched_at TEXT,
             response_rate   REAL DEFAULT 0.0,
+            platform        TEXT DEFAULT 'spotify',
+            followers       INTEGER DEFAULT 0,
             created_at      TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S','now'))
         )
     """)
@@ -126,6 +128,19 @@ def init_pitch_db():
         except sqlite3.OperationalError as e:
             if "duplicate column name" not in str(e).lower():
                 raise RuntimeError(f"Migration failure on table pitches: {e}") from e
+    existing_curator_cols = {r[1] for r in conn.execute("PRAGMA table_info(curators)").fetchall()}
+    if "platform" not in existing_curator_cols:
+        try:
+            conn.execute("ALTER TABLE curators ADD COLUMN platform TEXT DEFAULT 'spotify'")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise RuntimeError(f"Migration failure on table curators: {e}") from e
+    if "followers" not in existing_curator_cols:
+        try:
+            conn.execute("ALTER TABLE curators ADD COLUMN followers INTEGER DEFAULT 0")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise RuntimeError(f"Migration failure on table curators: {e}") from e
     conn.commit()
     conn.close()
     log.info("db_ready", extra={"event": "db_ready", "svc": "pitch_service"})
@@ -479,15 +494,20 @@ def _curator_row_to_dict(row, cols) -> dict:
     return d
 
 
-def _db_list_curators(genre: str = "", tier: str = "") -> list[dict]:
+def _db_list_curators(genre: str = "", tier: str = "",
+                      platform: str = "", min_followers: int = 0) -> list[dict]:
     cols  = ["id","name","outlet","genres","tier","contact_email",
-             "notes","last_pitched_at","response_rate","created_at"]
+             "notes","last_pitched_at","response_rate","platform","followers","created_at"]
     conn  = sqlite3.connect(str(_DB_PATH))
     cur   = conn.cursor()
     q     = f"SELECT {','.join(cols)} FROM curators WHERE 1=1"
     params: list = []
     if tier:
         q += " AND tier=?";  params.append(tier)
+    if platform:
+        q += " AND platform=?";  params.append(platform)
+    if min_followers > 0:
+        q += " AND followers>=?";  params.append(min_followers)
     if genre:
         # Tokenise compound genres ("indie pop" → ["indie", "pop"]) so that a
         # curator whose genres JSON contains "indie" and "pop" as separate tokens
@@ -504,7 +524,7 @@ def _db_list_curators(genre: str = "", tier: str = "") -> list[dict]:
 
 def _db_get_curator(curator_id: str) -> dict:
     cols = ["id","name","outlet","genres","tier","contact_email",
-            "notes","last_pitched_at","response_rate","created_at"]
+            "notes","last_pitched_at","response_rate","platform","followers","created_at"]
     conn = sqlite3.connect(str(_DB_PATH))
     cur  = conn.cursor()
     cur.execute(f"SELECT {','.join(cols)} FROM curators WHERE id=?", (curator_id,))
@@ -517,13 +537,14 @@ def _db_upsert_curator(c: dict):
     conn = sqlite3.connect(str(_DB_PATH))
     conn.execute(
         """INSERT OR REPLACE INTO curators
-           (id, name, outlet, genres, tier, contact_email, notes, last_pitched_at, response_rate)
-           VALUES (?,?,?,?,?,?,?,?,?)""",
+           (id, name, outlet, genres, tier, contact_email, notes, last_pitched_at, response_rate, platform, followers)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
         (
             c["id"], c["name"], c.get("outlet", ""),
             json.dumps(c.get("genres", [])), c.get("tier", "C"),
             c["contact_email"], c.get("notes", ""),
             c.get("last_pitched_at"), c.get("response_rate", 0.0),
+            c.get("platform", "spotify"), c.get("followers", 0),
         ),
     )
     conn.commit()
@@ -615,6 +636,8 @@ class CuratorIn(BaseModel):
     contact_email: str
     notes: str = ""
     response_rate: float = 0.0
+    platform: str = "spotify"
+    followers: int = 0
 
 
 class CuratorPatch(BaseModel):
@@ -625,6 +648,8 @@ class CuratorPatch(BaseModel):
     contact_email: Optional[str] = None
     notes: Optional[str] = None
     response_rate: Optional[float] = None
+    platform: Optional[str] = None
+    followers: Optional[int] = None
 
 
 @router.get("/api/curators", tags=["curators"])
