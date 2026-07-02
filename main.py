@@ -1139,6 +1139,7 @@ import collab_connect_service  # noqa: E402  (module ref for Collab/collab-conne
 import audio_quality_service  # noqa: E402  (module ref for Audio/audio-quality tool_use handlers)
 import artist_wellness_service  # noqa: E402  (module ref for Maya/artist-wellness tool_use handlers)
 import ai_navigator_service  # noqa: E402  (module ref for Neo/ai-navigator tool_use handlers)
+import social_service  # noqa: E402  (module ref for Riley/social-manager tool_use handlers)
 import booking_service  # noqa: E402  (module ref for Avery/booking-agent tool_use handlers)
 import pr_service  # noqa: E402  (module ref for Quinn/pr-agent tool_use handlers)
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
@@ -7321,6 +7322,133 @@ async def _execute_booking_agent_tool(name: str, tool_input: dict, artist_id: st
         return (
             {"status": "queued", "inquiry_id": iid},
             {"input": f"contact={contact_id} subject={subject}", "result": "inquiry queued"},
+            False,
+        )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Riley (social-manager) tool_use: list_social_posts + draft_social_post
+#            + schedule_post
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) pattern, but wired to the REAL social_service
+# functions (DB-backed, zero network). Passed to the Anthropic API for the
+# social-manager ONLY (see the gate in chat_stream); every other agent takes its
+# own unchanged path and never receives SOCIAL_MANAGER_TOOLS. The schedule action
+# is gated on the artist's real Buffer connection (social_service._load_buffer_tokens)
+# so a missing/expired Buffer link degrades gracefully instead of hitting a wire.
+
+SOCIAL_MANAGER_MAX_TOOL_ITERS = 5
+
+SOCIAL_MANAGER_TOOLS = [
+    {
+        "name": "list_social_posts",
+        "description": "List the artist's social posts, optionally filtered by platform or status",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string"},
+                "status": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "draft_social_post",
+        "description": "Create a draft social post for the artist",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string"},
+                "content": {"type": "string"},
+                "scheduled_at": {"type": "string"},
+            },
+            "required": ["platform", "content"],
+        },
+    },
+    {
+        "name": "schedule_post",
+        "description": "Schedule a drafted post via the artist's connected Buffer account",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "post_id": {"type": "string"},
+            },
+            "required": ["post_id"],
+        },
+    },
+]
+
+
+async def _execute_social_manager_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Riley tool call against the REAL social_service (DB-backed, no network)."""
+    tool_input = dict(tool_input or {})
+
+    if name == "list_social_posts":
+        platform = (tool_input.get("platform") or "").strip()
+        status   = (tool_input.get("status") or "").strip()
+        posts = social_service._db_list_posts(artist_id, platform=platform, status=status)
+        res = {"posts": posts, "count": len(posts)}
+        summary = {
+            "input": f"platform={platform or 'any'} status={status or 'any'}",
+            "result": f"{len(posts)} post(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_social_post":
+        platform = (tool_input.get("platform") or "").strip()
+        content  = tool_input.get("content") or ""
+        sched    = (tool_input.get("scheduled_at") or "").strip()
+        if not platform or not content:
+            return (
+                {"error": "missing_platform_or_content"},
+                {"input": f"platform={platform or 'none'}", "result": "missing platform or content"},
+                False,
+            )
+        pid = "sp-" + hashlib.sha1(f"{artist_id}:{platform}:{content}".encode("utf-8")).hexdigest()[:10]
+        social_service._db_create_post({
+            "id": pid, "artist_id": artist_id, "platform": platform,
+            "content": content, "status": "draft", "scheduled_at": sched or None,
+        })
+        return (
+            {"status": "drafted", "post_id": pid},
+            {"input": f"platform={platform} chars={len(content)}", "result": "post drafted"},
+            False,
+        )
+
+    if name == "schedule_post":
+        post_id = (tool_input.get("post_id") or "").strip()
+        if not post_id:
+            return (
+                {"error": "missing_post_id"},
+                {"input": "post_id=", "result": "missing post id"},
+                False,
+            )
+        tokens = social_service._load_buffer_tokens(artist_id) or {}
+        if not tokens:
+            return (
+                {"not_connected": True,
+                 "message": ("Artist has not connected a Buffer account. Tell them to connect one "
+                             "before you can schedule posts.")},
+                {"input": f"post={post_id}", "result": "not_connected"},
+                True,
+            )
+        if tokens.get("expired"):
+            return (
+                {"not_connected": True,
+                 "message": ("Buffer authorization expired. Tell the artist to re-connect before you "
+                             "can schedule posts.")},
+                {"input": f"post={post_id}", "result": "auth_expired"},
+                True,
+            )
+        social_service._db_update_post(post_id, {"status": "scheduled"})
+        return (
+            {"status": "scheduled", "post_id": post_id},
+            {"input": f"post={post_id}", "result": "post scheduled"},
             False,
         )
 
@@ -14549,6 +14677,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_social_manager():
+        # social-manager-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # SOCIAL_MANAGER_TOOLS / _execute_social_manager_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against social_service, feeds
+        # tool_result back, and repeats (capped at SOCIAL_MANAGER_MAX_TOOL_ITERS) until
+        # Riley returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _social_manager_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(SOCIAL_MANAGER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=SOCIAL_MANAGER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_social_manager_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_social_manager_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -14639,6 +14934,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_pr_agent
     elif agent_id == "booking-agent":
         _stream_gen = generate_booking_agent
+    elif agent_id == "social-manager":
+        _stream_gen = generate_social_manager
     else:
         _stream_gen = generate
     return StreamingResponse(
