@@ -219,7 +219,7 @@ def test_non_data_oracle_agent_never_receives_data_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT data-oracle, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT data-oracle, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

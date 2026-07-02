@@ -219,7 +219,7 @@ def test_non_border_agent_never_receives_border_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT border-royalty, NOT rights-pulse, NOT fund-phantom, NOT lex-cipher, NOT puppet-master
+        "agent_id":  "music-edu",   # NOT border-royalty, NOT rights-pulse, NOT fund-phantom, NOT lex-cipher, NOT puppet-master
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

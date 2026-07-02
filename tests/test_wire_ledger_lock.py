@@ -222,7 +222,7 @@ def test_non_ledger_agent_never_receives_ledger_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT ledger-lock, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT ledger-lock, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

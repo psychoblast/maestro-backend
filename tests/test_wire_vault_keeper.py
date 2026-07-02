@@ -221,7 +221,7 @@ def test_non_vault_agent_never_receives_vault_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT vault-keeper, NOT mech-ledger, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT vault-keeper, NOT mech-ledger, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

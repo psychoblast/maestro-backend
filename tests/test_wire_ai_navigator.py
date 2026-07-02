@@ -186,7 +186,7 @@ def test_non_navigator_agent_never_receives_navigator_tools(monkeypatch, tmp_pat
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",
+        "agent_id":  "music-edu",
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

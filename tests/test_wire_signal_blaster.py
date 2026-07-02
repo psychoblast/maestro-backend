@@ -224,7 +224,7 @@ def test_non_signal_agent_never_receives_signal_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT signal-blaster, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT signal-blaster, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

@@ -224,7 +224,7 @@ def test_non_creative_director_agent_never_receives_cree_tools(monkeypatch, tmp_
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT creative-director, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT creative-director, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

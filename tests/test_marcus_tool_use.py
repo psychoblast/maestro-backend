@@ -183,7 +183,7 @@ def test_non_marcus_agent_never_receives_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT puppet-master
+        "agent_id":  "music-edu",   # NOT puppet-master
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

@@ -226,7 +226,7 @@ def test_non_design_agent_never_receives_design_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT design-studio, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT design-studio, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",

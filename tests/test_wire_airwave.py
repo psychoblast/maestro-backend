@@ -217,7 +217,7 @@ def test_non_airwave_agent_never_receives_airwave_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",   # NOT airwave, NOT any tool-loop agent
+        "agent_id":  "music-edu",   # NOT airwave, NOT any tool-loop agent
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",
