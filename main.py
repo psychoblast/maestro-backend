@@ -1139,6 +1139,7 @@ import collab_connect_service  # noqa: E402  (module ref for Collab/collab-conne
 import audio_quality_service  # noqa: E402  (module ref for Audio/audio-quality tool_use handlers)
 import artist_wellness_service  # noqa: E402  (module ref for Maya/artist-wellness tool_use handlers)
 import ai_navigator_service  # noqa: E402  (module ref for Neo/ai-navigator tool_use handlers)
+import pr_service  # noqa: E402  (module ref for Quinn/pr-agent tool_use handlers)
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
 
@@ -7026,6 +7027,157 @@ async def _execute_video_director_tool(name: str, tool_input: dict, artist_id: s
                 {"input": f"project_title={nm}", "result": "auth_expired"},
                 True,
             )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Quinn (pr-agent) tool_use: list_pr_contacts + log_pr_outreach + send_pr_pitch
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) pattern, but wired to the REAL pr_service functions
+# (DB-backed, zero network). These tools are passed to the Anthropic API for the
+# pr-agent ONLY (see the gate in chat_stream); every other agent takes its own
+# unchanged path and never receives PR_AGENT_TOOLS. The send action is gated on a
+# Gmail-connection check (env-driven, mock — mirrors lex's registry check) so a
+# missing/expired credential degrades gracefully instead of hitting a wire.
+
+PR_AGENT_MAX_TOOL_ITERS = 5
+
+
+def _pr_gmail_state() -> str:
+    """Mock Gmail-connection state for pr-agent sends (env-driven, ZERO network).
+
+    Values: "expired" → expired; "1"/"true"/"yes"/"connected" → connected;
+    anything else / unset → not connected.
+    """
+    val = (os.environ.get("PR_GMAIL_CONNECTED", "") or "").strip().lower()
+    if val == "expired":
+        return "expired"
+    return "connected" if val in ("1", "true", "yes", "connected") else "not_connected"
+
+
+PR_AGENT_TOOLS = [
+    {
+        "name": "list_pr_contacts",
+        "description": "Search the PR contact database by genre, tier, or outlet type",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "tier": {"type": "string", "enum": ["A", "B", "C"]},
+                "outlet_type": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "log_pr_outreach",
+        "description": "Log a draft PR outreach for a contact in the outreach database",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "contact_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["contact_id", "subject"],
+        },
+    },
+    {
+        "name": "send_pr_pitch",
+        "description": "Queue a PR pitch to a contact via the artist's connected Gmail account",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "contact_id": {"type": "string"},
+                "subject": {"type": "string"},
+            },
+            "required": ["contact_id"],
+        },
+    },
+]
+
+
+async def _execute_pr_agent_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Quinn tool call against the REAL pr_service (DB-backed, no network).
+
+    Returns (result_for_model, action_summary, not_connected). Never raises.
+    Mirrors _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "list_pr_contacts":
+        genre       = (tool_input.get("genre") or "").strip()
+        tier        = (tool_input.get("tier") or "").strip()
+        outlet_type = (tool_input.get("outlet_type") or "").strip()
+        contacts = pr_service._db_list_pr_contacts(genre=genre, tier=tier, outlet_type=outlet_type)
+        res = {"contacts": contacts, "count": len(contacts)}
+        summary = {
+            "input": f"genre={genre or 'any'} tier={tier or 'any'} outlet={outlet_type or 'any'}",
+            "result": f"{len(contacts)} contact(s) found",
+        }
+        return res, summary, False
+
+    if name == "log_pr_outreach":
+        contact_id = (tool_input.get("contact_id") or "").strip()
+        subject    = (tool_input.get("subject") or "").strip()
+        body       = tool_input.get("body") or ""
+        if not contact_id or not subject:
+            return (
+                {"error": "missing_contact_or_subject"},
+                {"input": f"contact={contact_id or 'none'}", "result": "missing contact or subject"},
+                False,
+            )
+        oid = "pro-" + hashlib.sha1(f"{artist_id}:{contact_id}:{subject}".encode("utf-8")).hexdigest()[:10]
+        pr_service._db_create_pr_outreach({
+            "id": oid, "artist_id": artist_id, "contact_id": contact_id,
+            "status": "draft", "subject": subject, "body": body,
+        })
+        return (
+            {"status": "logged", "outreach_id": oid},
+            {"input": f"contact={contact_id}", "result": "outreach logged"},
+            False,
+        )
+
+    if name == "send_pr_pitch":
+        contact_id = (tool_input.get("contact_id") or "").strip()
+        subject    = (tool_input.get("subject") or "PR Pitch").strip()
+        if not contact_id:
+            return (
+                {"error": "missing_contact_id"},
+                {"input": "contact_id=", "result": "missing contact id"},
+                False,
+            )
+        state = _pr_gmail_state()
+        if state == "not_connected":
+            return (
+                {"not_connected": True,
+                 "message": ("Artist has not connected a Gmail account. Tell them to connect one "
+                             "before you can send PR pitches.")},
+                {"input": f"contact={contact_id}", "result": "not_connected"},
+                True,
+            )
+        if state == "expired":
+            return (
+                {"not_connected": True,
+                 "message": ("Gmail authorization expired. Tell the artist to re-connect before you "
+                             "can send PR pitches.")},
+                {"input": f"contact={contact_id}", "result": "auth_expired"},
+                True,
+            )
+        oid = "prs-" + hashlib.sha1(f"{artist_id}:{contact_id}:{subject}".encode("utf-8")).hexdigest()[:10]
+        pr_service._db_create_pr_outreach({
+            "id": oid, "artist_id": artist_id, "contact_id": contact_id,
+            "status": "queued", "subject": subject, "body": "",
+        })
+        return (
+            {"status": "queued", "outreach_id": oid},
+            {"input": f"contact={contact_id} subject={subject}", "result": "pitch queued"},
+            False,
+        )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -13918,6 +14070,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_pr_agent():
+        # pr-agent-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # PR_AGENT_TOOLS / _execute_pr_agent_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against pr_service, feeds
+        # tool_result back, and repeats (capped at PR_AGENT_MAX_TOOL_ITERS) until
+        # Quinn returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _pr_agent_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(PR_AGENT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=PR_AGENT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_pr_agent_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_pr_agent_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -14004,6 +14323,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_storefront
     elif agent_id == "video-director":
         _stream_gen = generate_video_director
+    elif agent_id == "pr-agent":
+        _stream_gen = generate_pr_agent
     else:
         _stream_gen = generate
     return StreamingResponse(
