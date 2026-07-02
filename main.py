@@ -1124,6 +1124,7 @@ import creative_director_service  # noqa: E402  (module ref for Cree/creative-di
 import data_oracle_service  # noqa: E402  (module ref for Data/data-oracle tool_use handlers)
 import ar_scout_service  # noqa: E402  (module ref for Scout/ar-scout tool_use handlers)
 import producer_connect_service  # noqa: E402  (module ref for Beat/producer-connect tool_use handlers)
+import storefront_service  # noqa: E402  (module ref for Store/storefront tool_use handlers)
 import schedule_keeper_service  # noqa: E402  (module ref for Cal/schedule-keeper tool_use handlers)
 import royalty_doctor_service  # noqa: E402  (module ref for Doc/royalty-doctor tool_use handlers)
 import press_monitor_service  # noqa: E402  (module ref for Press/press-monitor tool_use handlers)
@@ -6774,6 +6775,130 @@ async def _execute_schedule_keeper_tool(name: str, tool_input: dict, artist_id: 
                                 "before you can complete this action."),
                 },
                 {"input": f"event_title={nm}", "result": "auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Store (storefront) tool_use: search_product_types + assess_pricing + publish_store_product
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
+# passed to the Anthropic API for the storefront agent ONLY (see the gate in
+# chat_stream). Every other agent takes its own unchanged path and never receives
+# STOREFRONT_TOOLS. Handlers map straight onto the mock-first storefront_service functions;
+# they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+STOREFRONT_MAX_TOOL_ITERS = 5
+
+STOREFRONT_TOOLS = [
+    {
+        "name": "search_product_types",
+        "description": "Search direct-to-fan product types by category or format",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {"type": "string", "enum": ['music', 'merch', 'membership', 'experience']},
+                "format": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "assess_pricing",
+        "description": "Screen pricing notes for margin and positioning issues",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pricing_notes": {"type": "string"},
+                "context": {"type": "string"},
+            },
+            "required": ["pricing_notes"],
+        },
+    },
+    {
+        "name": "publish_store_product",
+        "description": "Publish a product to the connected fan store",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_title": {"type": "string"},
+                "store": {"type": "string", "enum": ['main', 'vip', 'preorder']},
+            },
+            "required": ["product_title"],
+        },
+    },
+]
+
+
+async def _execute_storefront_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Store tool call against the mock-first storefront_service.
+
+    Returns (result_for_model, action_summary, not_connected). Never raises —
+    every failure is converted into a structured tool_result so the loop can
+    continue. Mirrors _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_product_types":
+        a = (tool_input.get("category") or "").strip()
+        b = (tool_input.get("format") or "").strip()
+        res = await storefront_service.search_product_types(category=a, format=b)
+        summary = {
+            "input": f"category={a or 'any'} format={b or 'any'}",
+            "result": f"{res['count']} product type(s) found",
+        }
+        return res, summary, False
+
+    if name == "assess_pricing":
+        txt = tool_input.get("pricing_notes") or ""
+        ctx = (tool_input.get("context") or "").strip()
+        res = await storefront_service.assess_pricing(artist_id, pricing_notes=txt, context=ctx)
+        summary = {
+            "input": f"context={ctx or 'unspecified'} chars={len(txt)}",
+            "result": f"{res['finding_count']} issue(s), {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "publish_store_product":
+        nm  = (tool_input.get("product_title") or "").strip()
+        opt = (tool_input.get("store") or "main").strip()
+        if not nm:
+            return (
+                {"error": "missing_product_title"},
+                {"input": "product_title=", "result": "missing product_title"},
+                False,
+            )
+        try:
+            done = await storefront_service.publish_store_product(artist_id, nm, opt)
+            return (
+                {"status": "done", "reference": done.get("reference"), "product_title": nm},
+                {"input": f"product_title={nm} store={opt}", "result": "product published"},
+                False,
+            )
+        except storefront_service.StoreAccountNotConnected:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Artist has not connected a fan-store account. Tell them to connect one "
+                                "before you can complete this action."),
+                },
+                {"input": f"product_title={nm}", "result": "not_connected"},
+                True,
+            )
+        except storefront_service.StoreAccountAuthExpired:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Fan-store account authorization expired. Tell the artist to re-connect "
+                                "before you can complete this action."),
+                },
+                {"input": f"product_title={nm}", "result": "auth_expired"},
                 True,
             )
 
@@ -13334,6 +13459,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_storefront():
+        # storefront-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # STOREFRONT_TOOLS / _execute_storefront_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against storefront_service, feeds
+        # tool_result back, and repeats (capped at STOREFRONT_MAX_TOOL_ITERS) until
+        # Store returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _storefront_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(STOREFRONT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=STOREFRONT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_storefront_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_storefront_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -13416,6 +13708,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_royalty_doctor
     elif agent_id == "schedule-keeper":
         _stream_gen = generate_schedule_keeper
+    elif agent_id == "storefront":
+        _stream_gen = generate_storefront
     else:
         _stream_gen = generate
     return StreamingResponse(
