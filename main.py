@@ -1124,6 +1124,7 @@ import creative_director_service  # noqa: E402  (module ref for Cree/creative-di
 import data_oracle_service  # noqa: E402  (module ref for Data/data-oracle tool_use handlers)
 import ar_scout_service  # noqa: E402  (module ref for Scout/ar-scout tool_use handlers)
 import producer_connect_service  # noqa: E402  (module ref for Beat/producer-connect tool_use handlers)
+import ai_navigator_service  # noqa: E402  (module ref for Neo/ai-navigator tool_use handlers)
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
 
@@ -5139,6 +5140,140 @@ async def _execute_producer_connect_tool(name: str, tool_input: dict, artist_id:
                                 "it before you can send collab requests."),
                 },
                 {"input": f"producer_id={producer_id}", "result": "producer_network_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Neo (ai-navigator) tool_use: search_ai_tools + assess_tech_stack
+#            + provision_automation
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) pattern exactly: these tools are
+# passed to the Anthropic API for the ai-navigator agent ONLY (see the gate in
+# chat_stream). Every other agent — including Marcus and Lex — takes its own
+# unchanged path and never receives AI_NAVIGATOR_TOOLS. Handlers map straight onto
+# the mock-first ai_navigator_service functions; they make ZERO network calls and
+# read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+AI_NAVIGATOR_MAX_TOOL_ITERS = 5
+
+AI_NAVIGATOR_TOOLS = [
+    {
+        "name": "search_ai_tools",
+        "description": "Search the AI-tool catalog by category or use case",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["audio", "visual", "content", "workflow"],
+                },
+                "use_case": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "assess_tech_stack",
+        "description": "Assess the artist's current tooling for gaps against common capabilities",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "current_tools": {"type": "string"},
+                "goal": {"type": "string"},
+            },
+            "required": ["current_tools"],
+        },
+    },
+    {
+        "name": "provision_automation",
+        "description": "Provision an automation workflow on the artist's connected automation account",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "workflow_name": {"type": "string"},
+                "platform": {
+                    "type": "string",
+                    "enum": ["zapier", "make", "n8n"],
+                },
+            },
+            "required": ["workflow_name"],
+        },
+    },
+]
+
+
+async def _execute_ai_navigator_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one AI-Navigator tool call against the mock-first ai_navigator_service.
+
+    Returns (result_for_model, action_summary, not_connected). Never raises —
+    every failure is converted into a structured tool_result so the loop can
+    continue and Neo can explain the outcome. Mirrors _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_ai_tools":
+        category = (tool_input.get("category") or "").strip()
+        use_case = (tool_input.get("use_case") or "").strip()
+        res = await ai_navigator_service.search_ai_tools(category=category, use_case=use_case)
+        summary = {
+            "input": f"category={category or 'any'} use_case={use_case or 'any'}",
+            "result": f"{res['count']} tool(s) found",
+        }
+        return res, summary, False
+
+    if name == "assess_tech_stack":
+        current_tools = tool_input.get("current_tools") or ""
+        goal = (tool_input.get("goal") or "").strip()
+        res = await ai_navigator_service.assess_tech_stack(
+            artist_id, current_tools=current_tools, goal=goal,
+        )
+        summary = {
+            "input": f"goal={goal or 'unspecified'} chars={len(current_tools)}",
+            "result": f"{res['gap_count']} gap(s), {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "provision_automation":
+        workflow_name = (tool_input.get("workflow_name") or "").strip()
+        platform      = (tool_input.get("platform") or "zapier").strip()
+        if not workflow_name:
+            return (
+                {"error": "missing_workflow_name"},
+                {"input": "workflow_name=", "result": "missing workflow name"},
+                False,
+            )
+        try:
+            done = await ai_navigator_service.provision_automation(artist_id, workflow_name, platform)
+            return (
+                {"status": "provisioned", "reference": done.get("reference"), "workflow_name": workflow_name},
+                {"input": f"workflow={workflow_name} platform={platform}", "result": "automation provisioned"},
+                False,
+            )
+        except ai_navigator_service.AutomationNotConnected:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Artist has not connected an automation account. Tell them to connect "
+                                "one before you can provision automations."),
+                },
+                {"input": f"workflow={workflow_name}", "result": "not_connected"},
+                True,
+            )
+        except ai_navigator_service.AutomationAuthExpired:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Automation account authorization expired. Tell the artist to re-connect "
+                                "before you can provision automations."),
+                },
+                {"input": f"workflow={workflow_name}", "result": "auth_expired"},
                 True,
             )
 
@@ -9527,6 +9662,174 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_ai_navigator():
+        # ai-navigator-only path: the SAME Anthropic tool_use loop as Marcus and
+        # Lex, but pointed at AI_NAVIGATOR_TOOLS / _execute_ai_navigator_tool
+        # instead. Runs the non-streaming messages.create with tools, executes each
+        # emitted tool_use against ai_navigator_service, feeds tool_result back, and
+        # repeats (capped at AI_NAVIGATOR_MAX_TOOL_ITERS) until Neo returns a final
+        # text answer, then streams it through the SAME TTS pipeline the default
+        # path uses. Every other agent (including Marcus) never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _navigator_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(AI_NAVIGATOR_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=AI_NAVIGATOR_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_ai_navigator_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_navigator_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -9583,6 +9886,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_ar_scout
     elif agent_id == "producer-connect":
         _stream_gen = generate_producer_connect
+    elif agent_id == "ai-navigator":
+        _stream_gen = generate_ai_navigator
     else:
         _stream_gen = generate
     return StreamingResponse(
