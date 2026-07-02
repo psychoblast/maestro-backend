@@ -1124,6 +1124,7 @@ import creative_director_service  # noqa: E402  (module ref for Cree/creative-di
 import data_oracle_service  # noqa: E402  (module ref for Data/data-oracle tool_use handlers)
 import ar_scout_service  # noqa: E402  (module ref for Scout/ar-scout tool_use handlers)
 import producer_connect_service  # noqa: E402  (module ref for Beat/producer-connect tool_use handlers)
+import content_forge_service  # noqa: E402  (module ref for Pen/content-forge tool_use handlers)
 import collab_connect_service  # noqa: E402  (module ref for Collab/collab-connect tool_use handlers)
 import audio_quality_service  # noqa: E402  (module ref for Audio/audio-quality tool_use handlers)
 import artist_wellness_service  # noqa: E402  (module ref for Maya/artist-wellness tool_use handlers)
@@ -5649,6 +5650,130 @@ async def _execute_collab_connect_tool(name: str, tool_input: dict, artist_id: s
                                 "before you can complete this action."),
                 },
                 {"input": f"collaborator_name={nm}", "result": "auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Pen (content-forge) tool_use: search_content_templates + review_copy + publish_content_draft
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
+# passed to the Anthropic API for the content-forge agent ONLY (see the gate in
+# chat_stream). Every other agent takes its own unchanged path and never receives
+# CONTENT_FORGE_TOOLS. Handlers map straight onto the mock-first content_forge_service functions;
+# they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+CONTENT_FORGE_MAX_TOOL_ITERS = 5
+
+CONTENT_FORGE_TOOLS = [
+    {
+        "name": "search_content_templates",
+        "description": "Search the content template library by platform or content type",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string", "enum": ['instagram', 'tiktok', 'twitter', 'newsletter']},
+                "content_type": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "review_copy",
+        "description": "Screen a draft for copy red flags",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "draft_text": {"type": "string"},
+                "context": {"type": "string"},
+            },
+            "required": ["draft_text"],
+        },
+    },
+    {
+        "name": "publish_content_draft",
+        "description": "Publish a content draft to the connected CMS",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "channel": {"type": "string", "enum": ['blog', 'newsletter', 'landing']},
+            },
+            "required": ["title"],
+        },
+    },
+]
+
+
+async def _execute_content_forge_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Pen tool call against the mock-first content_forge_service.
+
+    Returns (result_for_model, action_summary, not_connected). Never raises —
+    every failure is converted into a structured tool_result so the loop can
+    continue. Mirrors _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_content_templates":
+        a = (tool_input.get("platform") or "").strip()
+        b = (tool_input.get("content_type") or "").strip()
+        res = await content_forge_service.search_content_templates(platform=a, content_type=b)
+        summary = {
+            "input": f"platform={a or 'any'} content_type={b or 'any'}",
+            "result": f"{res['count']} template(s) found",
+        }
+        return res, summary, False
+
+    if name == "review_copy":
+        txt = tool_input.get("draft_text") or ""
+        ctx = (tool_input.get("context") or "").strip()
+        res = await content_forge_service.review_copy(artist_id, draft_text=txt, context=ctx)
+        summary = {
+            "input": f"context={ctx or 'unspecified'} chars={len(txt)}",
+            "result": f"{res['finding_count']} issue(s), {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "publish_content_draft":
+        nm  = (tool_input.get("title") or "").strip()
+        opt = (tool_input.get("channel") or "blog").strip()
+        if not nm:
+            return (
+                {"error": "missing_title"},
+                {"input": "title=", "result": "missing title"},
+                False,
+            )
+        try:
+            done = await content_forge_service.publish_content_draft(artist_id, nm, opt)
+            return (
+                {"status": "done", "reference": done.get("reference"), "title": nm},
+                {"input": f"title={nm} channel={opt}", "result": "draft published"},
+                False,
+            )
+        except content_forge_service.CmsNotConnected:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Artist has not connected a content management account. Tell them to connect one "
+                                "before you can complete this action."),
+                },
+                {"input": f"title={nm}", "result": "not_connected"},
+                True,
+            )
+        except content_forge_service.CmsAuthExpired:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Content management account authorization expired. Tell the artist to re-connect "
+                                "before you can complete this action."),
+                },
+                {"input": f"title={nm}", "result": "auth_expired"},
                 True,
             )
 
@@ -10706,6 +10831,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_content_forge():
+        # content-forge-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # CONTENT_FORGE_TOOLS / _execute_content_forge_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against content_forge_service, feeds
+        # tool_result back, and repeats (capped at CONTENT_FORGE_MAX_TOOL_ITERS) until
+        # Pen returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _content_forge_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(CONTENT_FORGE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=CONTENT_FORGE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_content_forge_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_content_forge_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -10770,6 +11062,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_audio_quality
     elif agent_id == "collab-connect":
         _stream_gen = generate_collab_connect
+    elif agent_id == "content-forge":
+        _stream_gen = generate_content_forge
     else:
         _stream_gen = generate
     return StreamingResponse(
