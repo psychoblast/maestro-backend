@@ -374,16 +374,16 @@ async def _execute_action(action: dict) -> dict:
                     "failed": result.get("failed", 0)}
 
         elif action_type == ACTION_SOCIAL:
-            from social_service import batch_social_posts, BatchSocialRequest
+            from social_service import schedule_posts, BatchPostRequest
             platforms = payload.get("platforms", ["twitter", "instagram"])
-            req = BatchSocialRequest(
+            req = BatchPostRequest(
                 artist_id=artist_id,
                 platforms=platforms,
                 theme=f"{payload.get('release_title','New Release')} — "
                       f"{payload.get('day_label','release')} post",
                 count=1,
             )
-            result = await batch_social_posts(req)
+            result = await schedule_posts(req)
             return {"status": "ok", "posts_created": len(result.get("posts", []))}
 
         else:

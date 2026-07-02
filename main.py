@@ -1101,6 +1101,29 @@ async def _generic_error_handler(request: Request, exc: Exception):
 
 # ── Phase 1 — Pitch service (Gmail, curators, pitch tracking) ─────────────────
 import pitch_service  # noqa: E402  (module ref for Marcus tool_use handlers, Unit 1.7)
+import lex_cipher_service  # noqa: E402  (module ref for Lex tool_use handlers, Unit 1.8)
+import fund_phantom_service  # noqa: E402  (module ref for Jade/fund-phantom tool_use handlers)
+import rights_pulse_service  # noqa: E402  (module ref for Ray/rights-pulse tool_use handlers)
+import border_royalty_service  # noqa: E402  (module ref for Cleo/border-royalty tool_use handlers)
+import mech_ledger_service  # noqa: E402  (module ref for Finn/mech-ledger tool_use handlers)
+import vault_keeper_service  # noqa: E402  (module ref for Victor/vault-keeper tool_use handlers)
+import ledger_lock_service  # noqa: E402  (module ref for Nadia/ledger-lock tool_use handlers)
+import signal_blaster_service  # noqa: E402  (module ref for Zara/signal-blaster tool_use handlers)
+import grid_prophet_service  # noqa: E402  (module ref for Kai/grid-prophet tool_use handlers)
+import vision_forge_service  # noqa: E402  (module ref for Luna/vision-forge tool_use handlers)
+import design_studio_service  # noqa: E402  (module ref for Diego/design-studio tool_use handlers)
+import venue_hawk_service  # noqa: E402  (module ref for Ray B/venue-hawk tool_use handlers)
+import tour_commander_service  # noqa: E402  (module ref for Miles/tour-commander tool_use handlers)
+import airwave_service  # noqa: E402  (module ref for Solo/airwave tool_use handlers)
+import brand_connect_service  # noqa: E402  (module ref for Nia/brand-connect tool_use handlers)
+import merch_empire_service  # noqa: E402  (module ref for Max/merch-empire tool_use handlers)
+import fan_builder_service  # noqa: E402  (module ref for Aria/fan-builder tool_use handlers)
+import sync_agent_service  # noqa: E402  (module ref for Sync/sync-agent tool_use handlers)
+import global_scout_service  # noqa: E402  (module ref for Nova/global-scout tool_use handlers)
+import creative_director_service  # noqa: E402  (module ref for Cree/creative-director tool_use handlers)
+import data_oracle_service  # noqa: E402  (module ref for Data/data-oracle tool_use handlers)
+import ar_scout_service  # noqa: E402  (module ref for Scout/ar-scout tool_use handlers)
+import producer_connect_service  # noqa: E402  (module ref for Beat/producer-connect tool_use handlers)
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
 
@@ -1648,6 +1671,3484 @@ async def _execute_marcus_tool(name: str, tool_input: dict, artist_id: str) -> t
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Unit 1.8 — Lex (lex-cipher) tool_use: search_clause_library + review_agreement
+#            + file_ip_registration
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) pattern exactly: these tools are passed to the
+# Anthropic API for the lex-cipher agent ONLY (see the gate in chat_stream).
+# Every other agent — including Marcus — takes its own unchanged path and never
+# receives LEX_CIPHER_TOOLS. Handlers map straight onto the mock-first
+# lex_cipher_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+LEX_CIPHER_MAX_TOOL_ITERS = 5
+
+LEX_CIPHER_TOOLS = [
+    {
+        "name": "search_clause_library",
+        "description": "Search the standard entertainment-law clause library by clause type or deal type",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "clause_type": {"type": "string"},
+                "deal_type": {
+                    "type": "string",
+                    "enum": ["record_deal", "publishing", "sync_license", "brand_deal", "management"],
+                },
+            },
+        },
+    },
+    {
+        "name": "review_agreement",
+        "description": "Screen an agreement's text for red-flag clauses and return a risk assessment",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "agreement_type": {"type": "string"},
+                "agreement_text": {"type": "string"},
+            },
+            "required": ["agreement_text"],
+        },
+    },
+    {
+        "name": "file_ip_registration",
+        "description": "File an IP/copyright registration for a work on behalf of the artist",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "work_title": {"type": "string"},
+                "work_type": {
+                    "type": "string",
+                    "enum": ["sound_recording", "composition", "lyrics", "artwork"],
+                },
+            },
+            "required": ["work_title"],
+        },
+    },
+]
+
+
+async def _execute_lex_cipher_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Lex tool call against the mock-first lex_cipher_service.
+
+    Returns (result_for_model, action_summary, registry_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - registry_not_connected: True when a filing was blocked on a missing/expired
+        IP-registry filing account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Lex can explain the outcome to the artist. Mirrors
+    _execute_marcus_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_clause_library":
+        clause_type = (tool_input.get("clause_type") or "").strip()
+        deal_type   = (tool_input.get("deal_type") or "").strip()
+        res = await lex_cipher_service.search_clause_library(
+            clause_type=clause_type, deal_type=deal_type,
+        )
+        summary = {
+            "input": f"clause_type={clause_type or 'any'} deal_type={deal_type or 'any'}",
+            "result": f"{res['count']} clause(s) found",
+        }
+        return res, summary, False
+
+    if name == "review_agreement":
+        agreement_type = (tool_input.get("agreement_type") or "").strip()
+        agreement_text = tool_input.get("agreement_text") or ""
+        res = await lex_cipher_service.review_agreement(
+            artist_id, agreement_type=agreement_type, agreement_text=agreement_text,
+        )
+        summary = {
+            "input": f"type={agreement_type or 'unspecified'} chars={len(agreement_text)}",
+            "result": f"{res['flag_count']} flag(s), {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "file_ip_registration":
+        work_title = (tool_input.get("work_title") or "").strip()
+        work_type  = (tool_input.get("work_type") or "sound_recording").strip()
+        if not work_title:
+            return (
+                {"error": "missing_work_title"},
+                {"input": "work_title=", "result": "missing work title"},
+                False,
+            )
+        try:
+            filed = await lex_cipher_service.file_ip_registration(artist_id, work_title, work_type)
+            return (
+                {"status": "filed", "reference": filed.get("reference"), "work_title": work_title},
+                {"input": f"work={work_title} type={work_type}", "result": "registration filed"},
+                False,
+            )
+        except lex_cipher_service.RegistryNotConnected:
+            return (
+                {
+                    "registry_not_connected": True,
+                    "message": ("Artist has not connected an IP-registry filing account. Tell them to "
+                                "connect one before you can file registrations."),
+                },
+                {"input": f"work={work_title}", "result": "registry_not_connected"},
+                True,
+            )
+        except lex_cipher_service.RegistryAuthExpired:
+            return (
+                {
+                    "registry_not_connected": True,
+                    "message": ("IP-registry authorization expired. Tell the artist to re-connect their "
+                                "filing account before you can file registrations."),
+                },
+                {"input": f"work={work_title}", "result": "registry_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Jade (fund-phantom) tool_use: search_grant_programs + check_eligibility
+#            + submit_grant_application
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) pattern exactly: these tools are
+# passed to the Anthropic API for the fund-phantom agent ONLY (see the gate in
+# chat_stream). Every other agent — including Marcus and Lex — takes its own
+# unchanged path and never receives FUND_PHANTOM_TOOLS. Handlers map straight onto
+# the mock-first fund_phantom_service functions; they make ZERO network calls and
+# read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+FUND_PHANTOM_MAX_TOOL_ITERS = 5
+
+FUND_PHANTOM_TOOLS = [
+    {
+        "name": "search_grant_programs",
+        "description": "Search open arts grant/funding programs by genre, region, or minimum award ceiling",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "region": {"type": "string", "enum": ["national", "regional"]},
+                "max_award": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "check_eligibility",
+        "description": "Screen a project against a grant program's rules and return an eligibility assessment",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "program_id": {"type": "string"},
+                "requested_amount": {"type": "integer"},
+                "project_type": {
+                    "type": "string",
+                    "enum": ["recording", "touring", "production", "video"],
+                },
+            },
+            "required": ["program_id"],
+        },
+    },
+    {
+        "name": "submit_grant_application",
+        "description": "Submit a grant application to a program on behalf of the artist",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "program_id": {"type": "string"},
+                "project_title": {"type": "string"},
+                "requested_amount": {"type": "integer"},
+            },
+            "required": ["program_id", "project_title"],
+        },
+    },
+]
+
+
+async def _execute_fund_phantom_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Jade tool call against the mock-first fund_phantom_service.
+
+    Returns (result_for_model, action_summary, portal_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - portal_not_connected: True when a submission was blocked on a missing/expired
+        funding-portal account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Jade can explain the outcome to the artist. Mirrors
+    _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_grant_programs":
+        genre     = (tool_input.get("genre") or "").strip()
+        region    = (tool_input.get("region") or "").strip()
+        max_award = tool_input.get("max_award") or 0
+        res = await fund_phantom_service.search_grant_programs(
+            genre=genre, region=region, max_award=max_award,
+        )
+        summary = {
+            "input": f"genre={genre or 'any'} region={region or 'any'}",
+            "result": f"{res['count']} program(s) found",
+        }
+        return res, summary, False
+
+    if name == "check_eligibility":
+        program_id       = (tool_input.get("program_id") or "").strip()
+        requested_amount = tool_input.get("requested_amount") or 0
+        project_type     = (tool_input.get("project_type") or "").strip()
+        res = await fund_phantom_service.check_eligibility(
+            artist_id, program_id=program_id,
+            requested_amount=requested_amount, project_type=project_type,
+        )
+        summary = {
+            "input": f"program={program_id or 'unspecified'} amount={requested_amount or 0}",
+            "result": f"eligible={res['eligible']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_grant_application":
+        program_id       = (tool_input.get("program_id") or "").strip()
+        project_title    = (tool_input.get("project_title") or "").strip()
+        requested_amount = tool_input.get("requested_amount") or 0
+        if not program_id or not project_title:
+            return (
+                {"error": "missing_program_or_title"},
+                {"input": f"program={program_id or ''} title={project_title or ''}",
+                 "result": "missing program or title"},
+                False,
+            )
+        try:
+            sub = await fund_phantom_service.submit_grant_application(
+                artist_id, program_id, project_title, requested_amount,
+            )
+            return (
+                {"status": "submitted", "reference": sub.get("reference"),
+                 "program_id": program_id, "project_title": project_title},
+                {"input": f"program={program_id} title={project_title[:40]}",
+                 "result": "application submitted"},
+                False,
+            )
+        except fund_phantom_service.FundingPortalNotConnected:
+            return (
+                {
+                    "portal_not_connected": True,
+                    "message": ("Artist has not connected a funding-portal submission account. Tell them "
+                                "to connect one before you can submit applications."),
+                },
+                {"input": f"program={program_id}", "result": "portal_not_connected"},
+                True,
+            )
+        except fund_phantom_service.FundingPortalAuthExpired:
+            return (
+                {
+                    "portal_not_connected": True,
+                    "message": ("Funding-portal authorization expired. Tell the artist to re-connect their "
+                                "submission account before you can submit applications."),
+                },
+                {"input": f"program={program_id}", "result": "portal_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Ray (rights-pulse) tool_use: search_pro_organizations + check_registration_status
+#            + register_work
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade pattern exactly: these
+# tools are passed to the Anthropic API for the rights-pulse agent ONLY (see the
+# gate in chat_stream). Every other agent — including Marcus, Lex, and Jade —
+# takes its own unchanged path and never receives RIGHTS_PULSE_TOOLS. Handlers map
+# straight onto the mock-first rights_pulse_service functions; they make ZERO
+# network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+RIGHTS_PULSE_MAX_TOOL_ITERS = 5
+
+RIGHTS_PULSE_TOOLS = [
+    {
+        "name": "search_pro_organizations",
+        "description": "Search Performance Rights Organizations (PROs) by territory or collection type",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "territory": {"type": "string"},
+                "org_type": {
+                    "type": "string",
+                    "enum": ["performing_rights", "digital_performance"],
+                },
+            },
+        },
+    },
+    {
+        "name": "check_registration_status",
+        "description": "Screen a work against a PRO's registration requirements and return a readiness assessment",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "work_title": {"type": "string"},
+                "pro_id": {"type": "string"},
+                "writer_share": {"type": "integer"},
+            },
+            "required": ["pro_id"],
+        },
+    },
+    {
+        "name": "register_work",
+        "description": "Register a work with a PRO on behalf of the artist so it collects performance royalties",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "work_title": {"type": "string"},
+                "pro_id": {"type": "string"},
+                "writer_share": {"type": "integer"},
+            },
+            "required": ["work_title", "pro_id"],
+        },
+    },
+]
+
+
+async def _execute_rights_pulse_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Ray tool call against the mock-first rights_pulse_service.
+
+    Returns (result_for_model, action_summary, pro_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - pro_not_connected: True when a registration was blocked on a missing/expired
+        PRO account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Ray can explain the outcome to the artist. Mirrors
+    _execute_fund_phantom_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_pro_organizations":
+        territory = (tool_input.get("territory") or "").strip()
+        org_type  = (tool_input.get("org_type") or "").strip()
+        res = await rights_pulse_service.search_pro_organizations(
+            territory=territory, org_type=org_type,
+        )
+        summary = {
+            "input": f"territory={territory or 'any'} type={org_type or 'any'}",
+            "result": f"{res['count']} PRO(s) found",
+        }
+        return res, summary, False
+
+    if name == "check_registration_status":
+        work_title   = (tool_input.get("work_title") or "").strip()
+        pro_id       = (tool_input.get("pro_id") or "").strip()
+        writer_share = tool_input.get("writer_share") or 0
+        res = await rights_pulse_service.check_registration_status(
+            artist_id, work_title=work_title, pro_id=pro_id, writer_share=writer_share,
+        )
+        summary = {
+            "input": f"work={work_title or 'unspecified'} pro={pro_id or 'unspecified'}",
+            "result": f"ready={res['ready']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "register_work":
+        work_title   = (tool_input.get("work_title") or "").strip()
+        pro_id       = (tool_input.get("pro_id") or "").strip()
+        writer_share = tool_input.get("writer_share") or 0
+        if not work_title or not pro_id:
+            return (
+                {"error": "missing_work_or_pro"},
+                {"input": f"work={work_title or ''} pro={pro_id or ''}",
+                 "result": "missing work or pro"},
+                False,
+            )
+        try:
+            reg = await rights_pulse_service.register_work(
+                artist_id, work_title, pro_id, writer_share,
+            )
+            return (
+                {"status": "registered", "reference": reg.get("reference"),
+                 "work_title": work_title, "pro_id": pro_id},
+                {"input": f"work={work_title[:40]} pro={pro_id}",
+                 "result": "work registered"},
+                False,
+            )
+        except rights_pulse_service.ProAccountNotConnected:
+            return (
+                {
+                    "pro_not_connected": True,
+                    "message": ("Artist has not connected a PRO registration account. Tell them "
+                                "to connect one before you can register works."),
+                },
+                {"input": f"work={work_title}", "result": "pro_not_connected"},
+                True,
+            )
+        except rights_pulse_service.ProAccountAuthExpired:
+            return (
+                {
+                    "pro_not_connected": True,
+                    "message": ("PRO account authorization expired. Tell the artist to re-connect their "
+                                "account before you can register works."),
+                },
+                {"input": f"work={work_title}", "result": "pro_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray pattern exactly:
+# these tools are passed to the Anthropic API for the border-royalty agent ONLY
+# (see the gate in chat_stream). Every other agent — including Marcus, Lex, Jade,
+# and Ray — takes its own unchanged path and never receives BORDER_ROYALTY_TOOLS.
+# Handlers map straight onto the mock-first border_royalty_service functions; they
+# make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+BORDER_ROYALTY_MAX_TOOL_ITERS = 5
+
+BORDER_ROYALTY_TOOLS = [
+    {
+        "name": "search_collection_societies",
+        "description": "Search neighbouring-rights collection societies (CMOs) by territory or collected right type",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "territory": {"type": "string"},
+                "right_type": {
+                    "type": "string",
+                    "enum": ["performer", "producer"],
+                },
+            },
+        },
+    },
+    {
+        "name": "check_claim_readiness",
+        "description": "Screen a sound recording against a society's neighbouring-rights requirements and return a readiness assessment",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "recording_title": {"type": "string"},
+                "society_id": {"type": "string"},
+                "performer_role": {
+                    "type": "string",
+                    "enum": ["featured", "non_featured", "producer"],
+                },
+            },
+            "required": ["society_id"],
+        },
+    },
+    {
+        "name": "register_neighbouring_rights_claim",
+        "description": "File a neighbouring-rights claim with a society on behalf of the artist so it collects international royalties on the recording",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "recording_title": {"type": "string"},
+                "society_id": {"type": "string"},
+                "performer_role": {
+                    "type": "string",
+                    "enum": ["featured", "non_featured", "producer"],
+                },
+            },
+            "required": ["recording_title", "society_id"],
+        },
+    },
+]
+
+
+async def _execute_border_royalty_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Cleo tool call against the mock-first border_royalty_service.
+
+    Returns (result_for_model, action_summary, society_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - society_not_connected: True when a claim was blocked on a missing/expired
+        society account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Cleo can explain the outcome to the artist. Mirrors
+    _execute_rights_pulse_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_collection_societies":
+        territory  = (tool_input.get("territory") or "").strip()
+        right_type = (tool_input.get("right_type") or "").strip()
+        res = await border_royalty_service.search_collection_societies(
+            territory=territory, right_type=right_type,
+        )
+        summary = {
+            "input": f"territory={territory or 'any'} right={right_type or 'any'}",
+            "result": f"{res['count']} society(ies) found",
+        }
+        return res, summary, False
+
+    if name == "check_claim_readiness":
+        recording_title = (tool_input.get("recording_title") or "").strip()
+        society_id      = (tool_input.get("society_id") or "").strip()
+        performer_role  = (tool_input.get("performer_role") or "").strip()
+        res = await border_royalty_service.check_claim_readiness(
+            artist_id, recording_title=recording_title, society_id=society_id,
+            performer_role=performer_role,
+        )
+        summary = {
+            "input": f"recording={recording_title or 'unspecified'} society={society_id or 'unspecified'}",
+            "result": f"ready={res['ready']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "register_neighbouring_rights_claim":
+        recording_title = (tool_input.get("recording_title") or "").strip()
+        society_id      = (tool_input.get("society_id") or "").strip()
+        performer_role  = (tool_input.get("performer_role") or "").strip()
+        if not recording_title or not society_id:
+            return (
+                {"error": "missing_recording_or_society"},
+                {"input": f"recording={recording_title or ''} society={society_id or ''}",
+                 "result": "missing recording or society"},
+                False,
+            )
+        try:
+            claim = await border_royalty_service.register_neighbouring_rights_claim(
+                artist_id, recording_title, society_id, performer_role,
+            )
+            return (
+                {"status": "filed", "reference": claim.get("reference"),
+                 "recording_title": recording_title, "society_id": society_id},
+                {"input": f"recording={recording_title[:40]} society={society_id}",
+                 "result": "claim filed"},
+                False,
+            )
+        except border_royalty_service.SocietyAccountNotConnected:
+            return (
+                {
+                    "society_not_connected": True,
+                    "message": ("Artist has not connected a neighbouring-rights society account. Tell "
+                                "them to connect one before you can file claims."),
+                },
+                {"input": f"recording={recording_title}", "result": "society_not_connected"},
+                True,
+            )
+        except border_royalty_service.SocietyAccountAuthExpired:
+            return (
+                {
+                    "society_not_connected": True,
+                    "message": ("Society account authorization expired. Tell the artist to re-connect "
+                                "their account before you can file claims."),
+                },
+                {"input": f"recording={recording_title}", "result": "society_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Unit — Mech-Ledger (mech-ledger) tool_use: search_mechanical_agencies +
+#    check_registration_readiness + register_mechanical_work ────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo pattern
+# exactly: these tools are passed to the Anthropic API for the mech-ledger agent
+# ONLY (see the gate in chat_stream). Every other agent — including Marcus, Lex,
+# Jade, Ray, and Cleo — takes its own unchanged path and never receives
+# MECH_LEDGER_TOOLS. Handlers map straight onto the mock-first mech_ledger_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+MECH_LEDGER_MAX_TOOL_ITERS = 5
+
+MECH_LEDGER_TOOLS = [
+    {
+        "name": "search_mechanical_agencies",
+        "description": "Search mechanical-rights collection agencies / administrators by territory or collected right type",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "territory": {"type": "string"},
+                "right_type": {
+                    "type": "string",
+                    "enum": ["songwriter", "publisher"],
+                },
+            },
+        },
+    },
+    {
+        "name": "check_registration_readiness",
+        "description": "Screen a musical work against a mechanical-rights agency's registration requirements and return a readiness assessment",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "work_title": {"type": "string"},
+                "agency_id": {"type": "string"},
+                "writer_role": {
+                    "type": "string",
+                    "enum": ["writer", "co_writer", "publisher"],
+                },
+            },
+            "required": ["agency_id"],
+        },
+    },
+    {
+        "name": "register_mechanical_work",
+        "description": "Register a musical work with a mechanical-rights agency on behalf of the artist so it collects the mechanical royalties owed on that composition",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "work_title": {"type": "string"},
+                "agency_id": {"type": "string"},
+                "writer_role": {
+                    "type": "string",
+                    "enum": ["writer", "co_writer", "publisher"],
+                },
+            },
+            "required": ["work_title", "agency_id"],
+        },
+    },
+]
+
+
+async def _execute_mech_ledger_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Finn tool call against the mock-first mech_ledger_service.
+
+    Returns (result_for_model, action_summary, mech_account_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - mech_account_not_connected: True when a registration was blocked on a
+        missing/expired agency account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Finn can explain the outcome to the artist. Mirrors
+    _execute_border_royalty_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_mechanical_agencies":
+        territory  = (tool_input.get("territory") or "").strip()
+        right_type = (tool_input.get("right_type") or "").strip()
+        res = await mech_ledger_service.search_mechanical_agencies(
+            territory=territory, right_type=right_type,
+        )
+        summary = {
+            "input": f"territory={territory or 'any'} right={right_type or 'any'}",
+            "result": f"{res['count']} agency(ies) found",
+        }
+        return res, summary, False
+
+    if name == "check_registration_readiness":
+        work_title  = (tool_input.get("work_title") or "").strip()
+        agency_id   = (tool_input.get("agency_id") or "").strip()
+        writer_role = (tool_input.get("writer_role") or "").strip()
+        res = await mech_ledger_service.check_registration_readiness(
+            artist_id, work_title=work_title, agency_id=agency_id,
+            writer_role=writer_role,
+        )
+        summary = {
+            "input": f"work={work_title or 'unspecified'} agency={agency_id or 'unspecified'}",
+            "result": f"ready={res['ready']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "register_mechanical_work":
+        work_title  = (tool_input.get("work_title") or "").strip()
+        agency_id   = (tool_input.get("agency_id") or "").strip()
+        writer_role = (tool_input.get("writer_role") or "").strip()
+        if not work_title or not agency_id:
+            return (
+                {"error": "missing_work_or_agency"},
+                {"input": f"work={work_title or ''} agency={agency_id or ''}",
+                 "result": "missing work or agency"},
+                False,
+            )
+        try:
+            work = await mech_ledger_service.register_mechanical_work(
+                artist_id, work_title, agency_id, writer_role,
+            )
+            return (
+                {"status": "registered", "reference": work.get("reference"),
+                 "work_title": work_title, "agency_id": agency_id},
+                {"input": f"work={work_title[:40]} agency={agency_id}",
+                 "result": "work registered"},
+                False,
+            )
+        except mech_ledger_service.MechAccountNotConnected:
+            return (
+                {
+                    "mech_account_not_connected": True,
+                    "message": ("Artist has not connected a mechanical-rights agency account. Tell "
+                                "them to connect one before you can register works."),
+                },
+                {"input": f"work={work_title}", "result": "mech_account_not_connected"},
+                True,
+            )
+        except mech_ledger_service.MechAccountAuthExpired:
+            return (
+                {
+                    "mech_account_not_connected": True,
+                    "message": ("Mechanical-rights account authorization expired. Tell the artist to "
+                                "re-connect their account before you can register works."),
+                },
+                {"input": f"work={work_title}", "result": "mech_account_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Vault-Keeper (vault-keeper) tool_use: search_budget_templates
+#            + build_project_budget + schedule_expense_payment
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn pattern
+# exactly: these tools are passed to the Anthropic API for the vault-keeper agent
+# ONLY (see the gate in chat_stream). Every other agent — including Marcus, Lex,
+# Jade, Ray, Cleo, and Finn — takes its own unchanged path and never receives
+# VAULT_KEEPER_TOOLS. Handlers map straight onto the mock-first vault_keeper_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+VAULT_KEEPER_MAX_TOOL_ITERS = 5
+
+VAULT_KEEPER_TOOLS = [
+    {
+        "name": "search_budget_templates",
+        "description": "Search business-manager budget templates by project type or tier",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "project_type": {
+                    "type": "string",
+                    "enum": ["release", "tour", "video", "campaign"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["starter", "pro"],
+                },
+            },
+        },
+    },
+    {
+        "name": "build_project_budget",
+        "description": "Build a concrete project budget by applying a template's category allocations to an estimated revenue figure",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_id": {"type": "string"},
+                "project_name": {"type": "string"},
+                "estimated_revenue": {"type": "number"},
+            },
+            "required": ["template_id"],
+        },
+    },
+    {
+        "name": "schedule_expense_payment",
+        "description": "Schedule an expense payment to a payee out of the artist's operating account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "payee": {"type": "string"},
+                "amount": {"type": "number"},
+                "category": {"type": "string"},
+            },
+            "required": ["payee", "amount"],
+        },
+    },
+]
+
+
+async def _execute_vault_keeper_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Victor tool call against the mock-first vault_keeper_service.
+
+    Returns (result_for_model, action_summary, vault_account_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - vault_account_not_connected: True when a payment was blocked on a
+        missing/expired operating account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Victor can explain the outcome to the artist. Mirrors
+    _execute_mech_ledger_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_budget_templates":
+        project_type = (tool_input.get("project_type") or "").strip()
+        tier         = (tool_input.get("tier") or "").strip()
+        res = await vault_keeper_service.search_budget_templates(
+            project_type=project_type, tier=tier,
+        )
+        summary = {
+            "input": f"type={project_type or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} template(s) found",
+        }
+        return res, summary, False
+
+    if name == "build_project_budget":
+        template_id       = (tool_input.get("template_id") or "").strip()
+        project_name      = (tool_input.get("project_name") or "").strip()
+        estimated_revenue = tool_input.get("estimated_revenue") or 0
+        res = await vault_keeper_service.build_project_budget(
+            artist_id, template_id=template_id, project_name=project_name,
+            estimated_revenue=estimated_revenue,
+        )
+        summary = {
+            "input": f"project={project_name or 'unspecified'} template={template_id or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "schedule_expense_payment":
+        payee    = (tool_input.get("payee") or "").strip()
+        amount   = tool_input.get("amount") or 0
+        category = (tool_input.get("category") or "").strip()
+        if not payee:
+            return (
+                {"error": "missing_payee"},
+                {"input": f"payee={payee or ''} amount={amount}",
+                 "result": "missing payee"},
+                False,
+            )
+        try:
+            payment = await vault_keeper_service.schedule_expense_payment(
+                artist_id, payee, amount, category,
+            )
+            return (
+                {"status": "scheduled", "reference": payment.get("reference"),
+                 "payee": payment.get("payee"), "amount": payment.get("amount"),
+                 "category": payment.get("category")},
+                {"input": f"payee={payee[:40]} amount={payment.get('amount')}",
+                 "result": "payment scheduled"},
+                False,
+            )
+        except vault_keeper_service.VaultAccountNotConnected:
+            return (
+                {
+                    "vault_account_not_connected": True,
+                    "message": ("Artist has not connected an operating/bank account. Tell them "
+                                "to connect one before you can schedule payments."),
+                },
+                {"input": f"payee={payee}", "result": "vault_account_not_connected"},
+                True,
+            )
+        except vault_keeper_service.VaultAccountAuthExpired:
+            return (
+                {
+                    "vault_account_not_connected": True,
+                    "message": ("Operating-account authorization expired. Tell the artist to "
+                                "re-connect their account before you can schedule payments."),
+                },
+                {"input": f"payee={payee}", "result": "vault_account_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Unit — Ledger-Lock (ledger-lock) tool_use: search_royalty_sources +
+#    reconcile_royalty_statement + file_tax_document ───────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor pattern exactly: these tools are passed to the Anthropic API for the
+# ledger-lock agent ONLY (see the gate in chat_stream). Every other agent —
+# including Marcus, Lex, Jade, Ray, Cleo, Finn, and Victor — takes its own
+# unchanged path and never receives LEDGER_LOCK_TOOLS. Handlers map straight onto
+# the mock-first ledger_lock_service functions; they make ZERO network calls and
+# read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+LEDGER_LOCK_MAX_TOOL_ITERS = 5
+
+LEDGER_LOCK_TOOLS = [
+    {
+        "name": "search_royalty_sources",
+        "description": "Search royalty income sources by source type or region (each carries its typical withholding rate)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_type": {
+                    "type": "string",
+                    "enum": ["streaming", "mechanical", "performance", "sync", "neighbouring"],
+                },
+                "region": {
+                    "type": "string",
+                    "enum": ["domestic", "foreign"],
+                },
+            },
+        },
+    },
+    {
+        "name": "reconcile_royalty_statement",
+        "description": "Reconcile a royalty statement by applying a source's withholding rate to a gross amount to compute the net to book",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_id": {"type": "string"},
+                "statement_period": {"type": "string"},
+                "gross_amount": {"type": "number"},
+            },
+            "required": ["source_id"],
+        },
+    },
+    {
+        "name": "file_tax_document",
+        "description": "File a tax document (estimate, annual return, 1099, etc.) with the artist's connected bookkeeping account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filing_type": {
+                    "type": "string",
+                    "enum": ["quarterly_estimate", "annual_return", "1099", "vat_return", "self_assessment"],
+                },
+                "period": {"type": "string"},
+                "amount": {"type": "number"},
+            },
+            "required": ["filing_type", "period"],
+        },
+    },
+]
+
+
+async def _execute_ledger_lock_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Nadia tool call against the mock-first ledger_lock_service.
+
+    Returns (result_for_model, action_summary, ledger_account_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - ledger_account_not_connected: True when a filing was blocked on a
+        missing/expired bookkeeping account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Nadia can explain the outcome to the artist. Mirrors
+    _execute_vault_keeper_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_royalty_sources":
+        source_type = (tool_input.get("source_type") or "").strip()
+        region      = (tool_input.get("region") or "").strip()
+        res = await ledger_lock_service.search_royalty_sources(
+            source_type=source_type, region=region,
+        )
+        summary = {
+            "input": f"type={source_type or 'any'} region={region or 'any'}",
+            "result": f"{res['count']} source(s) found",
+        }
+        return res, summary, False
+
+    if name == "reconcile_royalty_statement":
+        source_id        = (tool_input.get("source_id") or "").strip()
+        statement_period = (tool_input.get("statement_period") or "").strip()
+        gross_amount     = tool_input.get("gross_amount") or 0
+        res = await ledger_lock_service.reconcile_royalty_statement(
+            artist_id, source_id=source_id, statement_period=statement_period,
+            gross_amount=gross_amount,
+        )
+        summary = {
+            "input": f"source={source_id or 'unspecified'} period={statement_period or 'unspecified'}",
+            "result": f"reconciled={res['reconciled']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "file_tax_document":
+        filing_type = (tool_input.get("filing_type") or "").strip()
+        period      = (tool_input.get("period") or "").strip()
+        amount      = tool_input.get("amount") or 0
+        if not filing_type:
+            return (
+                {"error": "missing_filing_type"},
+                {"input": f"filing_type={filing_type or ''} period={period}",
+                 "result": "missing filing type"},
+                False,
+            )
+        try:
+            filing = await ledger_lock_service.file_tax_document(
+                artist_id, filing_type, period, amount,
+            )
+            return (
+                {"status": "filed", "reference": filing.get("reference"),
+                 "filing_type": filing.get("filing_type"), "period": filing.get("period"),
+                 "amount": filing.get("amount")},
+                {"input": f"filing_type={filing_type[:40]} period={period}",
+                 "result": "tax document filed"},
+                False,
+            )
+        except ledger_lock_service.LedgerAccountNotConnected:
+            return (
+                {
+                    "ledger_account_not_connected": True,
+                    "message": ("Artist has not connected a bookkeeping/tax account. Tell them "
+                                "to connect one before you can file tax documents."),
+                },
+                {"input": f"filing_type={filing_type}", "result": "ledger_account_not_connected"},
+                True,
+            )
+        except ledger_lock_service.LedgerAccountAuthExpired:
+            return (
+                {
+                    "ledger_account_not_connected": True,
+                    "message": ("Bookkeeping-account authorization expired. Tell the artist to "
+                                "re-connect their account before you can file tax documents."),
+                },
+                {"input": f"filing_type={filing_type}", "result": "ledger_account_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Unit — Signal-Blaster (signal-blaster) tool_use: search_media_outlets +
+# draft_press_release + send_press_pitch ─────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia pattern exactly: these tools are passed to the Anthropic API for
+# the signal-blaster agent ONLY (see the gate in chat_stream). Every other agent —
+# including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, and Nadia — takes its own
+# unchanged path and never receives SIGNAL_BLASTER_TOOLS. Handlers map straight
+# onto the mock-first signal_blaster_service functions; they make ZERO network
+# calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+SIGNAL_BLASTER_MAX_TOOL_ITERS = 5
+
+SIGNAL_BLASTER_TOOLS = [
+    {
+        "name": "search_media_outlets",
+        "description": "Search media outlets / journalists by the beat they cover or their reach tier (A=major, B=mid, C=local)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beat": {
+                    "type": "string",
+                    "enum": ["indie", "mainstream", "hiphop", "electronic", "rock", "local"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["A", "B", "C"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_press_release",
+        "description": "Draft a structured press release from a headline and story angle (with an optional artist quote)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "headline": {"type": "string"},
+                "angle": {"type": "string"},
+                "quote": {"type": "string"},
+            },
+            "required": ["headline"],
+        },
+    },
+    {
+        "name": "send_press_pitch",
+        "description": "Send a press pitch to a media outlet through the artist's connected press/email account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "outlet_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["outlet_id", "subject"],
+        },
+    },
+]
+
+
+async def _execute_signal_blaster_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Zara tool call against the mock-first signal_blaster_service.
+
+    Returns (result_for_model, action_summary, press_account_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - press_account_not_connected: True when a pitch was blocked on a
+        missing/expired press account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Zara can explain the outcome to the artist. Mirrors
+    _execute_ledger_lock_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_media_outlets":
+        beat = (tool_input.get("beat") or "").strip()
+        tier = (tool_input.get("tier") or "").strip()
+        res = await signal_blaster_service.search_media_outlets(beat=beat, tier=tier)
+        summary = {
+            "input": f"beat={beat or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} outlet(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_press_release":
+        headline = (tool_input.get("headline") or "").strip()
+        angle    = (tool_input.get("angle") or "").strip()
+        quote    = (tool_input.get("quote") or "").strip()
+        res = await signal_blaster_service.draft_press_release(
+            artist_id, headline=headline, angle=angle, quote=quote,
+        )
+        summary = {
+            "input": f"headline={headline[:40] or 'unspecified'} angle={angle[:40] or 'unspecified'}",
+            "result": f"drafted={res['drafted']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "send_press_pitch":
+        outlet_id = (tool_input.get("outlet_id") or "").strip()
+        subject   = (tool_input.get("subject") or "").strip()
+        body      = (tool_input.get("body") or "").strip()
+        if not outlet_id:
+            return (
+                {"error": "missing_outlet_id"},
+                {"input": f"outlet_id={outlet_id or ''} subject={subject[:40]}",
+                 "result": "missing outlet id"},
+                False,
+            )
+        try:
+            sent = await signal_blaster_service.send_press_pitch(
+                artist_id, outlet_id, subject, body,
+            )
+            if sent.get("status") == "unknown_outlet":
+                return (
+                    {"error": "unknown_outlet", "outlet_id": sent.get("outlet_id")},
+                    {"input": f"outlet_id={outlet_id}", "result": "unknown outlet"},
+                    False,
+                )
+            return (
+                {"status": "sent", "reference": sent.get("reference"),
+                 "outlet_id": sent.get("outlet_id"), "outlet_name": sent.get("outlet_name"),
+                 "to": sent.get("to"), "subject": sent.get("subject")},
+                {"input": f"outlet_id={outlet_id} subject={subject[:40]}",
+                 "result": "press pitch sent"},
+                False,
+            )
+        except signal_blaster_service.PressAccountNotConnected:
+            return (
+                {
+                    "press_account_not_connected": True,
+                    "message": ("Artist has not connected a press/email account. Tell them "
+                                "to connect one before you can send press pitches."),
+                },
+                {"input": f"outlet_id={outlet_id}", "result": "press_account_not_connected"},
+                True,
+            )
+        except signal_blaster_service.PressAccountAuthExpired:
+            return (
+                {
+                    "press_account_not_connected": True,
+                    "message": ("Press-account authorization expired. Tell the artist to "
+                                "re-connect their account before you can send press pitches."),
+                },
+                {"input": f"outlet_id={outlet_id}", "result": "press_account_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Unit — Grid-Prophet (grid-prophet) tool_use: search_growth_channels +
+# draft_content_plan + schedule_post ─────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara pattern exactly: these tools are passed to the Anthropic
+# API for the grid-prophet agent ONLY (see the gate in chat_stream). Every other
+# agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, and Zara —
+# takes its own unchanged path and never receives GRID_PROPHET_TOOLS. Handlers map
+# straight onto the mock-first grid_prophet_service functions; they make ZERO
+# network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+GRID_PROPHET_MAX_TOOL_ITERS = 5
+
+GRID_PROPHET_TOOLS = [
+    {
+        "name": "search_growth_channels",
+        "description": "Search growth channels by the platform they live on or their reach tier (A=major, B=mid, C=niche)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["tiktok", "instagram", "youtube", "spotify", "twitter", "discord"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["A", "B", "C"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_content_plan",
+        "description": "Draft a structured content plan from a hook and target platform (with an optional posting cadence)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "hook": {"type": "string"},
+                "platform": {"type": "string"},
+                "cadence": {"type": "string"},
+            },
+            "required": ["hook"],
+        },
+    },
+    {
+        "name": "schedule_post",
+        "description": "Schedule a post to a growth channel through the artist's connected social account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel_id": {"type": "string"},
+                "caption": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["channel_id", "caption"],
+        },
+    },
+]
+
+
+async def _execute_grid_prophet_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Kai tool call against the mock-first grid_prophet_service.
+
+    Returns (result_for_model, action_summary, social_account_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - social_account_not_connected: True when a post was blocked on a
+        missing/expired social account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Kai can explain the outcome to the artist. Mirrors
+    _execute_signal_blaster_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_growth_channels":
+        platform = (tool_input.get("platform") or "").strip()
+        tier     = (tool_input.get("tier") or "").strip()
+        res = await grid_prophet_service.search_growth_channels(platform=platform, tier=tier)
+        summary = {
+            "input": f"platform={platform or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} channel(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_content_plan":
+        hook     = (tool_input.get("hook") or "").strip()
+        platform = (tool_input.get("platform") or "").strip()
+        cadence  = (tool_input.get("cadence") or "").strip()
+        res = await grid_prophet_service.draft_content_plan(
+            artist_id, hook=hook, platform=platform, cadence=cadence,
+        )
+        summary = {
+            "input": f"hook={hook[:40] or 'unspecified'} platform={platform[:40] or 'unspecified'}",
+            "result": f"drafted={res['drafted']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "schedule_post":
+        channel_id = (tool_input.get("channel_id") or "").strip()
+        caption    = (tool_input.get("caption") or "").strip()
+        body       = (tool_input.get("body") or "").strip()
+        if not channel_id:
+            return (
+                {"error": "missing_channel_id"},
+                {"input": f"channel_id={channel_id or ''} caption={caption[:40]}",
+                 "result": "missing channel id"},
+                False,
+            )
+        try:
+            posted = await grid_prophet_service.schedule_post(
+                artist_id, channel_id, caption, body,
+            )
+            if posted.get("status") == "unknown_channel":
+                return (
+                    {"error": "unknown_channel", "channel_id": posted.get("channel_id")},
+                    {"input": f"channel_id={channel_id}", "result": "unknown channel"},
+                    False,
+                )
+            return (
+                {"status": "scheduled", "reference": posted.get("reference"),
+                 "channel_id": posted.get("channel_id"), "channel_name": posted.get("channel_name"),
+                 "to": posted.get("to"), "caption": posted.get("caption")},
+                {"input": f"channel_id={channel_id} caption={caption[:40]}",
+                 "result": "post scheduled"},
+                False,
+            )
+        except grid_prophet_service.SocialAccountNotConnected:
+            return (
+                {
+                    "social_account_not_connected": True,
+                    "message": ("Artist has not connected a social account. Tell them to "
+                                "connect one before you can schedule posts."),
+                },
+                {"input": f"channel_id={channel_id}", "result": "social_account_not_connected"},
+                True,
+            )
+        except grid_prophet_service.SocialAccountAuthExpired:
+            return (
+                {
+                    "social_account_not_connected": True,
+                    "message": ("Social-account authorization expired. Tell the artist to "
+                                "re-connect their account before you can schedule posts."),
+                },
+                {"input": f"channel_id={channel_id}", "result": "social_account_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Vision-Forge (Luna — AI Visuals) tool_use surface: search_visual_styles +
+# draft_visual_brief + generate_artwork ────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai pattern exactly: these tools are passed to the
+# Anthropic API for the vision-forge agent ONLY (see the gate in chat_stream).
+# Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia,
+# Zara, and Kai — takes its own unchanged path and never receives
+# VISION_FORGE_TOOLS. Handlers map straight onto the mock-first
+# vision_forge_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+VISION_FORGE_MAX_TOOL_ITERS = 5
+
+VISION_FORGE_TOOLS = [
+    {
+        "name": "search_visual_styles",
+        "description": "Search visual styles by the medium they target or their production tier (A=flagship, B=mid, C=quick/social)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "medium": {
+                    "type": "string",
+                    "enum": ["cover_art", "poster", "social", "merch", "lyric_video"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["A", "B", "C"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_visual_brief",
+        "description": "Draft a structured art brief from a concept and target medium (with an optional colour palette)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "concept": {"type": "string"},
+                "medium": {"type": "string"},
+                "palette": {"type": "string"},
+            },
+            "required": ["concept"],
+        },
+    },
+    {
+        "name": "generate_artwork",
+        "description": "Generate artwork in a chosen style through the artist's connected render/asset workspace on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "style_id": {"type": "string"},
+                "prompt": {"type": "string"},
+                "notes": {"type": "string"},
+            },
+            "required": ["style_id", "prompt"],
+        },
+    },
+]
+
+
+async def _execute_vision_forge_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Luna tool call against the mock-first vision_forge_service.
+
+    Returns (result_for_model, action_summary, render_workspace_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - render_workspace_not_connected: True when a render was blocked on a
+        missing/expired render/asset workspace.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Luna can explain the outcome to the artist. Mirrors
+    _execute_grid_prophet_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_visual_styles":
+        medium = (tool_input.get("medium") or "").strip()
+        tier   = (tool_input.get("tier") or "").strip()
+        res = await vision_forge_service.search_visual_styles(medium=medium, tier=tier)
+        summary = {
+            "input": f"medium={medium or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} style(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_visual_brief":
+        concept = (tool_input.get("concept") or "").strip()
+        medium  = (tool_input.get("medium") or "").strip()
+        palette = (tool_input.get("palette") or "").strip()
+        res = await vision_forge_service.draft_visual_brief(
+            artist_id, concept=concept, medium=medium, palette=palette,
+        )
+        summary = {
+            "input": f"concept={concept[:40] or 'unspecified'} medium={medium[:40] or 'unspecified'}",
+            "result": f"drafted={res['drafted']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "generate_artwork":
+        style_id = (tool_input.get("style_id") or "").strip()
+        prompt   = (tool_input.get("prompt") or "").strip()
+        notes    = (tool_input.get("notes") or "").strip()
+        if not style_id:
+            return (
+                {"error": "missing_style_id"},
+                {"input": f"style_id={style_id or ''} prompt={prompt[:40]}",
+                 "result": "missing style id"},
+                False,
+            )
+        try:
+            made = await vision_forge_service.generate_artwork(
+                artist_id, style_id, prompt, notes,
+            )
+            if made.get("status") == "unknown_style":
+                return (
+                    {"error": "unknown_style", "style_id": made.get("style_id")},
+                    {"input": f"style_id={style_id}", "result": "unknown style"},
+                    False,
+                )
+            return (
+                {"status": "generated", "reference": made.get("reference"),
+                 "style_id": made.get("style_id"), "style_name": made.get("style_name"),
+                 "asset_ref": made.get("asset_ref"), "prompt": made.get("prompt")},
+                {"input": f"style_id={style_id} prompt={prompt[:40]}",
+                 "result": "artwork generated"},
+                False,
+            )
+        except vision_forge_service.RenderWorkspaceNotConnected:
+            return (
+                {
+                    "render_workspace_not_connected": True,
+                    "message": ("Artist has not connected a render/asset workspace. Tell them "
+                                "to connect one before you can generate artwork."),
+                },
+                {"input": f"style_id={style_id}", "result": "render_workspace_not_connected"},
+                True,
+            )
+        except vision_forge_service.RenderWorkspaceAuthExpired:
+            return (
+                {
+                    "render_workspace_not_connected": True,
+                    "message": ("Render-workspace authorization expired. Tell the artist to "
+                                "re-connect their workspace before you can generate artwork."),
+                },
+                {"input": f"style_id={style_id}", "result": "render_workspace_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna pattern exactly: these tools are passed to the
+# Anthropic API for the design-studio agent ONLY (see the gate in chat_stream).
+# Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia,
+# Zara, Kai, and Luna — takes its own unchanged path and never receives
+# DESIGN_STUDIO_TOOLS. Handlers map straight onto the mock-first
+# design_studio_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+DESIGN_STUDIO_MAX_TOOL_ITERS = 5
+
+DESIGN_STUDIO_TOOLS = [
+    {
+        "name": "search_brand_styles",
+        "description": "Search brand-identity styles by the asset type they target (logo, wordmark, palette, type, social kit) or their production tier (A=flagship, B=mid, C=quick/social)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asset_type": {
+                    "type": "string",
+                    "enum": ["logo", "wordmark", "color_palette", "typography", "social_kit"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["A", "B", "C"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_brand_brief",
+        "description": "Draft a structured brand brief from a concept and target asset type (with an optional tone/voice note)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "concept": {"type": "string"},
+                "asset_type": {"type": "string"},
+                "tone": {"type": "string"},
+            },
+            "required": ["concept"],
+        },
+    },
+    {
+        "name": "produce_brand_asset",
+        "description": "Produce a brand asset (logo / wordmark / kit) in a chosen style through the artist's connected design/asset workspace on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "style_id": {"type": "string"},
+                "prompt": {"type": "string"},
+                "notes": {"type": "string"},
+            },
+            "required": ["style_id", "prompt"],
+        },
+    },
+]
+
+
+async def _execute_design_studio_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Diego tool call against the mock-first design_studio_service.
+
+    Returns (result_for_model, action_summary, design_workspace_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - design_workspace_not_connected: True when a production was blocked on a
+        missing/expired design/asset workspace.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Diego can explain the outcome to the artist. Mirrors
+    _execute_vision_forge_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_brand_styles":
+        asset_type = (tool_input.get("asset_type") or "").strip()
+        tier       = (tool_input.get("tier") or "").strip()
+        res = await design_studio_service.search_brand_styles(asset_type=asset_type, tier=tier)
+        summary = {
+            "input": f"asset_type={asset_type or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} style(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_brand_brief":
+        concept    = (tool_input.get("concept") or "").strip()
+        asset_type = (tool_input.get("asset_type") or "").strip()
+        tone       = (tool_input.get("tone") or "").strip()
+        res = await design_studio_service.draft_brand_brief(
+            artist_id, concept=concept, asset_type=asset_type, tone=tone,
+        )
+        summary = {
+            "input": f"concept={concept[:40] or 'unspecified'} asset_type={asset_type[:40] or 'unspecified'}",
+            "result": f"drafted={res['drafted']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "produce_brand_asset":
+        style_id = (tool_input.get("style_id") or "").strip()
+        prompt   = (tool_input.get("prompt") or "").strip()
+        notes    = (tool_input.get("notes") or "").strip()
+        if not style_id:
+            return (
+                {"error": "missing_style_id"},
+                {"input": f"style_id={style_id or ''} prompt={prompt[:40]}",
+                 "result": "missing style id"},
+                False,
+            )
+        try:
+            made = await design_studio_service.produce_brand_asset(
+                artist_id, style_id, prompt, notes,
+            )
+            if made.get("status") == "unknown_style":
+                return (
+                    {"error": "unknown_style", "style_id": made.get("style_id")},
+                    {"input": f"style_id={style_id}", "result": "unknown style"},
+                    False,
+                )
+            return (
+                {"status": "produced", "reference": made.get("reference"),
+                 "style_id": made.get("style_id"), "style_name": made.get("style_name"),
+                 "asset_ref": made.get("asset_ref"), "prompt": made.get("prompt")},
+                {"input": f"style_id={style_id} prompt={prompt[:40]}",
+                 "result": "brand asset produced"},
+                False,
+            )
+        except design_studio_service.DesignWorkspaceNotConnected:
+            return (
+                {
+                    "design_workspace_not_connected": True,
+                    "message": ("Artist has not connected a design/asset workspace. Tell them "
+                                "to connect one before you can produce brand assets."),
+                },
+                {"input": f"style_id={style_id}", "result": "design_workspace_not_connected"},
+                True,
+            )
+        except design_studio_service.DesignWorkspaceAuthExpired:
+            return (
+                {
+                    "design_workspace_not_connected": True,
+                    "message": ("Design-workspace authorization expired. Tell the artist to "
+                                "re-connect their workspace before you can produce brand assets."),
+                },
+                {"input": f"style_id={style_id}", "result": "design_workspace_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Venue-Hawk (Ray B) tool_use ────────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego pattern exactly: these tools are passed
+# to the Anthropic API for the venue-hawk agent ONLY (see the gate in chat_stream).
+# Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia,
+# Zara, Kai, Luna, and Diego — takes its own unchanged path and never receives
+# VENUE_HAWK_TOOLS. Handlers map straight onto the mock-first venue_hawk_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+VENUE_HAWK_MAX_TOOL_ITERS = 5
+
+VENUE_HAWK_TOOLS = [
+    {
+        "name": "search_venues",
+        "description": "Search the venue directory by the market/city a venue sits in or its capacity tier (club, theatre, amphitheatre)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "market": {"type": "string"},
+                "capacity_tier": {
+                    "type": "string",
+                    "enum": ["club", "theatre", "amphitheatre"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_show_offer",
+        "description": "Draft a concrete show offer by applying a venue's deal terms to a guarantee, estimating the artist's door potential and projected payout",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "venue_id": {"type": "string"},
+                "show_date": {"type": "string"},
+                "guarantee": {"type": "number"},
+            },
+        },
+    },
+    {
+        "name": "submit_booking_hold",
+        "description": "Submit a booking hold on a date at a venue through the artist's connected booking/ticketing account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "venue_id": {"type": "string"},
+                "show_date": {"type": "string"},
+                "guarantee": {"type": "number"},
+            },
+            "required": ["venue_id", "show_date"],
+        },
+    },
+]
+
+
+async def _execute_venue_hawk_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Ray B tool call against the mock-first venue_hawk_service.
+
+    Returns (result_for_model, action_summary, venue_booking_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - venue_booking_not_connected: True when a hold was blocked on a
+        missing/expired booking account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Ray B can explain the outcome to the artist. Mirrors
+    _execute_vault_keeper_tool / _execute_design_studio_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_venues":
+        market        = (tool_input.get("market") or "").strip()
+        capacity_tier = (tool_input.get("capacity_tier") or "").strip()
+        res = await venue_hawk_service.search_venues(market=market, capacity_tier=capacity_tier)
+        summary = {
+            "input": f"market={market or 'any'} tier={capacity_tier or 'any'}",
+            "result": f"{res['count']} venue(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_show_offer":
+        venue_id  = (tool_input.get("venue_id") or "").strip()
+        show_date = (tool_input.get("show_date") or "").strip()
+        guarantee = tool_input.get("guarantee") or 0
+        res = await venue_hawk_service.draft_show_offer(
+            artist_id, venue_id=venue_id, show_date=show_date, guarantee=guarantee,
+        )
+        summary = {
+            "input": f"venue_id={venue_id or 'unspecified'} show_date={show_date or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_booking_hold":
+        venue_id  = (tool_input.get("venue_id") or "").strip()
+        show_date = (tool_input.get("show_date") or "").strip()
+        guarantee = tool_input.get("guarantee") or 0
+        if not venue_id:
+            return (
+                {"error": "missing_venue_id"},
+                {"input": f"venue_id={venue_id or ''} show_date={show_date}",
+                 "result": "missing venue id"},
+                False,
+            )
+        try:
+            held = await venue_hawk_service.submit_booking_hold(
+                artist_id, venue_id, show_date, guarantee,
+            )
+            if held.get("status") == "unknown_venue":
+                return (
+                    {"error": "unknown_venue", "venue_id": held.get("venue_id")},
+                    {"input": f"venue_id={venue_id}", "result": "unknown venue"},
+                    False,
+                )
+            return (
+                {"status": "held", "reference": held.get("reference"),
+                 "venue_id": held.get("venue_id"), "venue_name": held.get("venue_name"),
+                 "show_date": held.get("show_date"), "guarantee": held.get("guarantee")},
+                {"input": f"venue_id={venue_id} show_date={show_date}",
+                 "result": "booking hold placed"},
+                False,
+            )
+        except venue_hawk_service.VenueBookingNotConnected:
+            return (
+                {
+                    "venue_booking_not_connected": True,
+                    "message": ("Artist has not connected a booking/ticketing account. Tell them "
+                                "to connect one before you can submit booking holds."),
+                },
+                {"input": f"venue_id={venue_id}", "result": "venue_booking_not_connected"},
+                True,
+            )
+        except venue_hawk_service.VenueBookingAuthExpired:
+            return (
+                {
+                    "venue_booking_not_connected": True,
+                    "message": ("Booking-account authorization expired. Tell the artist to "
+                                "re-connect their booking account before you can submit holds."),
+                },
+                {"input": f"venue_id={venue_id}", "result": "venue_booking_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Global-Scout (Nova) tool_use ───────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / ... / Ray B (venue-hawk) pattern
+# exactly: these tools are passed to the Anthropic API for the global-scout agent
+# ONLY (see the gate in chat_stream). Every other agent takes its own unchanged path
+# and never receives GLOBAL_SCOUT_TOOLS. Handlers map straight onto the mock-first
+# global_scout_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+GLOBAL_SCOUT_MAX_TOOL_ITERS = 5
+
+GLOBAL_SCOUT_TOOLS = [
+    {
+        "name": "search_markets",
+        "description": "Search the world market directory for territories where the artist's sound has traction, by genre and/or region (Latin America, Europe, Asia Pacific, Africa)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "region": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "draft_market_entry_plan",
+        "description": "Draft a concrete international market-entry plan by applying a market's streaming economics to a genre and marketing budget, estimating addressable reach, projected streams and projected revenue",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "market_id": {"type": "string"},
+                "genre": {"type": "string"},
+                "marketing_budget": {"type": "number"},
+            },
+        },
+    },
+    {
+        "name": "submit_distribution_registration",
+        "description": "Register an international distribution deal for a market through the artist's connected distribution account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "market_id": {"type": "string"},
+                "release_title": {"type": "string"},
+                "genre": {"type": "string"},
+            },
+            "required": ["market_id"],
+        },
+    },
+]
+
+
+async def _execute_global_scout_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Nova tool call against the mock-first global_scout_service.
+
+    Returns (result_for_model, action_summary, global_distribution_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - global_distribution_not_connected: True when a registration was blocked on a
+        missing/expired distribution account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Nova can explain the outcome to the artist. Mirrors
+    _execute_venue_hawk_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_markets":
+        genre  = (tool_input.get("genre") or "").strip()
+        region = (tool_input.get("region") or "").strip()
+        res = await global_scout_service.search_markets(genre=genre, region=region)
+        summary = {
+            "input": f"genre={genre or 'any'} region={region or 'any'}",
+            "result": f"{res['count']} market(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_market_entry_plan":
+        market_id        = (tool_input.get("market_id") or "").strip()
+        genre            = (tool_input.get("genre") or "").strip()
+        marketing_budget = tool_input.get("marketing_budget") or 0
+        res = await global_scout_service.draft_market_entry_plan(
+            artist_id, market_id=market_id, genre=genre, marketing_budget=marketing_budget,
+        )
+        summary = {
+            "input": f"market_id={market_id or 'unspecified'} genre={genre or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_distribution_registration":
+        market_id     = (tool_input.get("market_id") or "").strip()
+        release_title = (tool_input.get("release_title") or "").strip()
+        genre         = (tool_input.get("genre") or "").strip()
+        if not market_id:
+            return (
+                {"error": "missing_market_id"},
+                {"input": f"market_id={market_id or ''} release_title={release_title}",
+                 "result": "missing market id"},
+                False,
+            )
+        try:
+            registered = await global_scout_service.submit_distribution_registration(
+                artist_id, market_id, release_title, genre,
+            )
+            if registered.get("status") == "unknown_market":
+                return (
+                    {"error": "unknown_market", "market_id": registered.get("market_id")},
+                    {"input": f"market_id={market_id}", "result": "unknown market"},
+                    False,
+                )
+            return (
+                {"status": "registered", "reference": registered.get("reference"),
+                 "market_id": registered.get("market_id"), "market_name": registered.get("market_name"),
+                 "local_pro": registered.get("local_pro"), "release_title": registered.get("release_title")},
+                {"input": f"market_id={market_id} release_title={release_title or 'untitled'}",
+                 "result": "distribution registered"},
+                False,
+            )
+        except global_scout_service.GlobalDistributionNotConnected:
+            return (
+                {
+                    "global_distribution_not_connected": True,
+                    "message": ("Artist has not connected an international distribution account. Tell "
+                                "them to connect one before you can register distribution deals."),
+                },
+                {"input": f"market_id={market_id}", "result": "global_distribution_not_connected"},
+                True,
+            )
+        except global_scout_service.GlobalDistributionAuthExpired:
+            return (
+                {
+                    "global_distribution_not_connected": True,
+                    "message": ("Distribution-account authorization expired. Tell the artist to "
+                                "re-connect their distribution account before you can register deals."),
+                },
+                {"input": f"market_id={market_id}", "result": "global_distribution_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Tour-Commander (Miles) tool_use ────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B pattern exactly: these tools
+# are passed to the Anthropic API for the tour-commander agent ONLY (see the gate in
+# chat_stream). Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn,
+# Victor, Nadia, Zara, Kai, Luna, Diego, and Ray B — takes its own unchanged path
+# and never receives TOUR_COMMANDER_TOOLS. Handlers map straight onto the mock-first
+# tour_commander_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+TOUR_COMMANDER_MAX_TOOL_ITERS = 5
+
+TOUR_COMMANDER_TOOLS = [
+    {
+        "name": "search_routing_legs",
+        "description": "Search the routing directory by the region a tour leg covers or its leg type (headline, support, festival)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "region": {"type": "string"},
+                "leg_type": {
+                    "type": "string",
+                    "enum": ["headline", "support", "festival"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_tour_budget",
+        "description": "Draft a concrete tour budget by applying a leg's per-show operating cost to a run of shows and a nightly guarantee, projecting gross, cost, and net",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "leg_id": {"type": "string"},
+                "num_shows": {"type": "integer"},
+                "nightly_guarantee": {"type": "number"},
+            },
+        },
+    },
+    {
+        "name": "book_crew_call",
+        "description": "Confirm a crew call on a date for a tour leg through the artist's connected tour-ops/crewing account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "leg_id": {"type": "string"},
+                "call_date": {"type": "string"},
+                "crew_size": {"type": "integer"},
+            },
+            "required": ["leg_id", "call_date"],
+        },
+    },
+]
+
+
+async def _execute_tour_commander_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Miles tool call against the mock-first tour_commander_service.
+
+    Returns (result_for_model, action_summary, tour_ops_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - tour_ops_not_connected: True when a crew call was blocked on a
+        missing/expired tour-ops account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Miles can explain the outcome to the artist. Mirrors
+    _execute_venue_hawk_tool / _execute_design_studio_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_routing_legs":
+        region   = (tool_input.get("region") or "").strip()
+        leg_type = (tool_input.get("leg_type") or "").strip()
+        res = await tour_commander_service.search_routing_legs(region=region, leg_type=leg_type)
+        summary = {
+            "input": f"region={region or 'any'} type={leg_type or 'any'}",
+            "result": f"{res['count']} leg(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_tour_budget":
+        leg_id            = (tool_input.get("leg_id") or "").strip()
+        num_shows         = tool_input.get("num_shows") or 0
+        nightly_guarantee = tool_input.get("nightly_guarantee") or 0
+        res = await tour_commander_service.draft_tour_budget(
+            artist_id, leg_id=leg_id, num_shows=num_shows, nightly_guarantee=nightly_guarantee,
+        )
+        summary = {
+            "input": f"leg_id={leg_id or 'unspecified'} num_shows={num_shows or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "book_crew_call":
+        leg_id    = (tool_input.get("leg_id") or "").strip()
+        call_date = (tool_input.get("call_date") or "").strip()
+        crew_size = tool_input.get("crew_size") or 0
+        if not leg_id:
+            return (
+                {"error": "missing_leg_id"},
+                {"input": f"leg_id={leg_id or ''} call_date={call_date}",
+                 "result": "missing leg id"},
+                False,
+            )
+        try:
+            call = await tour_commander_service.book_crew_call(
+                artist_id, leg_id, call_date, crew_size,
+            )
+            if call.get("status") == "unknown_leg":
+                return (
+                    {"error": "unknown_leg", "leg_id": call.get("leg_id")},
+                    {"input": f"leg_id={leg_id}", "result": "unknown leg"},
+                    False,
+                )
+            return (
+                {"status": "confirmed", "reference": call.get("reference"),
+                 "leg_id": call.get("leg_id"), "leg_name": call.get("leg_name"),
+                 "call_date": call.get("call_date"), "crew_size": call.get("crew_size")},
+                {"input": f"leg_id={leg_id} call_date={call_date}",
+                 "result": "crew call confirmed"},
+                False,
+            )
+        except tour_commander_service.TourOpsNotConnected:
+            return (
+                {
+                    "tour_ops_not_connected": True,
+                    "message": ("Artist has not connected a tour-ops/crewing account. Tell them "
+                                "to connect one before you can confirm crew calls."),
+                },
+                {"input": f"leg_id={leg_id}", "result": "tour_ops_not_connected"},
+                True,
+            )
+        except tour_commander_service.TourOpsAuthExpired:
+            return (
+                {
+                    "tour_ops_not_connected": True,
+                    "message": ("Tour-ops-account authorization expired. Tell the artist to "
+                                "re-connect their tour-ops account before you can confirm crew calls."),
+                },
+                {"input": f"leg_id={leg_id}", "result": "tour_ops_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Brand Connect (Nia) tool_use ───────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo pattern exactly:
+# these tools are passed to the Anthropic API for the brand-connect agent ONLY (see
+# the gate in chat_stream). Every other agent — including Marcus, Lex, Jade, Ray,
+# Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, Miles, and Solo — takes
+# its own unchanged path and never receives BRAND_CONNECT_TOOLS. Handlers map
+# straight onto the mock-first brand_connect_service functions; they make ZERO
+# network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+BRAND_CONNECT_MAX_TOOL_ITERS = 5
+
+BRAND_CONNECT_TOOLS = [
+    {
+        "name": "search_brand_partners",
+        "description": "Search the directory of brands seeking artist partnerships by the category a brand sits in (tech, apparel, beverage, gaming, beauty) or the sponsorship budget tier it operates at (emerging, growth, premium)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["tech", "apparel", "beverage", "gaming", "beauty"],
+                },
+                "budget_tier": {
+                    "type": "string",
+                    "enum": ["emerging", "growth", "premium"],
+                },
+            },
+        },
+    },
+    {
+        "name": "draft_partnership_proposal",
+        "description": "Draft a concrete brand-partnership proposal by applying a brand's typical fee and audience-fit to a campaign, estimating the fair deal value against the artist's proposed fee",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "brand_id": {"type": "string"},
+                "campaign_type": {"type": "string"},
+                "fee": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "submit_partnership_proposal",
+        "description": "Submit a brand-partnership proposal for a campaign through the artist's connected brand-partnerships account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "brand_id": {"type": "string"},
+                "campaign_type": {"type": "string"},
+                "fee": {"type": "integer"},
+            },
+            "required": ["brand_id", "campaign_type"],
+        },
+    },
+]
+
+
+async def _execute_brand_connect_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Nia tool call against the mock-first brand_connect_service.
+
+    Returns (result_for_model, action_summary, partnerships_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - partnerships_not_connected: True when a submission was blocked on a
+        missing/expired brand-partnerships account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Nia can explain the outcome to the artist. Mirrors
+    _execute_airwave_tool / _execute_venue_hawk_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_brand_partners":
+        category    = (tool_input.get("category") or "").strip()
+        budget_tier = (tool_input.get("budget_tier") or "").strip()
+        res = await brand_connect_service.search_brand_partners(
+            category=category, budget_tier=budget_tier,
+        )
+        summary = {
+            "input": f"category={category or 'any'} budget_tier={budget_tier or 'any'}",
+            "result": f"{res['count']} brand(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_partnership_proposal":
+        brand_id      = (tool_input.get("brand_id") or "").strip()
+        campaign_type = (tool_input.get("campaign_type") or "").strip()
+        fee           = tool_input.get("fee") or 0
+        res = await brand_connect_service.draft_partnership_proposal(
+            artist_id, brand_id=brand_id, campaign_type=campaign_type, fee=fee,
+        )
+        summary = {
+            "input": f"brand_id={brand_id or 'unspecified'} campaign={campaign_type or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_partnership_proposal":
+        brand_id      = (tool_input.get("brand_id") or "").strip()
+        campaign_type = (tool_input.get("campaign_type") or "").strip()
+        fee           = tool_input.get("fee") or 0
+        if not brand_id:
+            return (
+                {"error": "missing_brand_id"},
+                {"input": f"brand_id={brand_id or ''} campaign={campaign_type}",
+                 "result": "missing brand id"},
+                False,
+            )
+        try:
+            submitted = await brand_connect_service.submit_partnership_proposal(
+                artist_id, brand_id, campaign_type, fee,
+            )
+            if submitted.get("status") == "unknown_brand":
+                return (
+                    {"error": "unknown_brand", "brand_id": submitted.get("brand_id")},
+                    {"input": f"brand_id={brand_id}", "result": "unknown brand"},
+                    False,
+                )
+            return (
+                {"status": "submitted", "reference": submitted.get("reference"),
+                 "brand_id": submitted.get("brand_id"), "brand_name": submitted.get("brand_name"),
+                 "campaign_type": submitted.get("campaign_type"),
+                 "proposed_fee": submitted.get("proposed_fee")},
+                {"input": f"brand_id={brand_id} campaign={campaign_type}",
+                 "result": "partnership proposal submitted"},
+                False,
+            )
+        except brand_connect_service.BrandConnectAccountNotConnected:
+            return (
+                {
+                    "partnerships_not_connected": True,
+                    "message": ("Artist has not connected a brand-partnerships account. Tell "
+                                "them to connect one before you can submit partnership proposals."),
+                },
+                {"input": f"brand_id={brand_id}", "result": "partnerships_not_connected"},
+                True,
+            )
+        except brand_connect_service.BrandConnectAuthExpired:
+            return (
+                {
+                    "partnerships_not_connected": True,
+                    "message": ("Brand-partnerships authorization expired. Tell the artist to "
+                                "re-connect their account before you can submit proposals."),
+                },
+                {"input": f"brand_id={brand_id}", "result": "partnerships_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Merch-Empire (Max) tool_use ────────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia pattern
+# exactly: these tools are passed to the Anthropic API for the merch-empire agent
+# ONLY (see the gate in chat_stream). Every other agent — including Marcus, Lex,
+# Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, Miles, Solo,
+# and Nia — takes its own unchanged path and never receives MERCH_EMPIRE_TOOLS.
+# Handlers map straight onto the mock-first merch_empire_service functions; they
+# make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+MERCH_EMPIRE_MAX_TOOL_ITERS = 5
+
+MERCH_EMPIRE_TOOLS = [
+    {
+        "name": "search_merch_products",
+        "description": "Search the catalogue of blank merch products the platform can produce by the category a product sits in (apparel, print, accessories, music) or the production tier it belongs to (starter, pro)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": ["apparel", "print", "accessories", "music"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["starter", "pro"],
+                },
+            },
+        },
+    },
+    {
+        "name": "build_production_run",
+        "description": "Build a concrete merch production run by applying a product's per-unit cost and suggested retail to a quantity, estimating total cost, projected revenue, and margin for the run",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string"},
+                "design_name": {"type": "string"},
+                "quantity": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "schedule_fulfillment_order",
+        "description": "Place a merch production run as a fulfilment order for a product and quantity through the artist's connected print/fulfilment account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "product_id": {"type": "string"},
+                "quantity": {"type": "integer"},
+                "design_name": {"type": "string"},
+            },
+            "required": ["product_id", "quantity"],
+        },
+    },
+]
+
+
+async def _execute_merch_empire_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Max tool call against the mock-first merch_empire_service.
+
+    Returns (result_for_model, action_summary, fulfillment_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - fulfillment_not_connected: True when an order was blocked on a
+        missing/expired print/fulfilment account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Max can explain the outcome to the artist. Mirrors
+    _execute_brand_connect_tool / _execute_venue_hawk_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_merch_products":
+        category = (tool_input.get("category") or "").strip()
+        tier     = (tool_input.get("tier") or "").strip()
+        res = await merch_empire_service.search_merch_products(
+            category=category, tier=tier,
+        )
+        summary = {
+            "input": f"category={category or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} product(s) found",
+        }
+        return res, summary, False
+
+    if name == "build_production_run":
+        product_id  = (tool_input.get("product_id") or "").strip()
+        design_name = (tool_input.get("design_name") or "").strip()
+        quantity    = tool_input.get("quantity") or 0
+        res = await merch_empire_service.build_production_run(
+            artist_id, product_id=product_id, design_name=design_name, quantity=quantity,
+        )
+        summary = {
+            "input": f"product_id={product_id or 'unspecified'} qty={quantity or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "schedule_fulfillment_order":
+        product_id  = (tool_input.get("product_id") or "").strip()
+        quantity    = tool_input.get("quantity") or 0
+        design_name = (tool_input.get("design_name") or "").strip()
+        if not product_id:
+            return (
+                {"error": "missing_product_id"},
+                {"input": f"product_id={product_id or ''} qty={quantity}",
+                 "result": "missing product id"},
+                False,
+            )
+        try:
+            ordered = await merch_empire_service.schedule_fulfillment_order(
+                artist_id, product_id, quantity, design_name,
+            )
+            if ordered.get("status") == "unknown_product":
+                return (
+                    {"error": "unknown_product", "product_id": ordered.get("product_id")},
+                    {"input": f"product_id={product_id}", "result": "unknown product"},
+                    False,
+                )
+            return (
+                {"status": "ordered", "reference": ordered.get("reference"),
+                 "product_id": ordered.get("product_id"), "product_name": ordered.get("product_name"),
+                 "design_name": ordered.get("design_name"),
+                 "quantity": ordered.get("quantity")},
+                {"input": f"product_id={product_id} qty={quantity}",
+                 "result": "fulfilment order placed"},
+                False,
+            )
+        except merch_empire_service.MerchAccountNotConnected:
+            return (
+                {
+                    "fulfillment_not_connected": True,
+                    "message": ("Artist has not connected a print/fulfilment account. Tell "
+                                "them to connect one before you can place fulfilment orders."),
+                },
+                {"input": f"product_id={product_id}", "result": "fulfillment_not_connected"},
+                True,
+            )
+        except merch_empire_service.MerchAccountAuthExpired:
+            return (
+                {
+                    "fulfillment_not_connected": True,
+                    "message": ("Print/fulfilment authorization expired. Tell the artist to "
+                                "re-connect their account before you can place orders."),
+                },
+                {"input": f"product_id={product_id}", "result": "fulfillment_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Airwave (Solo) tool_use ────────────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles pattern exactly: these
+# tools are passed to the Anthropic API for the airwave agent ONLY (see the gate in
+# chat_stream). Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn,
+# Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, and Miles — takes its own unchanged
+# path and never receives AIRWAVE_TOOLS. Handlers map straight onto the mock-first
+# airwave_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+AIRWAVE_MAX_TOOL_ITERS = 5
+
+AIRWAVE_TOOLS = [
+    {
+        "name": "search_airplay_targets",
+        "description": "Search the directory of radio stations and playlist outlets by the format a target programs (indie, pop, rock, electronic) or the market/region it serves",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["indie", "pop", "rock", "electronic"],
+                },
+                "market": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "draft_airplay_pitch",
+        "description": "Draft a concrete airplay/playlist pitch by applying a target's reach and placement odds to a track, estimating the audience the artist could reach and how many add slots that converts to",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string"},
+                "track_title": {"type": "string"},
+                "release_date": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "submit_airplay_pitch",
+        "description": "Submit an airplay/playlist pitch for a track through the artist's connected radio-plugging / DSP-pitching account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string"},
+                "track_title": {"type": "string"},
+                "release_date": {"type": "string"},
+            },
+            "required": ["target_id", "track_title"],
+        },
+    },
+]
+
+
+async def _execute_airwave_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Solo tool call against the mock-first airwave_service.
+
+    Returns (result_for_model, action_summary, plugging_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - plugging_not_connected: True when a pitch was blocked on a
+        missing/expired plugging account.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Solo can explain the outcome to the artist. Mirrors
+    _execute_venue_hawk_tool / _execute_tour_commander_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_airplay_targets":
+        fmt    = (tool_input.get("format") or "").strip()
+        market = (tool_input.get("market") or "").strip()
+        res = await airwave_service.search_airplay_targets(format=fmt, market=market)
+        summary = {
+            "input": f"format={fmt or 'any'} market={market or 'any'}",
+            "result": f"{res['count']} target(s) found",
+        }
+        return res, summary, False
+
+    if name == "draft_airplay_pitch":
+        target_id    = (tool_input.get("target_id") or "").strip()
+        track_title  = (tool_input.get("track_title") or "").strip()
+        release_date = (tool_input.get("release_date") or "").strip()
+        res = await airwave_service.draft_airplay_pitch(
+            artist_id, target_id=target_id, track_title=track_title, release_date=release_date,
+        )
+        summary = {
+            "input": f"target_id={target_id or 'unspecified'} track={track_title or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_airplay_pitch":
+        target_id    = (tool_input.get("target_id") or "").strip()
+        track_title  = (tool_input.get("track_title") or "").strip()
+        release_date = (tool_input.get("release_date") or "").strip()
+        if not target_id:
+            return (
+                {"error": "missing_target_id"},
+                {"input": f"target_id={target_id or ''} track={track_title}",
+                 "result": "missing target id"},
+                False,
+            )
+        try:
+            pitched = await airwave_service.submit_airplay_pitch(
+                artist_id, target_id, track_title, release_date,
+            )
+            if pitched.get("status") == "unknown_target":
+                return (
+                    {"error": "unknown_target", "target_id": pitched.get("target_id")},
+                    {"input": f"target_id={target_id}", "result": "unknown target"},
+                    False,
+                )
+            return (
+                {"status": "pitched", "reference": pitched.get("reference"),
+                 "target_id": pitched.get("target_id"), "target_name": pitched.get("target_name"),
+                 "track_title": pitched.get("track_title"), "release_date": pitched.get("release_date")},
+                {"input": f"target_id={target_id} track={track_title}",
+                 "result": "airplay pitch submitted"},
+                False,
+            )
+        except airwave_service.AirwaveAccountNotConnected:
+            return (
+                {
+                    "plugging_not_connected": True,
+                    "message": ("Artist has not connected a radio-plugging/DSP-pitching account. Tell "
+                                "them to connect one before you can submit airplay pitches."),
+                },
+                {"input": f"target_id={target_id}", "result": "plugging_not_connected"},
+                True,
+            )
+        except airwave_service.AirwaveAuthExpired:
+            return (
+                {
+                    "plugging_not_connected": True,
+                    "message": ("Plugging-account authorization expired. Tell the artist to "
+                                "re-connect their plugging account before you can submit pitches."),
+                },
+                {"input": f"target_id={target_id}", "result": "plugging_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Unit — Fan-Builder (fan-builder) tool_use: search_fan_segments +
+#        build_engagement_campaign + schedule_fan_broadcast
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max
+# pattern exactly: these tools are passed to the Anthropic API for the fan-builder
+# agent ONLY (see the gate in chat_stream). Every other agent — including Marcus,
+# Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, Miles,
+# Solo, Nia, and Max — takes its own unchanged path and never receives
+# FAN_BUILDER_TOOLS. Handlers map straight onto the mock-first fan_builder_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+FAN_BUILDER_MAX_TOOL_ITERS = 5
+
+FAN_BUILDER_TOOLS = [
+    {
+        "name": "search_fan_segments",
+        "description": "Search fan-engagement segments by segment type or tier",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "segment_type": {
+                    "type": "string",
+                    "enum": ["superfans", "engaged", "casual", "lapsed", "new"],
+                },
+                "tier": {
+                    "type": "string",
+                    "enum": ["core", "growth", "winback"],
+                },
+            },
+        },
+    },
+    {
+        "name": "build_engagement_campaign",
+        "description": "Build a concrete multi-channel fan-engagement campaign by applying a segment's channel mix to a target reach",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "segment_id": {"type": "string"},
+                "campaign_name": {"type": "string"},
+                "target_reach": {"type": "integer"},
+            },
+            "required": ["segment_id"],
+        },
+    },
+    {
+        "name": "schedule_fan_broadcast",
+        "description": "Schedule a broadcast message to a segment of fans out of the artist's connected fan-club / CRM account on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "channel": {"type": "string"},
+                "message": {"type": "string"},
+                "segment": {"type": "string"},
+            },
+            "required": ["channel", "message"],
+        },
+    },
+]
+
+
+async def _execute_fan_builder_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Aria tool call against the mock-first fan_builder_service.
+
+    Returns (result_for_model, action_summary, fan_platform_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - fan_platform_not_connected: True when a broadcast was blocked on a
+        missing/expired fan-club / CRM platform.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Aria can explain the outcome to the artist. Mirrors
+    _execute_vault_keeper_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_fan_segments":
+        segment_type = (tool_input.get("segment_type") or "").strip()
+        tier         = (tool_input.get("tier") or "").strip()
+        res = await fan_builder_service.search_fan_segments(
+            segment_type=segment_type, tier=tier,
+        )
+        summary = {
+            "input": f"type={segment_type or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} segment(s) found",
+        }
+        return res, summary, False
+
+    if name == "build_engagement_campaign":
+        segment_id    = (tool_input.get("segment_id") or "").strip()
+        campaign_name = (tool_input.get("campaign_name") or "").strip()
+        target_reach  = tool_input.get("target_reach") or 0
+        res = await fan_builder_service.build_engagement_campaign(
+            artist_id, segment_id=segment_id, campaign_name=campaign_name,
+            target_reach=target_reach,
+        )
+        summary = {
+            "input": f"campaign={campaign_name or 'unspecified'} segment={segment_id or 'unspecified'}",
+            "result": f"viable={res['viable']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "schedule_fan_broadcast":
+        channel = (tool_input.get("channel") or "").strip()
+        message = tool_input.get("message") or ""
+        segment = (tool_input.get("segment") or "").strip()
+        if not channel:
+            return (
+                {"error": "missing_channel"},
+                {"input": f"channel={channel or ''} segment={segment or ''}",
+                 "result": "missing channel"},
+                False,
+            )
+        try:
+            bcast = await fan_builder_service.schedule_fan_broadcast(
+                artist_id, channel, message, segment,
+            )
+            return (
+                {"status": "scheduled", "reference": bcast.get("reference"),
+                 "channel": bcast.get("channel"), "segment": bcast.get("segment")},
+                {"input": f"channel={channel[:40]} segment={segment or 'all'}",
+                 "result": "broadcast scheduled"},
+                False,
+            )
+        except fan_builder_service.FanPlatformNotConnected:
+            return (
+                {
+                    "fan_platform_not_connected": True,
+                    "message": ("Artist has not connected a fan-club / CRM platform. Tell them "
+                                "to connect one before you can schedule fan broadcasts."),
+                },
+                {"input": f"channel={channel}", "result": "fan_platform_not_connected"},
+                True,
+            )
+        except fan_builder_service.FanPlatformAuthExpired:
+            return (
+                {
+                    "fan_platform_not_connected": True,
+                    "message": ("Fan-platform authorization expired. Tell the artist to "
+                                "re-connect it before you can schedule fan broadcasts."),
+                },
+                {"input": f"channel={channel}", "result": "fan_platform_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Unit — Sync-Agent (sync-agent) tool_use: search_sync_briefs +
+#    assess_track_sync_fit + submit_sync_pitch ─────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
+# Aria pattern exactly: these tools are passed to the Anthropic API for the
+# sync-agent agent ONLY (see the gate in chat_stream). Every other agent — including
+# Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+# Miles, Solo, Nia, Max, and Aria — takes its own unchanged path and never receives
+# SYNC_AGENT_TOOLS. Handlers map straight onto the mock-first sync_agent_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+SYNC_AGENT_MAX_TOOL_ITERS = 5
+
+SYNC_AGENT_TOOLS = [
+    {
+        "name": "search_sync_briefs",
+        "description": "Search open sync-placement briefs (TV, film, ad, game) by medium or genre",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "medium": {
+                    "type": "string",
+                    "enum": ["tv", "film", "ad", "game"],
+                },
+                "genre": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "assess_track_sync_fit",
+        "description": "Assess how well a specific track fits a chosen sync brief's genre, tempo, and instrumental requirements",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "brief_id": {"type": "string"},
+                "track_title": {"type": "string"},
+                "genre": {"type": "string"},
+                "tempo_bpm": {"type": "number"},
+                "has_instrumental": {"type": "boolean"},
+            },
+            "required": ["brief_id"],
+        },
+    },
+    {
+        "name": "submit_sync_pitch",
+        "description": "Submit a pitch of a track to the music supervisor on a sync brief, on the artist's behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "brief_id": {"type": "string"},
+                "track_title": {"type": "string"},
+                "note": {"type": "string"},
+            },
+            "required": ["brief_id", "track_title"],
+        },
+    },
+]
+
+
+async def _execute_sync_agent_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Sync tool call against the mock-first sync_agent_service.
+
+    Returns (result_for_model, action_summary, sync_catalogue_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - sync_catalogue_not_connected: True when a pitch was blocked on a
+        missing/expired sync catalogue.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Sync can explain the outcome to the artist. Mirrors
+    _execute_vault_keeper_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_sync_briefs":
+        medium = (tool_input.get("medium") or "").strip()
+        genre  = (tool_input.get("genre") or "").strip()
+        res = await sync_agent_service.search_sync_briefs(medium=medium, genre=genre)
+        summary = {
+            "input": f"medium={medium or 'any'} genre={genre or 'any'}",
+            "result": f"{res['count']} brief(s) found",
+        }
+        return res, summary, False
+
+    if name == "assess_track_sync_fit":
+        brief_id         = (tool_input.get("brief_id") or "").strip()
+        track_title      = (tool_input.get("track_title") or "").strip()
+        genre            = (tool_input.get("genre") or "").strip()
+        tempo_bpm        = tool_input.get("tempo_bpm") or 0
+        has_instrumental = bool(tool_input.get("has_instrumental") or False)
+        res = await sync_agent_service.assess_track_sync_fit(
+            artist_id, brief_id=brief_id, track_title=track_title, genre=genre,
+            tempo_bpm=tempo_bpm, has_instrumental=has_instrumental,
+        )
+        summary = {
+            "input": f"track={track_title or 'unspecified'} brief={brief_id or 'unspecified'}",
+            "result": f"fit={res['fit']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_sync_pitch":
+        brief_id    = (tool_input.get("brief_id") or "").strip()
+        track_title = (tool_input.get("track_title") or "").strip()
+        note        = tool_input.get("note") or ""
+        if not track_title:
+            return (
+                {"error": "missing_track_title"},
+                {"input": f"brief={brief_id or ''} track={track_title or ''}",
+                 "result": "missing track title"},
+                False,
+            )
+        try:
+            pitch = await sync_agent_service.submit_sync_pitch(
+                artist_id, brief_id, track_title, note,
+            )
+            return (
+                {"status": "submitted", "reference": pitch.get("reference"),
+                 "brief_id": pitch.get("brief_id"), "track_title": pitch.get("track_title")},
+                {"input": f"brief={brief_id or 'unspecified'} track={track_title[:40]}",
+                 "result": "pitch submitted"},
+                False,
+            )
+        except sync_agent_service.SyncCatalogueNotConnected:
+            return (
+                {
+                    "sync_catalogue_not_connected": True,
+                    "message": ("Artist has not connected a sync catalogue / rights account. Tell "
+                                "them to connect one before you can submit sync pitches."),
+                },
+                {"input": f"brief={brief_id}", "result": "sync_catalogue_not_connected"},
+                True,
+            )
+        except sync_agent_service.SyncCatalogueAuthExpired:
+            return (
+                {
+                    "sync_catalogue_not_connected": True,
+                    "message": ("Sync-catalogue authorization expired. Tell the artist to "
+                                "re-connect it before you can submit sync pitches."),
+                },
+                {"input": f"brief={brief_id}", "result": "sync_catalogue_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Unit — Creative-Director (creative-director) tool_use: search_rollout_templates
+#    + assess_creative_concept + schedule_rollout ──────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
+# Aria / Sync / Nova pattern exactly: these tools are passed to the Anthropic API
+# for the creative-director agent ONLY (see the gate in chat_stream). Every other
+# agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai,
+# Luna, Diego, Ray B, Miles, Solo, Nia, Max, Aria, Sync, and Nova — takes its own
+# unchanged path and never receives CREATIVE_DIRECTOR_TOOLS. Handlers map straight
+# onto the mock-first creative_director_service functions; they make ZERO network
+# calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+CREATIVE_DIRECTOR_MAX_TOOL_ITERS = 5
+
+CREATIVE_DIRECTOR_TOOLS = [
+    {
+        "name": "search_rollout_templates",
+        "description": "Search proven release-rollout campaign templates (single, EP, album) by release type or creative goal",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "release_type": {
+                    "type": "string",
+                    "enum": ["single", "ep", "album"],
+                },
+                "goal": {
+                    "type": "string",
+                    "enum": ["awareness", "streams", "superfans", "press"],
+                },
+            },
+        },
+    },
+    {
+        "name": "assess_creative_concept",
+        "description": "Assess how ready a specific creative concept is against a chosen rollout template's aesthetic, timing, and visual-asset requirements",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_id": {"type": "string"},
+                "release_title": {"type": "string"},
+                "theme": {"type": "string"},
+                "weeks_to_release": {"type": "number"},
+                "has_visual_assets": {"type": "boolean"},
+            },
+            "required": ["template_id"],
+        },
+    },
+    {
+        "name": "schedule_rollout",
+        "description": "Schedule a release rollout for the artist against a chosen template, on the artist's behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "template_id": {"type": "string"},
+                "release_title": {"type": "string"},
+                "kickoff": {"type": "string"},
+            },
+            "required": ["template_id", "release_title"],
+        },
+    },
+]
+
+
+async def _execute_creative_director_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Cree tool call against the mock-first creative_director_service.
+
+    Returns (result_for_model, action_summary, creative_studio_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - creative_studio_not_connected: True when a rollout was blocked on a
+        missing/expired creative studio.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Cree can explain the outcome to the artist. Mirrors
+    _execute_sync_agent_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_rollout_templates":
+        release_type = (tool_input.get("release_type") or "").strip()
+        goal         = (tool_input.get("goal") or "").strip()
+        res = await creative_director_service.search_rollout_templates(
+            release_type=release_type, goal=goal,
+        )
+        summary = {
+            "input": f"release_type={release_type or 'any'} goal={goal or 'any'}",
+            "result": f"{res['count']} template(s) found",
+        }
+        return res, summary, False
+
+    if name == "assess_creative_concept":
+        template_id       = (tool_input.get("template_id") or "").strip()
+        release_title     = (tool_input.get("release_title") or "").strip()
+        theme             = (tool_input.get("theme") or "").strip()
+        weeks_to_release  = tool_input.get("weeks_to_release") or 0
+        has_visual_assets = bool(tool_input.get("has_visual_assets") or False)
+        res = await creative_director_service.assess_creative_concept(
+            artist_id, template_id=template_id, release_title=release_title, theme=theme,
+            weeks_to_release=weeks_to_release, has_visual_assets=has_visual_assets,
+        )
+        summary = {
+            "input": f"release={release_title or 'unspecified'} template={template_id or 'unspecified'}",
+            "result": f"ready={res['ready']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "schedule_rollout":
+        template_id   = (tool_input.get("template_id") or "").strip()
+        release_title = (tool_input.get("release_title") or "").strip()
+        kickoff       = tool_input.get("kickoff") or ""
+        if not release_title:
+            return (
+                {"error": "missing_release_title"},
+                {"input": f"template={template_id or ''} release={release_title or ''}",
+                 "result": "missing release title"},
+                False,
+            )
+        try:
+            rollout = await creative_director_service.schedule_rollout(
+                artist_id, template_id, release_title, kickoff,
+            )
+            return (
+                {"status": "scheduled", "reference": rollout.get("reference"),
+                 "template_id": rollout.get("template_id"), "release_title": rollout.get("release_title")},
+                {"input": f"template={template_id or 'unspecified'} release={release_title[:40]}",
+                 "result": "rollout scheduled"},
+                False,
+            )
+        except creative_director_service.CreativeStudioNotConnected:
+            return (
+                {
+                    "creative_studio_not_connected": True,
+                    "message": ("Artist has not connected a creative studio / content account. Tell "
+                                "them to connect one before you can schedule rollouts."),
+                },
+                {"input": f"template={template_id}", "result": "creative_studio_not_connected"},
+                True,
+            )
+        except creative_director_service.CreativeStudioAuthExpired:
+            return (
+                {
+                    "creative_studio_not_connected": True,
+                    "message": ("Creative-studio authorization expired. Tell the artist to "
+                                "re-connect it before you can schedule rollouts."),
+                },
+                {"input": f"template={template_id}", "result": "creative_studio_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── Unit — Data-Oracle (data-oracle) tool_use: search_streaming_datasets
+#    + analyze_streaming_metric + schedule_data_export ──────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
+# Aria / Sync / Nova / Cree pattern exactly: these tools are passed to the
+# Anthropic API for the data-oracle agent ONLY (see the gate in chat_stream).
+# Every other agent takes its own unchanged path and never receives
+# DATA_ORACLE_TOOLS. Handlers map straight onto the mock-first data_oracle_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+DATA_ORACLE_MAX_TOOL_ITERS = 5
+
+DATA_ORACLE_TOOLS = [
+    {
+        "name": "search_streaming_datasets",
+        "description": "Search available streaming / audience analytics datasets across the DSPs by platform or metric",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["spotify", "apple_music", "youtube", "tiktok"],
+                },
+                "metric": {
+                    "type": "string",
+                    "enum": ["streams", "listeners", "saves", "discovery", "watch_time", "video_views"],
+                },
+            },
+        },
+    },
+    {
+        "name": "analyze_streaming_metric",
+        "description": "Analyze how a specific streaming metric is trending against its prior window for a chosen dataset",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "current_value": {"type": "number"},
+                "prior_value": {"type": "number"},
+                "window_days": {"type": "number"},
+            },
+            "required": ["dataset_id"],
+        },
+    },
+    {
+        "name": "schedule_data_export",
+        "description": "Schedule a recurring data export / analytics digest for the artist against a chosen dataset, on the artist's behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dataset_id": {"type": "string"},
+                "destination": {"type": "string"},
+                "cadence": {"type": "string"},
+            },
+            "required": ["dataset_id"],
+        },
+    },
+]
+
+
+async def _execute_data_oracle_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Data tool call against the mock-first data_oracle_service.
+
+    Returns (result_for_model, action_summary, data_warehouse_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - data_warehouse_not_connected: True when an export was blocked on a
+        missing/expired data warehouse.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Data can explain the outcome to the artist. Mirrors
+    _execute_creative_director_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_streaming_datasets":
+        platform = (tool_input.get("platform") or "").strip()
+        metric   = (tool_input.get("metric") or "").strip()
+        res = await data_oracle_service.search_streaming_datasets(
+            platform=platform, metric=metric,
+        )
+        summary = {
+            "input": f"platform={platform or 'any'} metric={metric or 'any'}",
+            "result": f"{res['count']} dataset(s) found",
+        }
+        return res, summary, False
+
+    if name == "analyze_streaming_metric":
+        dataset_id    = (tool_input.get("dataset_id") or "").strip()
+        current_value = tool_input.get("current_value") or 0
+        prior_value   = tool_input.get("prior_value") or 0
+        window_days   = tool_input.get("window_days") or 0
+        res = await data_oracle_service.analyze_streaming_metric(
+            artist_id, dataset_id=dataset_id, current_value=current_value,
+            prior_value=prior_value, window_days=window_days,
+        )
+        summary = {
+            "input": f"dataset={dataset_id or 'unspecified'}",
+            "result": f"trend={res['trend']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "schedule_data_export":
+        dataset_id  = (tool_input.get("dataset_id") or "").strip()
+        destination = tool_input.get("destination") or ""
+        cadence     = tool_input.get("cadence") or ""
+        if not dataset_id:
+            return (
+                {"error": "missing_dataset_id"},
+                {"input": f"dataset={dataset_id or ''}", "result": "missing dataset id"},
+                False,
+            )
+        try:
+            export = await data_oracle_service.schedule_data_export(
+                artist_id, dataset_id, destination, cadence,
+            )
+            return (
+                {"status": "scheduled", "reference": export.get("reference"),
+                 "dataset_id": export.get("dataset_id"), "destination": export.get("destination"),
+                 "cadence": export.get("cadence")},
+                {"input": f"dataset={dataset_id} destination={export.get('destination')}",
+                 "result": "export scheduled"},
+                False,
+            )
+        except data_oracle_service.DataWarehouseNotConnected:
+            return (
+                {
+                    "data_warehouse_not_connected": True,
+                    "message": ("Artist has not connected a data warehouse / dashboard. Tell "
+                                "them to connect one before you can schedule exports."),
+                },
+                {"input": f"dataset={dataset_id}", "result": "data_warehouse_not_connected"},
+                True,
+            )
+        except data_oracle_service.DataWarehouseAuthExpired:
+            return (
+                {
+                    "data_warehouse_not_connected": True,
+                    "message": ("Data-warehouse authorization expired. Tell the artist to "
+                                "re-connect it before you can schedule exports."),
+                },
+                {"input": f"dataset={dataset_id}", "result": "data_warehouse_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── AR-Scout (Scout) tool_use ──────────────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
+# Aria / Sync / Nova / Cree / Data pattern exactly: these tools are passed to the
+# Anthropic API for the ar-scout agent ONLY (see the gate in chat_stream). Every
+# other agent — including all of the above — takes its own unchanged path and never
+# receives AR_SCOUT_TOOLS. Handlers map straight onto the mock-first ar_scout_service
+# functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+AR_SCOUT_MAX_TOOL_ITERS = 5
+
+AR_SCOUT_TOOLS = [
+    {
+        "name": "search_prospects",
+        "description": "Search the A&R prospect directory for emerging/unsigned artists by genre, region, or development stage (unsigned, emerging, buzzing)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "region": {"type": "string"},
+                "stage": {
+                    "type": "string",
+                    "enum": ["unsigned", "emerging", "buzzing"],
+                },
+            },
+        },
+    },
+    {
+        "name": "evaluate_demo",
+        "description": "Run a structured demo/sound evaluation that scores a track across the five A&R pillars (hook, production, vocal, originality, market fit) and returns a develop / pass / sign-track recommendation",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_title": {"type": "string"},
+                "genre": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "log_scouting_note",
+        "description": "Log a scouting note and rating on a prospect through the artist's connected A&R CRM on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prospect_id": {"type": "string"},
+                "note": {"type": "string"},
+                "rating": {"type": "integer"},
+            },
+            "required": ["prospect_id"],
+        },
+    },
+]
+
+
+async def _execute_ar_scout_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Scout tool call against the mock-first ar_scout_service.
+
+    Returns (result_for_model, action_summary, ar_scout_crm_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - ar_scout_crm_not_connected: True when logging a note was blocked on a
+        missing/expired A&R CRM.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Scout can explain the outcome to the artist. Mirrors
+    _execute_venue_hawk_tool / _execute_data_oracle_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_prospects":
+        genre  = (tool_input.get("genre") or "").strip()
+        region = (tool_input.get("region") or "").strip()
+        stage  = (tool_input.get("stage") or "").strip()
+        res = await ar_scout_service.search_prospects(genre=genre, region=region, stage=stage)
+        summary = {
+            "input": f"genre={genre or 'any'} region={region or 'any'} stage={stage or 'any'}",
+            "result": f"{res['count']} prospect(s) found",
+        }
+        return res, summary, False
+
+    if name == "evaluate_demo":
+        track_title = (tool_input.get("track_title") or "").strip()
+        genre       = (tool_input.get("genre") or "").strip()
+        res = await ar_scout_service.evaluate_demo(
+            artist_id, track_title=track_title, genre=genre,
+        )
+        summary = {
+            "input": f"track={track_title or 'unspecified'} genre={genre or 'any'}",
+            "result": f"composite={res['composite']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "log_scouting_note":
+        prospect_id = (tool_input.get("prospect_id") or "").strip()
+        note        = tool_input.get("note") or ""
+        rating      = tool_input.get("rating") or 0
+        if not prospect_id:
+            return (
+                {"error": "missing_prospect_id"},
+                {"input": f"prospect_id={prospect_id or ''}", "result": "missing prospect id"},
+                False,
+            )
+        try:
+            logged = await ar_scout_service.log_scouting_note(
+                artist_id, prospect_id, note, rating,
+            )
+            if logged.get("status") == "unknown_prospect":
+                return (
+                    {"error": "unknown_prospect", "prospect_id": logged.get("prospect_id")},
+                    {"input": f"prospect_id={prospect_id}", "result": "unknown prospect"},
+                    False,
+                )
+            return (
+                {"status": "logged", "reference": logged.get("reference"),
+                 "prospect_id": logged.get("prospect_id"), "prospect_name": logged.get("prospect_name"),
+                 "rating": logged.get("rating")},
+                {"input": f"prospect_id={prospect_id} rating={logged.get('rating')}",
+                 "result": "scouting note logged"},
+                False,
+            )
+        except ar_scout_service.ArScoutCRMNotConnected:
+            return (
+                {
+                    "ar_scout_crm_not_connected": True,
+                    "message": ("Artist has not connected an A&R CRM / scouting account. Tell them "
+                                "to connect one before you can log scouting notes."),
+                },
+                {"input": f"prospect_id={prospect_id}", "result": "ar_scout_crm_not_connected"},
+                True,
+            )
+        except ar_scout_service.ArScoutCRMAuthExpired:
+            return (
+                {
+                    "ar_scout_crm_not_connected": True,
+                    "message": ("A&R CRM authorization expired. Tell the artist to re-connect it "
+                                "before you can log scouting notes."),
+                },
+                {"input": f"prospect_id={prospect_id}", "result": "ar_scout_crm_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ── Producer-Connect (Beat) tool_use ───────────────────────────────────────────
+# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
+# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
+# Aria / Sync / Nova / Cree / Data / Scout pattern exactly: these tools are passed to
+# the Anthropic API for the producer-connect agent ONLY (see the gate in chat_stream).
+# Every other agent — including all of the above — takes its own unchanged path and
+# never receives PRODUCER_CONNECT_TOOLS. Handlers map straight onto the mock-first
+# producer_connect_service functions; they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+PRODUCER_CONNECT_MAX_TOOL_ITERS = 5
+
+PRODUCER_CONNECT_TOOLS = [
+    {
+        "name": "search_producers",
+        "description": "Search the producer directory for producers/beatmakers by genre, region, or budget tier (budget, mid, premium)",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "region": {"type": "string"},
+                "tier": {
+                    "type": "string",
+                    "enum": ["budget", "mid", "premium"],
+                },
+            },
+        },
+    },
+    {
+        "name": "evaluate_beat_deal",
+        "description": "Run a structured evaluation of a beat-licensing offer that scores it across the five deal pillars (value, rights, flexibility, production fit, market) and returns an accept / negotiate / pass recommendation",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "beat_title": {"type": "string"},
+                "license_type": {
+                    "type": "string",
+                    "enum": ["lease", "exclusive"],
+                },
+                "price_usd": {"type": "integer"},
+            },
+        },
+    },
+    {
+        "name": "log_collab_request",
+        "description": "Log a collaboration/co-write request to a producer through the artist's connected production network on their behalf",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "producer_id": {"type": "string"},
+                "message": {"type": "string"},
+                "session_type": {"type": "string"},
+            },
+            "required": ["producer_id"],
+        },
+    },
+]
+
+
+async def _execute_producer_connect_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Beat tool call against the mock-first producer_connect_service.
+
+    Returns (result_for_model, action_summary, producer_network_not_connected).
+      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
+      - action_summary:   {"input": str, "result": str} for the actions SSE event.
+      - producer_network_not_connected: True when logging a collab request was blocked
+        on a missing/expired production network.
+    Never raises — every failure is converted into a structured tool_result so the
+    loop can continue and Beat can explain the outcome to the artist. Mirrors
+    _execute_ar_scout_tool / _execute_venue_hawk_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_producers":
+        genre  = (tool_input.get("genre") or "").strip()
+        region = (tool_input.get("region") or "").strip()
+        tier   = (tool_input.get("tier") or "").strip()
+        res = await producer_connect_service.search_producers(genre=genre, region=region, tier=tier)
+        summary = {
+            "input": f"genre={genre or 'any'} region={region or 'any'} tier={tier or 'any'}",
+            "result": f"{res['count']} producer(s) found",
+        }
+        return res, summary, False
+
+    if name == "evaluate_beat_deal":
+        beat_title   = (tool_input.get("beat_title") or "").strip()
+        license_type = (tool_input.get("license_type") or "").strip()
+        price_usd    = tool_input.get("price_usd") or 0
+        res = await producer_connect_service.evaluate_beat_deal(
+            artist_id, beat_title=beat_title, license_type=license_type, price_usd=price_usd,
+        )
+        summary = {
+            "input": f"beat={beat_title or 'unspecified'} license={license_type or 'any'}",
+            "result": f"composite={res['composite']}, {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "log_collab_request":
+        producer_id  = (tool_input.get("producer_id") or "").strip()
+        message      = tool_input.get("message") or ""
+        session_type = tool_input.get("session_type") or ""
+        if not producer_id:
+            return (
+                {"error": "missing_producer_id"},
+                {"input": f"producer_id={producer_id or ''}", "result": "missing producer id"},
+                False,
+            )
+        try:
+            logged = await producer_connect_service.log_collab_request(
+                artist_id, producer_id, message, session_type,
+            )
+            if logged.get("status") == "unknown_producer":
+                return (
+                    {"error": "unknown_producer", "producer_id": logged.get("producer_id")},
+                    {"input": f"producer_id={producer_id}", "result": "unknown producer"},
+                    False,
+                )
+            return (
+                {"status": "sent", "reference": logged.get("reference"),
+                 "producer_id": logged.get("producer_id"), "producer_name": logged.get("producer_name"),
+                 "session_type": logged.get("session_type")},
+                {"input": f"producer_id={producer_id} session={logged.get('session_type') or 'any'}",
+                 "result": "collab request sent"},
+                False,
+            )
+        except producer_connect_service.ProducerNetworkNotConnected:
+            return (
+                {
+                    "producer_network_not_connected": True,
+                    "message": ("Artist has not connected a production network / collab account. Tell "
+                                "them to connect one before you can send collab requests."),
+                },
+                {"input": f"producer_id={producer_id}", "result": "producer_network_not_connected"},
+                True,
+            )
+        except producer_connect_service.ProducerNetworkAuthExpired:
+            return (
+                {
+                    "producer_network_not_connected": True,
+                    "message": ("Production network authorization expired. Tell the artist to re-connect "
+                                "it before you can send collab requests."),
+                },
+                {"input": f"producer_id={producer_id}", "result": "producer_network_auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
 class ChatStreamRequest(BaseModel):
     agent_id:  str
     message:   str
@@ -2027,9 +5528,4063 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
-    # Gate: Marcus (puppet-master) takes the tool_use path; every other agent takes
-    # the unchanged streaming `generate()` path above.
-    _stream_gen = generate_marcus if agent_id == "puppet-master" else generate
+    async def generate_lex_cipher():
+        # Lex-only path (Unit 1.8): the SAME Anthropic tool_use loop as Marcus, but
+        # pointed at LEX_CIPHER_TOOLS / _execute_lex_cipher_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against lex_cipher_service, feeds tool_result back, and repeats (capped at
+        # LEX_CIPHER_MAX_TOOL_ITERS) until Lex returns a final text answer. The final
+        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
+        # the default path uses, so the call UI behaves identically aside from the
+        # `actions` event. Every other agent (including Marcus) never reaches here.
+        full_text             = ""
+        actions_taken         = []
+        registry_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _lex_producer():
+            nonlocal full_text, actions_taken, registry_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(LEX_CIPHER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=LEX_CIPHER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, rnc = await _execute_lex_cipher_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if rnc:
+                                registry_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_lex_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Lex took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                   "actions",
+                "actions_taken":          actions_taken,
+                "registry_not_connected": registry_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_fund_phantom():
+        # Fund-Phantom-only path (Jade): the SAME Anthropic tool_use loop as Marcus
+        # and Lex, but pointed at FUND_PHANTOM_TOOLS / _execute_fund_phantom_tool
+        # instead. Runs the non-streaming messages.create with tools, executes each
+        # emitted tool_use against fund_phantom_service, feeds tool_result back, and
+        # repeats (capped at FUND_PHANTOM_MAX_TOOL_ITERS) until Jade returns a final
+        # text answer. The final text is then streamed out sentence-by-sentence
+        # through the SAME TTS pipeline the default path uses, so the call UI behaves
+        # identically aside from the `actions` event. Every other agent (including
+        # Marcus and Lex) never reaches here.
+        full_text            = ""
+        actions_taken        = []
+        portal_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _fund_phantom_producer():
+            nonlocal full_text, actions_taken, portal_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(FUND_PHANTOM_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=FUND_PHANTOM_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, pnc = await _execute_fund_phantom_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if pnc:
+                                portal_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_fund_phantom_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Jade took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                 "actions",
+                "actions_taken":        actions_taken,
+                "portal_not_connected": portal_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_rights_pulse():
+        # Rights-Pulse-only path (Ray): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, and Jade, but pointed at RIGHTS_PULSE_TOOLS / _execute_rights_pulse_tool
+        # instead. Runs the non-streaming messages.create with tools, executes each
+        # emitted tool_use against rights_pulse_service, feeds tool_result back, and
+        # repeats (capped at RIGHTS_PULSE_MAX_TOOL_ITERS) until Ray returns a final
+        # text answer. The final text is then streamed out sentence-by-sentence
+        # through the SAME TTS pipeline the default path uses, so the call UI behaves
+        # identically aside from the `actions` event. Every other agent (including
+        # Marcus, Lex, and Jade) never reaches here.
+        full_text         = ""
+        actions_taken     = []
+        pro_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _rights_pulse_producer():
+            nonlocal full_text, actions_taken, pro_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(RIGHTS_PULSE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=RIGHTS_PULSE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, pnc = await _execute_rights_pulse_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if pnc:
+                                pro_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_rights_pulse_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Ray took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":              "actions",
+                "actions_taken":     actions_taken,
+                "pro_not_connected": pro_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_border_royalty():
+        # Border-Royalty-only path (Cleo): the SAME Anthropic tool_use loop as
+        # Marcus, Lex, Jade, and Ray, but pointed at BORDER_ROYALTY_TOOLS /
+        # _execute_border_royalty_tool instead. Runs the non-streaming
+        # messages.create with tools, executes each emitted tool_use against
+        # border_royalty_service, feeds tool_result back, and repeats (capped at
+        # BORDER_ROYALTY_MAX_TOOL_ITERS) until Cleo returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside
+        # from the `actions` event. Every other agent (including Marcus, Lex, Jade,
+        # and Ray) never reaches here.
+        full_text             = ""
+        actions_taken         = []
+        society_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _border_royalty_producer():
+            nonlocal full_text, actions_taken, society_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(BORDER_ROYALTY_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=BORDER_ROYALTY_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, snc = await _execute_border_royalty_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if snc:
+                                society_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_border_royalty_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Cleo took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                  "actions",
+                "actions_taken":         actions_taken,
+                "society_not_connected": society_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_mech_ledger():
+        # Mech-Ledger-only path (Finn): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, and Cleo, but pointed at MECH_LEDGER_TOOLS /
+        # _execute_mech_ledger_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against mech_ledger_service,
+        # feeds tool_result back, and repeats (capped at MECH_LEDGER_MAX_TOOL_ITERS)
+        # until Finn returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent (including Marcus, Lex, Jade, Ray, and Cleo) never reaches here.
+        full_text                  = ""
+        actions_taken              = []
+        mech_account_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _mech_ledger_producer():
+            nonlocal full_text, actions_taken, mech_account_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(MECH_LEDGER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=MECH_LEDGER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, mnc = await _execute_mech_ledger_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if mnc:
+                                mech_account_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_mech_ledger_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Finn took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                       "actions",
+                "actions_taken":              actions_taken,
+                "mech_account_not_connected": mech_account_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_vault_keeper():
+        # Vault-Keeper-only path (Victor): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, and Finn, but pointed at VAULT_KEEPER_TOOLS /
+        # _execute_vault_keeper_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against vault_keeper_service,
+        # feeds tool_result back, and repeats (capped at VAULT_KEEPER_MAX_TOOL_ITERS)
+        # until Victor returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent (including Marcus, Lex, Jade, Ray, Cleo, and Finn) never reaches here.
+        full_text                   = ""
+        actions_taken               = []
+        vault_account_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _vault_keeper_producer():
+            nonlocal full_text, actions_taken, vault_account_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(VAULT_KEEPER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=VAULT_KEEPER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, vnc = await _execute_vault_keeper_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if vnc:
+                                vault_account_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_vault_keeper_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Victor took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                        "actions",
+                "actions_taken":               actions_taken,
+                "vault_account_not_connected": vault_account_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_ledger_lock():
+        # Ledger-Lock-only path (Nadia): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, and Victor, but pointed at LEDGER_LOCK_TOOLS /
+        # _execute_ledger_lock_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against ledger_lock_service,
+        # feeds tool_result back, and repeats (capped at LEDGER_LOCK_MAX_TOOL_ITERS)
+        # until Nadia returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent (including Marcus, Lex, Jade, Ray, Cleo, Finn, and Victor) never reaches here.
+        full_text                    = ""
+        actions_taken                = []
+        ledger_account_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _ledger_lock_producer():
+            nonlocal full_text, actions_taken, ledger_account_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(LEDGER_LOCK_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=LEDGER_LOCK_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, lnc = await _execute_ledger_lock_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if lnc:
+                                ledger_account_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_ledger_lock_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Nadia took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                         "actions",
+                "actions_taken":                actions_taken,
+                "ledger_account_not_connected": ledger_account_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_signal_blaster():
+        # Signal-Blaster-only path (Zara): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, and Nadia, but pointed at
+        # SIGNAL_BLASTER_TOOLS / _execute_signal_blaster_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against signal_blaster_service, feeds tool_result back, and repeats (capped
+        # at SIGNAL_BLASTER_MAX_TOOL_ITERS) until Zara returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside from
+        # the `actions` event. Every other agent (including Marcus, Lex, Jade, Ray,
+        # Cleo, Finn, Victor, and Nadia) never reaches here.
+        full_text                   = ""
+        actions_taken               = []
+        press_account_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _signal_blaster_producer():
+            nonlocal full_text, actions_taken, press_account_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(SIGNAL_BLASTER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=SIGNAL_BLASTER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, pnc = await _execute_signal_blaster_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if pnc:
+                                press_account_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_signal_blaster_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Zara took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                        "actions",
+                "actions_taken":               actions_taken,
+                "press_account_not_connected": press_account_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_grid_prophet():
+        # Grid-Prophet-only path (Kai): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, and Zara, but pointed at
+        # GRID_PROPHET_TOOLS / _execute_grid_prophet_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against grid_prophet_service, feeds tool_result back, and repeats (capped
+        # at GRID_PROPHET_MAX_TOOL_ITERS) until Kai returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside from
+        # the `actions` event. Every other agent (including Marcus, Lex, Jade, Ray,
+        # Cleo, Finn, Victor, Nadia, and Zara) never reaches here.
+        full_text                    = ""
+        actions_taken                = []
+        social_account_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _grid_prophet_producer():
+            nonlocal full_text, actions_taken, social_account_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(GRID_PROPHET_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=GRID_PROPHET_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, snc = await _execute_grid_prophet_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if snc:
+                                social_account_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_grid_prophet_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Kai took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                         "actions",
+                "actions_taken":                actions_taken,
+                "social_account_not_connected": social_account_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_vision_forge():
+        # Vision-Forge-only path (Luna): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, and Kai, but pointed at
+        # VISION_FORGE_TOOLS / _execute_vision_forge_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against vision_forge_service, feeds tool_result back, and repeats (capped
+        # at VISION_FORGE_MAX_TOOL_ITERS) until Luna returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside from
+        # the `actions` event. Every other agent (including Marcus, Lex, Jade, Ray,
+        # Cleo, Finn, Victor, Nadia, Zara, and Kai) never reaches here.
+        full_text                       = ""
+        actions_taken                   = []
+        render_workspace_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _vision_forge_producer():
+            nonlocal full_text, actions_taken, render_workspace_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(VISION_FORGE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=VISION_FORGE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, rwnc = await _execute_vision_forge_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if rwnc:
+                                render_workspace_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_vision_forge_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Luna took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                            "actions",
+                "actions_taken":                   actions_taken,
+                "render_workspace_not_connected":  render_workspace_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_design_studio():
+        # Design-Studio-only path (Diego): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, and Luna, but pointed at
+        # DESIGN_STUDIO_TOOLS / _execute_design_studio_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against design_studio_service, feeds tool_result back, and repeats (capped
+        # at DESIGN_STUDIO_MAX_TOOL_ITERS) until Diego returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside from
+        # the `actions` event. Every other agent (including Marcus, Lex, Jade, Ray,
+        # Cleo, Finn, Victor, Nadia, Zara, Kai, and Luna) never reaches here.
+        full_text                       = ""
+        actions_taken                   = []
+        design_workspace_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _design_studio_producer():
+            nonlocal full_text, actions_taken, design_workspace_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(DESIGN_STUDIO_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=DESIGN_STUDIO_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, dwnc = await _execute_design_studio_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if dwnc:
+                                design_workspace_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_design_studio_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Diego took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                            "actions",
+                "actions_taken":                   actions_taken,
+                "design_workspace_not_connected":  design_workspace_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_venue_hawk():
+        # Venue-Hawk-only path (Ray B): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, and Diego, but
+        # pointed at VENUE_HAWK_TOOLS / _execute_venue_hawk_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against venue_hawk_service, feeds tool_result back, and repeats (capped at
+        # VENUE_HAWK_MAX_TOOL_ITERS) until Ray B returns a final text answer. The final
+        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
+        # the default path uses, so the call UI behaves identically aside from the
+        # `actions` event. Every other agent (including Marcus, Lex, Jade, Ray, Cleo,
+        # Finn, Victor, Nadia, Zara, Kai, Luna, and Diego) never reaches here.
+        full_text                    = ""
+        actions_taken                = []
+        venue_booking_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _venue_hawk_producer():
+            nonlocal full_text, actions_taken, venue_booking_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(VENUE_HAWK_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=VENUE_HAWK_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, vbnc = await _execute_venue_hawk_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if vbnc:
+                                venue_booking_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_venue_hawk_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Ray B took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                          "actions",
+                "actions_taken":                 actions_taken,
+                "venue_booking_not_connected":   venue_booking_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_tour_commander():
+        # Tour-Commander-only path (Miles): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, and Ray B,
+        # but pointed at TOUR_COMMANDER_TOOLS / _execute_tour_commander_tool instead. Runs
+        # the non-streaming messages.create with tools, executes each emitted tool_use
+        # against tour_commander_service, feeds tool_result back, and repeats (capped at
+        # TOUR_COMMANDER_MAX_TOOL_ITERS) until Miles returns a final text answer. The final
+        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
+        # the default path uses, so the call UI behaves identically aside from the
+        # `actions` event. Every other agent (including Marcus, Lex, Jade, Ray, Cleo,
+        # Finn, Victor, Nadia, Zara, Kai, Luna, Diego, and Ray B) never reaches here.
+        full_text                = ""
+        actions_taken            = []
+        tour_ops_not_connected   = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _tour_commander_producer():
+            nonlocal full_text, actions_taken, tour_ops_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(TOUR_COMMANDER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=TOUR_COMMANDER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, tonc = await _execute_tour_commander_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if tonc:
+                                tour_ops_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_tour_commander_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Miles took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                     "actions",
+                "actions_taken":            actions_taken,
+                "tour_ops_not_connected":   tour_ops_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_airwave():
+        # Airwave-only path (Solo): the SAME Anthropic tool_use loop as Marcus, Lex,
+        # Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, and
+        # Miles, but pointed at AIRWAVE_TOOLS / _execute_airwave_tool instead. Runs
+        # the non-streaming messages.create with tools, executes each emitted tool_use
+        # against airwave_service, feeds tool_result back, and repeats (capped at
+        # AIRWAVE_MAX_TOOL_ITERS) until Solo returns a final text answer. The final
+        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
+        # the default path uses, so the call UI behaves identically aside from the
+        # `actions` event. Every other agent (including Marcus, Lex, Jade, Ray, Cleo,
+        # Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, and Miles) never reaches here.
+        full_text                = ""
+        actions_taken            = []
+        plugging_not_connected   = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _airwave_producer():
+            nonlocal full_text, actions_taken, plugging_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(AIRWAVE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=AIRWAVE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, pnc = await _execute_airwave_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if pnc:
+                                plugging_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_airwave_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Solo took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                    "actions",
+                "actions_taken":           actions_taken,
+                "plugging_not_connected":  plugging_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_brand_connect():
+        # Brand-Connect-only path (Nia): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+        # Miles, and Solo, but pointed at BRAND_CONNECT_TOOLS /
+        # _execute_brand_connect_tool instead. Runs the non-streaming
+        # messages.create with tools, executes each emitted tool_use against
+        # brand_connect_service, feeds tool_result back, and repeats (capped at
+        # BRAND_CONNECT_MAX_TOOL_ITERS) until Nia returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside
+        # from the `actions` event. Every other agent (including Marcus, Lex, Jade,
+        # Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, Miles, and
+        # Solo) never reaches here.
+        full_text                   = ""
+        actions_taken               = []
+        partnerships_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _brand_connect_producer():
+            nonlocal full_text, actions_taken, partnerships_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(BRAND_CONNECT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=BRAND_CONNECT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, pnc = await _execute_brand_connect_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if pnc:
+                                partnerships_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_brand_connect_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Nia took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                        "actions",
+                "actions_taken":               actions_taken,
+                "partnerships_not_connected":  partnerships_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_merch_empire():
+        # Merch-Empire-only path (Max): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+        # Miles, Solo, and Nia, but pointed at MERCH_EMPIRE_TOOLS /
+        # _execute_merch_empire_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against merch_empire_service,
+        # feeds tool_result back, and repeats (capped at MERCH_EMPIRE_MAX_TOOL_ITERS)
+        # until Max returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent (including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara,
+        # Kai, Luna, Diego, Ray B, Miles, Solo, and Nia) never reaches here.
+        full_text                  = ""
+        actions_taken              = []
+        fulfillment_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _merch_empire_producer():
+            nonlocal full_text, actions_taken, fulfillment_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(MERCH_EMPIRE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=MERCH_EMPIRE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, fnc = await _execute_merch_empire_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if fnc:
+                                fulfillment_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_merch_empire_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Max took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                       "actions",
+                "actions_taken":              actions_taken,
+                "fulfillment_not_connected":  fulfillment_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_fan_builder():
+        # Fan-Builder-only path (Aria): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+        # Miles, Solo, Nia, and Max, but pointed at FAN_BUILDER_TOOLS /
+        # _execute_fan_builder_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against fan_builder_service,
+        # feeds tool_result back, and repeats (capped at FAN_BUILDER_MAX_TOOL_ITERS)
+        # until Aria returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent (including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara,
+        # Kai, Luna, Diego, Ray B, Miles, Solo, Nia, and Max) never reaches here.
+        full_text                   = ""
+        actions_taken               = []
+        fan_platform_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _fan_builder_producer():
+            nonlocal full_text, actions_taken, fan_platform_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(FAN_BUILDER_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=FAN_BUILDER_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, fnc = await _execute_fan_builder_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if fnc:
+                                fan_platform_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_fan_builder_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Aria took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                        "actions",
+                "actions_taken":               actions_taken,
+                "fan_platform_not_connected":  fan_platform_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_sync_agent():
+        # Sync-Agent-only path (Sync): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+        # Miles, Solo, Nia, Max, and Aria, but pointed at SYNC_AGENT_TOOLS /
+        # _execute_sync_agent_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against sync_agent_service,
+        # feeds tool_result back, and repeats (capped at SYNC_AGENT_MAX_TOOL_ITERS)
+        # until Sync returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent (including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara,
+        # Kai, Luna, Diego, Ray B, Miles, Solo, Nia, Max, and Aria) never reaches here.
+        full_text                     = ""
+        actions_taken                 = []
+        sync_catalogue_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _sync_agent_producer():
+            nonlocal full_text, actions_taken, sync_catalogue_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(SYNC_AGENT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=SYNC_AGENT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, snc = await _execute_sync_agent_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if snc:
+                                sync_catalogue_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_sync_agent_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Sync took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                          "actions",
+                "actions_taken":                 actions_taken,
+                "sync_catalogue_not_connected":  sync_catalogue_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_global_scout():
+        # Global-Scout-only path (Nova): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Ray B, and the rest, but pointed at GLOBAL_SCOUT_TOOLS /
+        # _execute_global_scout_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against global_scout_service,
+        # feeds tool_result back, and repeats (capped at GLOBAL_SCOUT_MAX_TOOL_ITERS)
+        # until Nova returns a final text answer. The final text is then streamed out
+        # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
+        # the call UI behaves identically aside from the `actions` event. Every other
+        # agent never reaches here.
+        full_text                        = ""
+        actions_taken                    = []
+        global_distribution_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _global_scout_producer():
+            nonlocal full_text, actions_taken, global_distribution_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(GLOBAL_SCOUT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=GLOBAL_SCOUT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, gdnc = await _execute_global_scout_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if gdnc:
+                                global_distribution_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_global_scout_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Nova took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                              "actions",
+                "actions_taken":                     actions_taken,
+                "global_distribution_not_connected": global_distribution_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_creative_director():
+        # Creative-Director-only path (Cree): the SAME Anthropic tool_use loop as
+        # Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego,
+        # Ray B, Miles, Solo, Nia, Max, Aria, Sync, and Nova, but pointed at
+        # CREATIVE_DIRECTOR_TOOLS / _execute_creative_director_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against creative_director_service, feeds tool_result back, and repeats
+        # (capped at CREATIVE_DIRECTOR_MAX_TOOL_ITERS) until Cree returns a final text
+        # answer. The final text is then streamed out sentence-by-sentence through the
+        # SAME TTS pipeline the default path uses, so the call UI behaves identically
+        # aside from the `actions` event. Every other agent never reaches here.
+        full_text                     = ""
+        actions_taken                 = []
+        creative_studio_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _creative_director_producer():
+            nonlocal full_text, actions_taken, creative_studio_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(CREATIVE_DIRECTOR_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=CREATIVE_DIRECTOR_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, csnc = await _execute_creative_director_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if csnc:
+                                creative_studio_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_creative_director_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Cree took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                          "actions",
+                "actions_taken":                 actions_taken,
+                "creative_studio_not_connected": creative_studio_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_data_oracle():
+        # Data-Oracle-only path (Data): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+        # Miles, Solo, Nia, Max, Aria, Sync, Nova, and Cree, but pointed at
+        # DATA_ORACLE_TOOLS / _execute_data_oracle_tool instead. Runs the
+        # non-streaming messages.create with tools, executes each emitted tool_use
+        # against data_oracle_service, feeds tool_result back, and repeats (capped at
+        # DATA_ORACLE_MAX_TOOL_ITERS) until Data returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside
+        # from the `actions` event. Every other agent never reaches here.
+        full_text                    = ""
+        actions_taken                = []
+        data_warehouse_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _data_oracle_producer():
+            nonlocal full_text, actions_taken, data_warehouse_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(DATA_ORACLE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=DATA_ORACLE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, dwnc = await _execute_data_oracle_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if dwnc:
+                                data_warehouse_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_data_oracle_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Data took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                         "actions",
+                "actions_taken":                actions_taken,
+                "data_warehouse_not_connected": data_warehouse_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_ar_scout():
+        # AR-Scout-only path (Scout): the SAME Anthropic tool_use loop as Marcus,
+        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
+        # Miles, Solo, Nia, Max, Aria, Sync, Nova, Cree, and Data, but pointed at
+        # AR_SCOUT_TOOLS / _execute_ar_scout_tool instead. Runs the non-streaming
+        # messages.create with tools, executes each emitted tool_use against
+        # ar_scout_service, feeds tool_result back, and repeats (capped at
+        # AR_SCOUT_MAX_TOOL_ITERS) until Scout returns a final text answer. The final
+        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
+        # the default path uses, so the call UI behaves identically aside from the
+        # `actions` event. Every other agent never reaches here.
+        full_text                  = ""
+        actions_taken              = []
+        ar_scout_crm_not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _ar_scout_producer():
+            nonlocal full_text, actions_taken, ar_scout_crm_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(AR_SCOUT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=AR_SCOUT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, acnc = await _execute_ar_scout_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if acnc:
+                                ar_scout_crm_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_ar_scout_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Scout took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                       "actions",
+                "actions_taken":              actions_taken,
+                "ar_scout_crm_not_connected": ar_scout_crm_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    async def generate_producer_connect():
+        # Producer-Connect-only path (Beat): the SAME Anthropic tool_use loop as
+        # Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego,
+        # Ray B, Miles, Solo, Nia, Max, Aria, Sync, Nova, Cree, Data, and Scout, but
+        # pointed at PRODUCER_CONNECT_TOOLS / _execute_producer_connect_tool instead.
+        # Runs the non-streaming messages.create with tools, executes each emitted
+        # tool_use against producer_connect_service, feeds tool_result back, and repeats
+        # (capped at PRODUCER_CONNECT_MAX_TOOL_ITERS) until Beat returns a final text
+        # answer. The final text is then streamed out sentence-by-sentence through the
+        # SAME TTS pipeline the default path uses, so the call UI behaves identically
+        # aside from the `actions` event. Every other agent never reaches here.
+        full_text                       = ""
+        actions_taken                   = []
+        producer_network_not_connected  = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _producer_connect_producer():
+            nonlocal full_text, actions_taken, producer_network_not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(PRODUCER_CONNECT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=PRODUCER_CONNECT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, pnnc = await _execute_producer_connect_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if pnnc:
+                                producer_network_not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                # Stream the final answer through the shared sentence/TTS pipeline.
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_producer_connect_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        # Surface the actions Beat took so the call UI can render them. Wrapped so a
+        # serialization hiccup can never break the main stream.
+        try:
+            yield sse({
+                "type":                            "actions",
+                "actions_taken":                   actions_taken,
+                "producer_network_not_connected":  producer_network_not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
+    # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
+    # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
+    # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
+    # (grid-prophet), Luna (vision-forge), Diego (design-studio), Ray B
+    # (venue-hawk), Miles (tour-commander), Solo (airwave), Nia (brand-connect),
+    # Max (merch-empire), Aria (fan-builder), Sync (sync-agent), Nova
+    # (global-scout), and Cree (creative-director) each take their own tool_use
+    # path; every other agent takes the unchanged streaming `generate()` path above.
+    if agent_id == "puppet-master":
+        _stream_gen = generate_marcus
+    elif agent_id == "lex-cipher":
+        _stream_gen = generate_lex_cipher
+    elif agent_id == "fund-phantom":
+        _stream_gen = generate_fund_phantom
+    elif agent_id == "rights-pulse":
+        _stream_gen = generate_rights_pulse
+    elif agent_id == "border-royalty":
+        _stream_gen = generate_border_royalty
+    elif agent_id == "mech-ledger":
+        _stream_gen = generate_mech_ledger
+    elif agent_id == "vault-keeper":
+        _stream_gen = generate_vault_keeper
+    elif agent_id == "ledger-lock":
+        _stream_gen = generate_ledger_lock
+    elif agent_id == "signal-blaster":
+        _stream_gen = generate_signal_blaster
+    elif agent_id == "grid-prophet":
+        _stream_gen = generate_grid_prophet
+    elif agent_id == "vision-forge":
+        _stream_gen = generate_vision_forge
+    elif agent_id == "design-studio":
+        _stream_gen = generate_design_studio
+    elif agent_id == "venue-hawk":
+        _stream_gen = generate_venue_hawk
+    elif agent_id == "tour-commander":
+        _stream_gen = generate_tour_commander
+    elif agent_id == "airwave":
+        _stream_gen = generate_airwave
+    elif agent_id == "brand-connect":
+        _stream_gen = generate_brand_connect
+    elif agent_id == "merch-empire":
+        _stream_gen = generate_merch_empire
+    elif agent_id == "fan-builder":
+        _stream_gen = generate_fan_builder
+    elif agent_id == "sync-agent":
+        _stream_gen = generate_sync_agent
+    elif agent_id == "global-scout":
+        _stream_gen = generate_global_scout
+    elif agent_id == "creative-director":
+        _stream_gen = generate_creative_director
+    elif agent_id == "data-oracle":
+        _stream_gen = generate_data_oracle
+    elif agent_id == "ar-scout":
+        _stream_gen = generate_ar_scout
+    elif agent_id == "producer-connect":
+        _stream_gen = generate_producer_connect
+    else:
+        _stream_gen = generate
     return StreamingResponse(
         _stream_gen(),
         media_type="text/event-stream",

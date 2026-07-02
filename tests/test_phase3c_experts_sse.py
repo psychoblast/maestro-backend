@@ -74,7 +74,7 @@ def test_paired_agent_stream_emits_experts_event(monkeypatch, tmp_path):
     # Benign reply that does NOT trigger agent routing.
     m, client = _load_client(monkeypatch, tmp_path, "Here is some general guidance for you.")
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "ar-scout",          # paired → home "ar"
+        "agent_id":  "producer-connect",  # paired → home "production"
         "message":   "just a general check-in, nothing specific",
         "artist_id": "test-artist",
         "history":   "[]",
@@ -90,9 +90,9 @@ def test_paired_agent_stream_emits_experts_event(monkeypatch, tmp_path):
     assert types.index("experts") < types.index("done")
 
     experts = next(e for e in events if e["type"] == "experts")
-    assert experts["home_domain"] == "ar"
+    assert experts["home_domain"] == "production"
     assert isinstance(experts["domains"], list) and experts["domains"], "domains empty"
-    assert experts["domains"][0] == "ar", "home domain must be first"
+    assert experts["domains"][0] == "production", "home domain must be first"
 
 
 # ── (b) homed-but-originally-unpaired agent emits home + cross-domain ─────────
