@@ -1124,6 +1124,7 @@ import creative_director_service  # noqa: E402  (module ref for Cree/creative-di
 import data_oracle_service  # noqa: E402  (module ref for Data/data-oracle tool_use handlers)
 import ar_scout_service  # noqa: E402  (module ref for Scout/ar-scout tool_use handlers)
 import producer_connect_service  # noqa: E402  (module ref for Beat/producer-connect tool_use handlers)
+import live_wire_service  # noqa: E402  (module ref for Knox/live-wire tool_use handlers)
 import live_coach_service  # noqa: E402  (module ref for Coach/live-coach tool_use handlers)
 import label_services_service  # noqa: E402  (module ref for Tommy/label-services tool_use handlers)
 import ink_and_air_service  # noqa: E402  (module ref for Reed/ink-and-air tool_use handlers)
@@ -6149,6 +6150,130 @@ async def _execute_live_coach_tool(name: str, tool_input: dict, artist_id: str) 
                                 "before you can complete this action."),
                 },
                 {"input": f"focus={nm}", "result": "auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Knox (live-wire) tool_use: search_venues + assess_show_offer + submit_booking_hold
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
+# passed to the Anthropic API for the live-wire agent ONLY (see the gate in
+# chat_stream). Every other agent takes its own unchanged path and never receives
+# LIVE_WIRE_TOOLS. Handlers map straight onto the mock-first live_wire_service functions;
+# they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+LIVE_WIRE_MAX_TOOL_ITERS = 5
+
+LIVE_WIRE_TOOLS = [
+    {
+        "name": "search_venues",
+        "description": "Search the venue directory by city or capacity tier",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "enum": ['london', 'berlin', 'austin', 'toronto']},
+                "capacity_tier": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "assess_show_offer",
+        "description": "Screen a show offer for unfavourable terms",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "offer_text": {"type": "string"},
+                "context": {"type": "string"},
+            },
+            "required": ["offer_text"],
+        },
+    },
+    {
+        "name": "submit_booking_hold",
+        "description": "Submit a date hold on the connected booking account",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "venue_name": {"type": "string"},
+                "hold_type": {"type": "string", "enum": ['first', 'second', 'challenge']},
+            },
+            "required": ["venue_name"],
+        },
+    },
+]
+
+
+async def _execute_live_wire_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Knox tool call against the mock-first live_wire_service.
+
+    Returns (result_for_model, action_summary, not_connected). Never raises —
+    every failure is converted into a structured tool_result so the loop can
+    continue. Mirrors _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_venues":
+        a = (tool_input.get("city") or "").strip()
+        b = (tool_input.get("capacity_tier") or "").strip()
+        res = await live_wire_service.search_venues(city=a, capacity_tier=b)
+        summary = {
+            "input": f"city={a or 'any'} capacity_tier={b or 'any'}",
+            "result": f"{res['count']} venue(s) found",
+        }
+        return res, summary, False
+
+    if name == "assess_show_offer":
+        txt = tool_input.get("offer_text") or ""
+        ctx = (tool_input.get("context") or "").strip()
+        res = await live_wire_service.assess_show_offer(artist_id, offer_text=txt, context=ctx)
+        summary = {
+            "input": f"context={ctx or 'unspecified'} chars={len(txt)}",
+            "result": f"{res['finding_count']} issue(s), {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "submit_booking_hold":
+        nm  = (tool_input.get("venue_name") or "").strip()
+        opt = (tool_input.get("hold_type") or "first").strip()
+        if not nm:
+            return (
+                {"error": "missing_venue_name"},
+                {"input": "venue_name=", "result": "missing venue_name"},
+                False,
+            )
+        try:
+            done = await live_wire_service.submit_booking_hold(artist_id, nm, opt)
+            return (
+                {"status": "done", "reference": done.get("reference"), "venue_name": nm},
+                {"input": f"venue_name={nm} hold_type={opt}", "result": "hold submitted"},
+                False,
+            )
+        except live_wire_service.BookingAccountNotConnected:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Artist has not connected a booking account. Tell them to connect one "
+                                "before you can complete this action."),
+                },
+                {"input": f"venue_name={nm}", "result": "not_connected"},
+                True,
+            )
+        except live_wire_service.BookingAccountAuthExpired:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Booking account authorization expired. Tell the artist to re-connect "
+                                "before you can complete this action."),
+                },
+                {"input": f"venue_name={nm}", "result": "auth_expired"},
                 True,
             )
 
@@ -11874,6 +11999,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_live_wire():
+        # live-wire-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # LIVE_WIRE_TOOLS / _execute_live_wire_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against live_wire_service, feeds
+        # tool_result back, and repeats (capped at LIVE_WIRE_MAX_TOOL_ITERS) until
+        # Knox returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _live_wire_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(LIVE_WIRE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=LIVE_WIRE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_live_wire_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_live_wire_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -11946,6 +12238,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_label_services
     elif agent_id == "live-coach":
         _stream_gen = generate_live_coach
+    elif agent_id == "live-wire":
+        _stream_gen = generate_live_wire
     else:
         _stream_gen = generate
     return StreamingResponse(
