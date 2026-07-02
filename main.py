@@ -1139,6 +1139,7 @@ import collab_connect_service  # noqa: E402  (module ref for Collab/collab-conne
 import audio_quality_service  # noqa: E402  (module ref for Audio/audio-quality tool_use handlers)
 import artist_wellness_service  # noqa: E402  (module ref for Maya/artist-wellness tool_use handlers)
 import ai_navigator_service  # noqa: E402  (module ref for Neo/ai-navigator tool_use handlers)
+import release_service  # noqa: E402  (module ref for Sage/release-strategist tool_use handlers)
 import social_service  # noqa: E402  (module ref for Riley/social-manager tool_use handlers)
 import booking_service  # noqa: E402  (module ref for Avery/booking-agent tool_use handlers)
 import pr_service  # noqa: E402  (module ref for Quinn/pr-agent tool_use handlers)
@@ -7449,6 +7450,141 @@ async def _execute_social_manager_tool(name: str, tool_input: dict, artist_id: s
         return (
             {"status": "scheduled", "post_id": post_id},
             {"input": f"post={post_id}", "result": "post scheduled"},
+            False,
+        )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sage (release-strategist) tool_use: list_releases + create_release
+#            + schedule_campaign
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) pattern, but wired to the REAL release_service
+# functions (DB-backed + the pure _build_campaign_actions planner, zero network).
+# Passed to the Anthropic API for the release-strategist ONLY (see the gate in
+# chat_stream); every other agent takes its own unchanged path and never receives
+# RELEASE_STRATEGIST_TOOLS. The schedule action is gated on a campaign-automation
+# connection check (env-driven, mock — mirrors lex) so a missing/expired
+# credential degrades gracefully instead of firing real campaign actions.
+
+RELEASE_STRATEGIST_MAX_TOOL_ITERS = 5
+
+
+def _release_automation_state() -> str:
+    """Mock campaign-automation connection state (env-driven, ZERO network)."""
+    val = (os.environ.get("RELEASE_AUTOMATION_CONNECTED", "") or "").strip().lower()
+    if val == "expired":
+        return "expired"
+    return "connected" if val in ("1", "true", "yes", "connected") else "not_connected"
+
+
+RELEASE_STRATEGIST_TOOLS = [
+    {
+        "name": "list_releases",
+        "description": "List the artist's releases",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "create_release",
+        "description": "Create a release record for the artist",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "release_date": {"type": "string", "description": "YYYY-MM-DD"},
+                "genre": {"type": "string"},
+            },
+            "required": ["title", "release_date"],
+        },
+    },
+    {
+        "name": "schedule_campaign",
+        "description": "Plan and schedule the rollout campaign for a release via connected automation",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "release_id": {"type": "string"},
+            },
+            "required": ["release_id"],
+        },
+    },
+]
+
+
+async def _execute_release_strategist_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Sage tool call against the REAL release_service (DB-backed, no network)."""
+    tool_input = dict(tool_input or {})
+
+    if name == "list_releases":
+        releases = release_service._db_list_releases(artist_id)
+        res = {"releases": releases, "count": len(releases)}
+        summary = {"input": "artist", "result": f"{len(releases)} release(s) found"}
+        return res, summary, False
+
+    if name == "create_release":
+        title = (tool_input.get("title") or "").strip()
+        date  = (tool_input.get("release_date") or "").strip()
+        genre = (tool_input.get("genre") or "").strip()
+        if not title or not date:
+            return (
+                {"error": "missing_title_or_date"},
+                {"input": f"title={title or 'none'}", "result": "missing title or date"},
+                False,
+            )
+        rid = "rel-" + hashlib.sha1(f"{artist_id}:{title}:{date}".encode("utf-8")).hexdigest()[:10]
+        release_service._db_create_release({
+            "id": rid, "artist_id": artist_id, "title": title,
+            "release_date": date, "genre": genre, "status": "draft",
+        })
+        return (
+            {"status": "created", "release_id": rid},
+            {"input": f"title={title} date={date}", "result": "release created"},
+            False,
+        )
+
+    if name == "schedule_campaign":
+        release_id = (tool_input.get("release_id") or "").strip()
+        if not release_id:
+            return (
+                {"error": "missing_release_id"},
+                {"input": "release_id=", "result": "missing release id"},
+                False,
+            )
+        state = _release_automation_state()
+        if state == "not_connected":
+            return (
+                {"not_connected": True,
+                 "message": ("Artist has not connected campaign automation. Tell them to connect it "
+                             "before you can schedule a rollout.")},
+                {"input": f"release={release_id}", "result": "not_connected"},
+                True,
+            )
+        if state == "expired":
+            return (
+                {"not_connected": True,
+                 "message": ("Campaign automation authorization expired. Tell the artist to re-connect "
+                             "before you can schedule a rollout.")},
+                {"input": f"release={release_id}", "result": "auth_expired"},
+                True,
+            )
+        release = release_service._db_get_release(release_id)
+        if not release:
+            return (
+                {"error": "release_not_found", "release_id": release_id},
+                {"input": f"release={release_id}", "result": "release not found"},
+                False,
+            )
+        actions = release_service._build_campaign_actions(release)
+        for a in actions:
+            release_service._db_create_action(a)
+        return (
+            {"status": "scheduled", "release_id": release_id, "actions_scheduled": len(actions)},
+            {"input": f"release={release_id} actions={len(actions)}", "result": "campaign scheduled"},
             False,
         )
 
@@ -14844,6 +14980,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_release_strategist():
+        # release-strategist-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # RELEASE_STRATEGIST_TOOLS / _execute_release_strategist_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against release_service, feeds
+        # tool_result back, and repeats (capped at RELEASE_STRATEGIST_MAX_TOOL_ITERS) until
+        # Sage returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _release_strategist_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(RELEASE_STRATEGIST_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=RELEASE_STRATEGIST_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_release_strategist_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_release_strategist_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -14936,6 +15239,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_booking_agent
     elif agent_id == "social-manager":
         _stream_gen = generate_social_manager
+    elif agent_id == "release-strategist":
+        _stream_gen = generate_release_strategist
     else:
         _stream_gen = generate
     return StreamingResponse(
