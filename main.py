@@ -1139,6 +1139,7 @@ import collab_connect_service  # noqa: E402  (module ref for Collab/collab-conne
 import audio_quality_service  # noqa: E402  (module ref for Audio/audio-quality tool_use handlers)
 import artist_wellness_service  # noqa: E402  (module ref for Maya/artist-wellness tool_use handlers)
 import ai_navigator_service  # noqa: E402  (module ref for Neo/ai-navigator tool_use handlers)
+import booking_service  # noqa: E402  (module ref for Avery/booking-agent tool_use handlers)
 import pr_service  # noqa: E402  (module ref for Quinn/pr-agent tool_use handlers)
 from pitch_service import router as _pitch_router, init_pitch_db, init_scheduler
 app.include_router(_pitch_router)
@@ -7176,6 +7177,150 @@ async def _execute_pr_agent_tool(name: str, tool_input: dict, artist_id: str) ->
         return (
             {"status": "queued", "outreach_id": oid},
             {"input": f"contact={contact_id} subject={subject}", "result": "pitch queued"},
+            False,
+        )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Avery (booking-agent) tool_use: list_booking_contacts + log_booking_inquiry
+#            + send_booking_inquiry
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) pattern, but wired to the REAL booking_service
+# functions (DB-backed, zero network). Passed to the Anthropic API for the
+# booking-agent ONLY (see the gate in chat_stream); every other agent takes its
+# own unchanged path and never receives BOOKING_AGENT_TOOLS. The send action is
+# gated on a Gmail-connection check (env-driven, mock — mirrors lex) so a
+# missing/expired credential degrades gracefully instead of hitting a wire.
+
+BOOKING_AGENT_MAX_TOOL_ITERS = 5
+
+
+def _booking_gmail_state() -> str:
+    """Mock Gmail-connection state for booking-agent sends (env-driven, ZERO network)."""
+    val = (os.environ.get("BOOKING_GMAIL_CONNECTED", "") or "").strip().lower()
+    if val == "expired":
+        return "expired"
+    return "connected" if val in ("1", "true", "yes", "connected") else "not_connected"
+
+
+BOOKING_AGENT_TOOLS = [
+    {
+        "name": "list_booking_contacts",
+        "description": "Search the booking contact database by genre, tier, or city",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "genre": {"type": "string"},
+                "tier": {"type": "string", "enum": ["A", "B", "C"]},
+                "city": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "log_booking_inquiry",
+        "description": "Log a draft booking inquiry for a contact in the inquiry database",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "contact_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["contact_id", "subject"],
+        },
+    },
+    {
+        "name": "send_booking_inquiry",
+        "description": "Queue a booking inquiry to a promoter/venue via the artist's connected Gmail account",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "contact_id": {"type": "string"},
+                "subject": {"type": "string"},
+            },
+            "required": ["contact_id"],
+        },
+    },
+]
+
+
+async def _execute_booking_agent_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Avery tool call against the REAL booking_service (DB-backed, no network)."""
+    tool_input = dict(tool_input or {})
+
+    if name == "list_booking_contacts":
+        genre = (tool_input.get("genre") or "").strip()
+        tier  = (tool_input.get("tier") or "").strip()
+        city  = (tool_input.get("city") or "").strip()
+        contacts = booking_service._db_list_booking_contacts(genre=genre, tier=tier, city=city)
+        res = {"contacts": contacts, "count": len(contacts)}
+        summary = {
+            "input": f"genre={genre or 'any'} tier={tier or 'any'} city={city or 'any'}",
+            "result": f"{len(contacts)} contact(s) found",
+        }
+        return res, summary, False
+
+    if name == "log_booking_inquiry":
+        contact_id = (tool_input.get("contact_id") or "").strip()
+        subject    = (tool_input.get("subject") or "").strip()
+        body       = tool_input.get("body") or ""
+        if not contact_id or not subject:
+            return (
+                {"error": "missing_contact_or_subject"},
+                {"input": f"contact={contact_id or 'none'}", "result": "missing contact or subject"},
+                False,
+            )
+        iid = "bio-" + hashlib.sha1(f"{artist_id}:{contact_id}:{subject}".encode("utf-8")).hexdigest()[:10]
+        booking_service._db_create_booking_inquiry({
+            "id": iid, "artist_id": artist_id, "contact_id": contact_id,
+            "status": "draft", "subject": subject, "body": body,
+        })
+        return (
+            {"status": "logged", "inquiry_id": iid},
+            {"input": f"contact={contact_id}", "result": "inquiry logged"},
+            False,
+        )
+
+    if name == "send_booking_inquiry":
+        contact_id = (tool_input.get("contact_id") or "").strip()
+        subject    = (tool_input.get("subject") or "Booking Inquiry").strip()
+        if not contact_id:
+            return (
+                {"error": "missing_contact_id"},
+                {"input": "contact_id=", "result": "missing contact id"},
+                False,
+            )
+        state = _booking_gmail_state()
+        if state == "not_connected":
+            return (
+                {"not_connected": True,
+                 "message": ("Artist has not connected a Gmail account. Tell them to connect one "
+                             "before you can send booking inquiries.")},
+                {"input": f"contact={contact_id}", "result": "not_connected"},
+                True,
+            )
+        if state == "expired":
+            return (
+                {"not_connected": True,
+                 "message": ("Gmail authorization expired. Tell the artist to re-connect before you "
+                             "can send booking inquiries.")},
+                {"input": f"contact={contact_id}", "result": "auth_expired"},
+                True,
+            )
+        iid = "bis-" + hashlib.sha1(f"{artist_id}:{contact_id}:{subject}".encode("utf-8")).hexdigest()[:10]
+        booking_service._db_create_booking_inquiry({
+            "id": iid, "artist_id": artist_id, "contact_id": contact_id,
+            "status": "queued", "subject": subject, "body": "",
+        })
+        return (
+            {"status": "queued", "inquiry_id": iid},
+            {"input": f"contact={contact_id} subject={subject}", "result": "inquiry queued"},
             False,
         )
 
@@ -14237,6 +14382,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_booking_agent():
+        # booking-agent-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # BOOKING_AGENT_TOOLS / _execute_booking_agent_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against booking_service, feeds
+        # tool_result back, and repeats (capped at BOOKING_AGENT_MAX_TOOL_ITERS) until
+        # Avery returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _booking_agent_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(BOOKING_AGENT_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=BOOKING_AGENT_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_booking_agent_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_booking_agent_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -14325,6 +14637,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_video_director
     elif agent_id == "pr-agent":
         _stream_gen = generate_pr_agent
+    elif agent_id == "booking-agent":
+        _stream_gen = generate_booking_agent
     else:
         _stream_gen = generate
     return StreamingResponse(
