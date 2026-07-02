@@ -1124,6 +1124,7 @@ import creative_director_service  # noqa: E402  (module ref for Cree/creative-di
 import data_oracle_service  # noqa: E402  (module ref for Data/data-oracle tool_use handlers)
 import ar_scout_service  # noqa: E402  (module ref for Scout/ar-scout tool_use handlers)
 import producer_connect_service  # noqa: E402  (module ref for Beat/producer-connect tool_use handlers)
+import mobile_monetize_service  # noqa: E402  (module ref for Mo/mobile-monetize tool_use handlers)
 import live_wire_service  # noqa: E402  (module ref for Knox/live-wire tool_use handlers)
 import live_coach_service  # noqa: E402  (module ref for Coach/live-coach tool_use handlers)
 import label_services_service  # noqa: E402  (module ref for Tommy/label-services tool_use handlers)
@@ -6274,6 +6275,130 @@ async def _execute_live_wire_tool(name: str, tool_input: dict, artist_id: str) -
                                 "before you can complete this action."),
                 },
                 {"input": f"venue_name={nm}", "result": "auth_expired"},
+                True,
+            )
+
+    return (
+        {"error": "unknown_tool", "tool": name},
+        {"input": "", "result": "unknown tool"},
+        False,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mo (mobile-monetize) tool_use: search_monetization_programs + analyze_monetization + enable_monetization
+# ═══════════════════════════════════════════════════════════════════════════════
+# Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
+# passed to the Anthropic API for the mobile-monetize agent ONLY (see the gate in
+# chat_stream). Every other agent takes its own unchanged path and never receives
+# MOBILE_MONETIZE_TOOLS. Handlers map straight onto the mock-first mobile_monetize_service functions;
+# they make ZERO network calls and read no secrets.
+
+# Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
+MOBILE_MONETIZE_MAX_TOOL_ITERS = 5
+
+MOBILE_MONETIZE_TOOLS = [
+    {
+        "name": "search_monetization_programs",
+        "description": "Search platform monetization programs by platform or tier",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string", "enum": ['tiktok', 'youtube', 'instagram', 'snapchat']},
+                "tier": {"type": "string"},
+            },
+        },
+    },
+    {
+        "name": "analyze_monetization",
+        "description": "Screen channel metrics for monetization blockers",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "metrics_text": {"type": "string"},
+                "context": {"type": "string"},
+            },
+            "required": ["metrics_text"],
+        },
+    },
+    {
+        "name": "enable_monetization",
+        "description": "Enable monetization on the connected platform account",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {"type": "string"},
+                "program": {"type": "string", "enum": ['ads', 'tips', 'subscriptions']},
+            },
+            "required": ["platform"],
+        },
+    },
+]
+
+
+async def _execute_mobile_monetize_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
+    """Execute one Mo tool call against the mock-first mobile_monetize_service.
+
+    Returns (result_for_model, action_summary, not_connected). Never raises —
+    every failure is converted into a structured tool_result so the loop can
+    continue. Mirrors _execute_lex_cipher_tool.
+    """
+    tool_input = dict(tool_input or {})
+
+    if name == "search_monetization_programs":
+        a = (tool_input.get("platform") or "").strip()
+        b = (tool_input.get("tier") or "").strip()
+        res = await mobile_monetize_service.search_monetization_programs(platform=a, tier=b)
+        summary = {
+            "input": f"platform={a or 'any'} tier={b or 'any'}",
+            "result": f"{res['count']} program(s) found",
+        }
+        return res, summary, False
+
+    if name == "analyze_monetization":
+        txt = tool_input.get("metrics_text") or ""
+        ctx = (tool_input.get("context") or "").strip()
+        res = await mobile_monetize_service.analyze_monetization(artist_id, metrics_text=txt, context=ctx)
+        summary = {
+            "input": f"context={ctx or 'unspecified'} chars={len(txt)}",
+            "result": f"{res['finding_count']} blocker(s), {res['recommendation']}",
+        }
+        return res, summary, False
+
+    if name == "enable_monetization":
+        nm  = (tool_input.get("platform") or "").strip()
+        opt = (tool_input.get("program") or "ads").strip()
+        if not nm:
+            return (
+                {"error": "missing_platform"},
+                {"input": "platform=", "result": "missing platform"},
+                False,
+            )
+        try:
+            done = await mobile_monetize_service.enable_monetization(artist_id, nm, opt)
+            return (
+                {"status": "done", "reference": done.get("reference"), "platform": nm},
+                {"input": f"platform={nm} program={opt}", "result": "monetization enabled"},
+                False,
+            )
+        except mobile_monetize_service.PlatformAccountNotConnected:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Artist has not connected a platform monetization account. Tell them to connect one "
+                                "before you can complete this action."),
+                },
+                {"input": f"platform={nm}", "result": "not_connected"},
+                True,
+            )
+        except mobile_monetize_service.PlatformAccountAuthExpired:
+            return (
+                {
+                    "not_connected": True,
+                    "message": ("Platform monetization account authorization expired. Tell the artist to re-connect "
+                                "before you can complete this action."),
+                },
+                {"input": f"platform={nm}", "result": "auth_expired"},
                 True,
             )
 
@@ -12166,6 +12291,173 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
+    async def generate_mobile_monetize():
+        # mobile-monetize-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
+        # MOBILE_MONETIZE_TOOLS / _execute_mobile_monetize_tool instead. Runs the non-streaming messages.create
+        # with tools, executes each emitted tool_use against mobile_monetize_service, feeds
+        # tool_result back, and repeats (capped at MOBILE_MONETIZE_MAX_TOOL_ITERS) until
+        # Mo returns a final text answer, then streams it through the SAME
+        # TTS pipeline the default path uses. Every other agent never reaches here.
+        full_text     = ""
+        actions_taken = []
+        not_connected = False
+
+        tts_in  = asyncio.Queue()
+        evt_out = asyncio.Queue()
+
+        async def _mobile_monetize_producer():
+            nonlocal full_text, actions_taken, not_connected
+            try:
+                loop_messages = list(messages)
+                final_text    = ""
+                last_text     = ""
+                for _ in range(MOBILE_MONETIZE_MAX_TOOL_ITERS):
+                    resp = await async_client.messages.create(
+                        model=model,
+                        max_tokens=max_tokens,
+                        system=system_blocks,
+                        messages=loop_messages,
+                        tools=MOBILE_MONETIZE_TOOLS,
+                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                    )
+                    blocks    = list(getattr(resp, "content", []) or [])
+                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                    text_parts = [getattr(b, "text", "") for b in blocks
+                                  if getattr(b, "type", None) == "text"]
+                    last_text = "".join(text_parts).strip() or last_text
+
+                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                        loop_messages.append({"role": "assistant", "content": blocks})
+                        results_content = []
+                        for tu in tool_uses:
+                            result, summary, nc = await _execute_mobile_monetize_tool(
+                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                            )
+                            if nc:
+                                not_connected = True
+                            actions_taken.append({
+                                "tool":   tu.name,
+                                "input":  summary["input"],
+                                "result": summary["result"],
+                            })
+                            results_content.append({
+                                "type":        "tool_result",
+                                "tool_use_id": tu.id,
+                                "content":     json.dumps(result),
+                            })
+                        loop_messages.append({"role": "user", "content": results_content})
+                        continue
+
+                    final_text = "".join(text_parts).strip()
+                    break
+
+                if not final_text:
+                    final_text = last_text or "I've taken the actions I can on that for now."
+                full_text = final_text
+
+                buf       = final_text
+                route_cut = False
+                while True:
+                    sentence, buf = split_sentence(buf)
+                    if not sentence:
+                        break
+                    await evt_out.put(("text", sentence))
+                    if do_tts:
+                        await tts_in.put(sentence)
+                    if detect_routing(sentence):
+                        route_cut = True
+                        break
+                if not route_cut:
+                    remainder = buf.strip()
+                    if remainder:
+                        await evt_out.put(("text", remainder))
+                        if do_tts:
+                            await tts_in.put(remainder)
+            except Exception as e:
+                await evt_out.put(("error", str(e)))
+            finally:
+                await tts_in.put(None)
+
+        async def _tts_worker():
+            task_q = asyncio.Queue()
+            first  = True
+
+            async def _submit():
+                nonlocal first
+                while True:
+                    sentence = await tts_in.get()
+                    if sentence is None:
+                        await task_q.put(None)
+                        return
+                    if first:
+                        await evt_out.put(("status", "Generating voice…"))
+                        first = False
+                    task = asyncio.create_task(tts(sentence, voice))
+                    await task_q.put(task)
+
+            asyncio.create_task(_submit())
+            while True:
+                item = await task_q.get()
+                if item is None:
+                    break
+                audio_bytes = await item
+                if audio_bytes:
+                    await evt_out.put(("audio", audio_bytes))
+            await evt_out.put(None)
+
+        asyncio.create_task(_mobile_monetize_producer())
+        if do_tts:
+            asyncio.create_task(_tts_worker())
+        else:
+            async def _no_tts_closer():
+                while True:
+                    s = await tts_in.get()
+                    if s is None:
+                        break
+                await evt_out.put(None)
+            asyncio.create_task(_no_tts_closer())
+
+        while True:
+            item = await evt_out.get()
+            if item is None:
+                break
+            evt_type, data = item
+            if evt_type == "text":
+                yield sse({"type": "text", "text": data})
+            elif evt_type == "audio":
+                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+            elif evt_type == "status":
+                yield sse({"type": "status", "text": data})
+            elif evt_type == "error":
+                yield sse({"type": "error", "message": data})
+                break
+
+        route = detect_routing(full_text)
+        if route:
+            slug = route["name"].lower().replace(" ", "-")
+            yield sse({
+                "type":        "route",
+                "agent_id":    route["id"],
+                "agent_name":  route["name"],
+                "agent_title": route["title"],
+                "agent_voice": route["voice"],
+                "agent_slug":  slug,
+            })
+        if experts_event:
+            yield sse(experts_event)
+        try:
+            yield sse({
+                "type":          "actions",
+                "actions_taken": actions_taken,
+                "not_connected": not_connected,
+            })
+        except Exception:
+            pass
+        yield sse({"type": "done", "full_text": full_text})
+
+        if full_text and message != "__greet__":
+            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
+
     # Gate: Marcus (puppet-master), Lex (lex-cipher), Jade (fund-phantom), Ray
     # (rights-pulse), Cleo (border-royalty), Finn (mech-ledger), Victor
     # (vault-keeper), Nadia (ledger-lock), Zara (signal-blaster), Kai
@@ -12240,6 +12532,8 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_live_coach
     elif agent_id == "live-wire":
         _stream_gen = generate_live_wire
+    elif agent_id == "mobile-monetize":
+        _stream_gen = generate_mobile_monetize
     else:
         _stream_gen = generate
     return StreamingResponse(
