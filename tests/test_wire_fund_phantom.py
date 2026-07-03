@@ -127,11 +127,11 @@ def test_fund_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pat
         _Resp([_Block("tool_use", name="search_grant_programs",
                       input={"genre": "hip-hop", "region": "regional"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="check_eligibility",
-                      input={"program_id": "gp-regional-hiphop",
+                      input={"program_id": "factor-canada-music-fund",
                              "requested_amount": 5000, "project_type": "recording"},
                       id="t2")], "tool_use"),
         _Resp([_Block("tool_use", name="submit_grant_application",
-                      input={"program_id": "gp-regional-hiphop",
+                      input={"program_id": "factor-canada-music-fund",
                              "project_title": "Debut EP", "requested_amount": 5000},
                       id="t3")], "tool_use"),
         _Resp([_Block("text", text="Done — I found a program, confirmed you're eligible, and submitted.")],
@@ -164,11 +164,11 @@ def test_fund_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pat
     # All three internal functions invoked with correct args.
     assert search_calls == [{"genre": "hip-hop", "region": "regional", "max_award": 0}], search_calls
     assert elig_calls == [{
-        "artist_id": "artist-9", "program_id": "gp-regional-hiphop",
+        "artist_id": "artist-9", "program_id": "factor-canada-music-fund",
         "requested_amount": 5000, "project_type": "recording",
     }], elig_calls
     assert submit_calls == [{
-        "artist_id": "artist-9", "program_id": "gp-regional-hiphop",
+        "artist_id": "artist-9", "program_id": "factor-canada-music-fund",
         "project_title": "Debut EP", "requested_amount": 5000,
     }], submit_calls
 
@@ -184,7 +184,7 @@ def test_fund_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pat
     # Real, deterministic results surfaced in the action summaries.
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
     assert "program(s) found" in by_tool["search_grant_programs"]["result"]
-    # 5000 <= 8000 ceiling, recording matches focus → eligible / apply.
+    # 5000 <= 75000 ceiling, recording in funds / focus "any" → eligible / apply.
     assert "eligible=True" in by_tool["check_eligibility"]["result"]
     assert "apply" in by_tool["check_eligibility"]["result"]
     assert by_tool["submit_grant_application"]["result"] == "application submitted"

@@ -20,6 +20,8 @@ MOCK-FIRST CONTRACT (hard rules for this module):
 import hashlib
 import os
 
+from grant_data import GRANT_PROGRAMS
+
 
 class FundingPortalNotConnected(Exception):
     """Raised when the artist has not connected a funding-portal submission account.
@@ -34,71 +36,12 @@ class FundingPortalAuthExpired(Exception):
     """Raised when a previously connected funding-portal account's auth expired."""
 
 
-# ── Grant program library (in-memory reference data — no I/O) ─────────────────
-# A curated set of arts-funding programs. Keyed loosely on genre / region so the
-# agent can surface programs an artist could apply to.
-_GRANT_PROGRAMS = [
-    {
-        "id": "gp-arts-council-recording",
-        "name": "Arts Council Recording Grant",
-        "funder": "National Arts Council",
-        "genre": "any",
-        "region": "national",
-        "max_award": 15000,
-        "focus": "recording",
-        "deadline_window": "rolling",
-    },
-    {
-        "id": "gp-touring-development",
-        "name": "Emerging Artist Touring Fund",
-        "funder": "National Arts Council",
-        "genre": "any",
-        "region": "national",
-        "max_award": 25000,
-        "focus": "touring",
-        "deadline_window": "quarterly",
-    },
-    {
-        "id": "gp-regional-hiphop",
-        "name": "Regional Hip-Hop Creators Grant",
-        "funder": "City Cultural Foundation",
-        "genre": "hip-hop",
-        "region": "regional",
-        "max_award": 8000,
-        "focus": "recording",
-        "deadline_window": "annual",
-    },
-    {
-        "id": "gp-electronic-innovation",
-        "name": "Electronic Music Innovation Award",
-        "funder": "Sound Futures Trust",
-        "genre": "electronic",
-        "region": "national",
-        "max_award": 12000,
-        "focus": "production",
-        "deadline_window": "annual",
-    },
-    {
-        "id": "gp-folk-heritage",
-        "name": "Folk & Roots Heritage Bursary",
-        "funder": "Heritage Music Foundation",
-        "genre": "folk",
-        "region": "regional",
-        "max_award": 6000,
-        "focus": "recording",
-        "deadline_window": "annual",
-    },
-    {
-        "id": "gp-video-production",
-        "name": "Music Video Production Fund",
-        "funder": "Screen & Sound Board",
-        "genre": "any",
-        "region": "national",
-        "max_award": 10000,
-        "focus": "video",
-        "deadline_window": "quarterly",
-    },
-]
+# ── Grant program library ─────────────────────────────────────────────────────
+# The real structured grant data now lives in grant_data.GRANT_PROGRAMS (Unit 1b),
+# replacing the old hand-invented inline list. The internal name the rest of this
+# module uses is kept, so search / _get_program / check_eligibility / submit are
+# untouched — the new record fields flow through automatically via dict(p).
+_GRANT_PROGRAMS = GRANT_PROGRAMS
 
 
 async def search_grant_programs(
