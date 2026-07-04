@@ -1890,6 +1890,22 @@ FUND_PHANTOM_TOOLS = [
             "required": ["program_id", "project_title"],
         },
     },
+    {
+        "name": "lookup_grant_deadline",
+        "description": ("Look up the CURRENT/upcoming deadline for one specific fund by program_id. "
+                        "Use this whenever an artist asks about a particular fund's deadline, timing, "
+                        "or when the next round opens. It returns a LIVE status — which may be "
+                        "'round not announced yet' or 'lookup unavailable' — NOT a stored date, and "
+                        "it never guesses. Relay the returned message to the artist and never invent "
+                        "or assert a date yourself."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "program_id": {"type": "string"},
+            },
+            "required": ["program_id"],
+        },
+    },
 ]
 
 
@@ -1980,6 +1996,20 @@ async def _execute_fund_phantom_tool(name: str, tool_input: dict, artist_id: str
                 {"input": f"program={program_id}", "result": "portal_auth_expired"},
                 True,
             )
+
+    if name == "lookup_grant_deadline":
+        # Read/consult action — NOT a submission. Deliberately NOT gated behind
+        # FUNDING_PORTAL_CONNECTED (that flag is only for submit). The public
+        # lookup_grant_deadline owns all degradation (including translating an
+        # unavailable lookup mechanism into a graceful status), so this never
+        # raises and portal_not_connected is always False here.
+        program_id = (tool_input.get("program_id") or "").strip()
+        res = await fund_phantom_service.lookup_grant_deadline(artist_id, program_id)
+        summary = {
+            "input": f"program={program_id or 'unspecified'}",
+            "result": res.get("status", "unknown"),
+        }
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},

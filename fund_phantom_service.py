@@ -36,6 +36,16 @@ class FundingPortalAuthExpired(Exception):
     """Raised when a previously connected funding-portal account's auth expired."""
 
 
+class DeadlineLookupUnavailable(Exception):
+    """Raised when the live deadline-lookup mechanism isn't connected / enabled.
+
+    Analogous to FundingPortalNotConnected but for the read-only deadline lookup:
+    the tool loop / public wrapper catches this and degrades gracefully into a
+    'check the official page directly' result instead of crashing — and, crucially,
+    instead of inventing a date.
+    """
+
+
 # ── Grant program library ─────────────────────────────────────────────────────
 # The real structured grant data now lives in grant_data.GRANT_PROGRAMS (Unit 1b),
 # replacing the old hand-invented inline list. The internal name the rest of this
@@ -291,3 +301,152 @@ def suggest_crowdfunding(qualifies_for_grants: bool, complements_grant: bool = F
         if should_raise else []
     )
     return {"raise": should_raise, "reason": reason, "platforms": platforms}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Unit 3 — live deadline lookup (mock-first; real fetch DEFERRED behind the seam)
+# ══════════════════════════════════════════════════════════════════════════════
+# Grant deadlines shift constantly and are NOT safely storable in grant_data —
+# a stale stored date is worse than none. Jade needs to consult the CURRENT
+# deadline for a specific fund at ask-time. This unit builds the whole tool
+# surface + graceful degradation on MOCKS. The single point where a real lookup
+# (web_search vs fetch-and-parse vs a curated deadline URL) will later plug in is
+# ``_fetch_deadline_raw`` — nothing else in the code path touches a wire, so the
+# real mechanism can be swapped in behind that one signature without changing the
+# public contract or the tool loop.
+
+
+def _deadline_lookup_enabled() -> bool:
+    """Env gate for the deadline-lookup mechanism (mirrors ``_portal_connected``).
+
+    Driven purely by ``DEADLINE_LOOKUP_CONNECTED`` so tests toggle enabled /
+    disabled with ZERO network calls and NO real secret:
+      - "1"/"true"/"yes"/"connected" → enabled
+      - anything else / unset         → disabled
+    """
+    val = (os.environ.get("DEADLINE_LOOKUP_CONNECTED", "") or "").strip().lower()
+    return val in ("1", "true", "yes", "connected")
+
+
+# Deterministic canned fixtures for the SEAM, keyed by program_id. A program_id
+# present here resolves to a found=True deadline; any other enabled program
+# resolves to found=False ("round not announced") — NEVER a synthesized date.
+# When the real mechanism lands it replaces this table; the wrapper is unchanged.
+_CANNED_DEADLINES = {
+    "factor-canada-music-fund": "Next intake window closes Fri, Sep 5 (5:00 PM ET)",
+}
+# Static provenance label for canned found=True results (no clock is ever read).
+_CANNED_AS_OF = "last published program calendar"
+
+
+async def _fetch_deadline_raw(program_id: str, official_url: str) -> dict | None:
+    """SEAM. The single point where a real deadline lookup (web search or
+    fetch-and-parse) will later plug in. In THIS unit it is a MOCK: gated by env
+    ``DEADLINE_LOOKUP_CONNECTED``, it returns deterministic canned data and makes
+    NO network call. The real mechanism is deferred and swapped in behind this
+    exact signature later.
+
+    Returns:
+      - {"found": True, "deadline_text": str, "source_url": str, "as_of": str}
+        for a program with a canned deadline;
+      - {"found": False, "source_url": str} for a program with no announced round.
+    Raises:
+      - DeadlineLookupUnavailable when the mechanism is not enabled/connected.
+    """
+    if not _deadline_lookup_enabled():
+        raise DeadlineLookupUnavailable("deadline-lookup mechanism is not connected/enabled")
+
+    pid = (program_id or "").strip()
+    if pid in _CANNED_DEADLINES:
+        return {
+            "found":        True,
+            "deadline_text": _CANNED_DEADLINES[pid],
+            "source_url":    official_url,
+            "as_of":         _CANNED_AS_OF,
+        }
+    # Every other enabled program: no round announced. We do NOT invent a date.
+    return {"found": False, "source_url": official_url}
+
+
+async def lookup_grant_deadline(artist_id: str, program_id: str) -> dict:
+    """Look up the current/upcoming deadline for a specific fund.
+
+    Always returns a structured result the model can relay verbatim — and NEVER
+    invents a date. The HARD invariant: a date reaches the output only when
+    ``_fetch_deadline_raw`` returns found=True with an explicit ``deadline_text``;
+    this function never synthesizes or formats a date from nothing.
+
+    The return dict ALWAYS carries: program_id, program_name, official_url,
+    status, and a human-readable ``message``. Status is one of:
+      - "program_not_found"   — no program matches program_id (no lookup fired)
+      - "no_official_source"  — program has no usable URL on file (no lookup fired)
+      - "lookup_unavailable"  — mechanism disabled/unreachable (check page directly)
+      - "deadline_found"      — a concrete deadline_text was returned
+      - "round_not_announced" — mechanism ran but no round is published yet
+    """
+    program = _get_program(program_id)
+    if program is None:
+        return {
+            "status":       "program_not_found",
+            "program_id":   (program_id or "").strip(),
+            "program_name": None,
+            "official_url": None,
+            "message": (
+                f"No grant program on file matches id '{(program_id or '').strip()}'. "
+                "Confirm the program with the artist before looking up its deadline."
+            ),
+        }
+
+    pid          = program["id"]
+    name         = program.get("name", pid)
+    funder       = program.get("funder") or "the funder"
+    official_url = (program.get("url") or "").strip()
+
+    base = {"program_id": pid, "program_name": name, "official_url": official_url}
+
+    if not official_url:
+        return {
+            **base,
+            "status": "no_official_source",
+            "message": (
+                f"{name} has no official application page on file, so I can't look up its "
+                f"deadline. This fund's deadlines are normally posted by {funder} directly — "
+                f"check with {funder} rather than relying on any stored date."
+            ),
+        }
+
+    try:
+        raw = await _fetch_deadline_raw(pid, official_url)
+    except DeadlineLookupUnavailable:
+        return {
+            **base,
+            "status": "lookup_unavailable",
+            "message": (
+                f"I couldn't run a live deadline check for {name} right now. Check the official "
+                f"page directly: {official_url}. I won't guess a date."
+            ),
+        }
+
+    if raw and raw.get("found") is True and raw.get("deadline_text"):
+        return {
+            **base,
+            "status":        "deadline_found",
+            "deadline_text": raw["deadline_text"],
+            "source_url":    raw.get("source_url", official_url),
+            "as_of":         raw.get("as_of", ""),
+            "message": (
+                f"Current deadline for {name}: {raw['deadline_text']}. Always confirm on the "
+                f"official page ({official_url}) before you rely on it — deadlines shift and "
+                "this isn't the authoritative source."
+            ),
+        }
+
+    # found=False (or any non-found shape) → round not announced; NEVER a date.
+    return {
+        **base,
+        "status": "round_not_announced",
+        "message": (
+            f"The current round for {name} hasn't been published yet. When it opens it will be "
+            f"posted on the official page: {official_url}. I won't guess a date."
+        ),
+    }

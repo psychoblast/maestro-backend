@@ -23,6 +23,7 @@ through recording wrappers over the REAL (pure, mock-first) functions.
 import asyncio
 import importlib
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -465,3 +466,108 @@ def test_suggest_crowdfunding_raises_when_complementary():
     d = fps.suggest_crowdfunding(qualifies_for_grants=True, complements_grant=True)
     assert d["raise"] is True
     assert len(d["platforms"]) == 6
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Unit 3 — lookup_grant_deadline (mock-first; real fetch deferred behind the seam)
+# ══════════════════════════════════════════════════════════════════════════════
+# All deterministic, ZERO real network calls: _fetch_deadline_raw is gated on the
+# DEADLINE_LOOKUP_CONNECTED env flag and returns canned data only. "factor-canada-
+# music-fund" has a canned found=True deadline; every other enabled program is
+# found=False ("round not announced").
+
+# Matches a digit-bearing date: a 4-digit year, a numeric date, or month-name+day.
+# Used to prove that no non-found path ever leaks a date the code invented.
+_DATE_RE = re.compile(
+    r"\b(?:19|20)\d{2}\b"
+    r"|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b"
+    r"|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}\b",
+    re.IGNORECASE,
+)
+
+_CANNED_PROGRAM = "factor-canada-music-fund"   # has a canned found=True deadline
+_UNCANNED_PROGRAM = "musicaction"              # enabled → found=False
+
+
+def test_deadline_found(monkeypatch):
+    monkeypatch.setenv("DEADLINE_LOOKUP_CONNECTED", "true")
+    res = _run(fps.lookup_grant_deadline("artist-1", _CANNED_PROGRAM))
+    assert res["status"] == "deadline_found"
+    assert res["program_id"] == _CANNED_PROGRAM
+    assert res["deadline_text"]                       # a concrete date text is present
+    assert res["source_url"] == res["official_url"]
+    assert res["as_of"]
+    # ALWAYS appends the official-page confirmation note (never asserts authority).
+    assert "confirm on the official page" in res["message"].lower()
+    assert res["official_url"] in res["message"]
+
+
+def test_round_not_announced(monkeypatch):
+    monkeypatch.setenv("DEADLINE_LOOKUP_CONNECTED", "true")
+    res = _run(fps.lookup_grant_deadline("artist-1", _UNCANNED_PROGRAM))
+    assert res["status"] == "round_not_announced"
+    assert "deadline_text" not in res                 # no date field at all
+    # No invented date leaks into the human-readable message.
+    assert not _DATE_RE.search(res["message"]), res["message"]
+    assert res["official_url"] in res["message"]
+
+
+def test_lookup_unavailable_when_flag_unset(monkeypatch):
+    monkeypatch.delenv("DEADLINE_LOOKUP_CONNECTED", raising=False)
+    res = _run(fps.lookup_grant_deadline("artist-1", _CANNED_PROGRAM))
+    assert res["status"] == "lookup_unavailable"
+    assert res["official_url"] in res["message"]       # points to the official page
+    assert not _DATE_RE.search(res["message"]), res["message"]
+
+
+def test_program_not_found_does_not_fire_lookup(monkeypatch):
+    # Spy on the seam: for a bogus id the lookup must NEVER be attempted.
+    calls = []
+
+    async def spy(program_id, official_url):
+        calls.append((program_id, official_url))
+        return {"found": False, "source_url": official_url}
+
+    monkeypatch.setenv("DEADLINE_LOOKUP_CONNECTED", "true")
+    monkeypatch.setattr(fps, "_fetch_deadline_raw", spy)
+    res = _run(fps.lookup_grant_deadline("artist-1", "no-such-program-xyz"))
+    assert res["status"] == "program_not_found"
+    assert res["program_id"] == "no-such-program-xyz"
+    assert calls == []                                 # seam never called
+    assert not _DATE_RE.search(res["message"]), res["message"]
+
+
+def test_no_official_source_when_url_missing(monkeypatch):
+    # A program record with an empty URL → no lookup, no date.
+    fake_program = {"id": "fund-x", "name": "Fund X", "funder": "Funder X", "url": ""}
+    monkeypatch.setattr(fps, "_get_program", lambda pid: fake_program)
+
+    called = []
+
+    async def spy(program_id, official_url):
+        called.append(program_id)
+        return {"found": False, "source_url": official_url}
+
+    monkeypatch.setenv("DEADLINE_LOOKUP_CONNECTED", "true")
+    monkeypatch.setattr(fps, "_fetch_deadline_raw", spy)
+    res = _run(fps.lookup_grant_deadline("artist-1", "fund-x"))
+    assert res["status"] == "no_official_source"
+    assert called == []                                # never attempted a lookup
+    assert not _DATE_RE.search(res["message"]), res["message"]
+
+
+def test_never_invents_a_date_across_no_date_paths(monkeypatch):
+    """INVARIANT: not-found / unavailable / no-source paths never emit a date."""
+    # round_not_announced (enabled, uncanned program)
+    monkeypatch.setenv("DEADLINE_LOOKUP_CONNECTED", "true")
+    r1 = _run(fps.lookup_grant_deadline("a", _UNCANNED_PROGRAM))
+    # lookup_unavailable (flag unset)
+    monkeypatch.delenv("DEADLINE_LOOKUP_CONNECTED", raising=False)
+    r2 = _run(fps.lookup_grant_deadline("a", _CANNED_PROGRAM))
+    # program_not_found
+    r3 = _run(fps.lookup_grant_deadline("a", "bogus-id-123"))
+
+    for r in (r1, r2, r3):
+        assert r["status"] in ("round_not_announced", "lookup_unavailable", "program_not_found")
+        assert "deadline_text" not in r
+        assert not _DATE_RE.search(r["message"]), (r["status"], r["message"])
