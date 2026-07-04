@@ -450,3 +450,344 @@ async def lookup_grant_deadline(artist_id: str, program_id: str) -> dict:
             f"posted on the official page: {official_url}. I won't guess a date."
         ),
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Unit 4 — application scaffold (data/scaffold tool; Jade writes the prose)
+# ══════════════════════════════════════════════════════════════════════════════
+# build_grant_application_scaffold is a DATA tool in the send_pitch_email mould:
+# it NEVER calls the model and NEVER generates prose. It returns a compact dict
+# of ingredients — section skeleton + guidance, whatever the artist actually
+# supplied, explicit [NEEDS: ...] gaps, and an honest cost-share — and Jade
+# composes the actual draft as her final-turn text.
+#
+# HARD INVARIANT (mirrors Unit 3's never-invent-a-date rule): the scaffold never
+# contains a fabricated artist fact. Every content field is either something
+# artist_inputs actually provided, a "[NEEDS: ...]" gap marker, or an
+# "[ARTIST-SUPPLIED: ...]" non-draftable reminder. No invented budget numbers,
+# no invented career facts, no invented cost-share percentages.
+
+_GAP = "[NEEDS: {}]"
+
+# ── Track-structure constants (data only, no logic) ──────────────────────────
+# The section skeletons grant writing actually uses, keyed by track. Per entry:
+#   key              stable section id
+#   title            human section title
+#   guidance         one line: what this section must accomplish, in the
+#                    funder's own logic (answer-first, concrete targets, …)
+#   inputs           artist_inputs keys that can cover this section
+#   needs            human description of the gap when nothing covers it
+#   artist_supplied  True = non-draftable material the artist must supply
+
+# INDUSTRY funders (FACTOR-style): commercial viability logic.
+INDUSTRY_SECTIONS = (
+    {
+        "key": "artist_bio",
+        "title": "Artist Bio",
+        "guidance": ("Written assuming the reader knows nothing about the artist: who they are, "
+                     "career stage, and momentum (releases, streams, press) — key numbers first."),
+        "inputs": ("bio", "career_stage", "career_highlights"),
+        "needs": "artist bio — career stage, momentum, key numbers",
+        "artist_supplied": False,
+    },
+    {
+        "key": "project_description",
+        "title": "Project Description",
+        "guidance": ("Answer-first: what will be made, by whom, by when — concrete deliverables "
+                     "and dates, not vision statements."),
+        "inputs": ("project", "project_description", "timeline"),
+        "needs": "project description — what is being made, by whom, by when",
+        "artist_supplied": False,
+    },
+    {
+        "key": "marketing_release_plan",
+        "title": "Marketing / Release Plan",
+        "guidance": ("Concrete targets with numbers and dates (playlist adds, press outlets, ad "
+                     "spend, tour dates) — industry funders back plans, not hopes."),
+        "inputs": ("marketing_plan", "release_plan", "targets"),
+        "needs": "marketing/release plan with concrete, dated targets",
+        "artist_supplied": False,
+    },
+    {
+        "key": "budget",
+        "title": "Budget (with cost share)",
+        "guidance": ("Line items that add up, showing the required funder/artist split — e.g. "
+                     "FACTOR funds up to 75% of eligible costs and the artist supplies the rest; "
+                     "name where the artist's share comes from."),
+        "inputs": ("budget_lines", "requested_amount", "match_source"),
+        "needs": "budget lines, requested amount, and the source of the artist's cost-share",
+        "artist_supplied": False,
+    },
+    {
+        "key": "assessment_materials",
+        "title": "Assessment Tracks / Press / Letters",
+        "guidance": ("Assessment tracks, press clippings, and letters of support are "
+                     "artist-supplied materials — they cannot be drafted; the artist gathers and "
+                     "attaches their own."),
+        "inputs": (),
+        "needs": "",
+        "artist_supplied": True,
+    },
+)
+
+# ARTS-COUNCIL funders (ACE / Canada Council-style): public-benefit logic.
+# Order matters — Need → Outcomes → Audience → Activities → Budget → Evaluation.
+ARTS_COUNCIL_SECTIONS = (
+    {
+        "key": "need",
+        "title": "The Need",
+        "guidance": ("Draft this FIRST: name the artistic/community need this project answers — "
+                     "every other section hangs off it."),
+        "inputs": ("need",),
+        "needs": "the artistic/community need this project answers",
+        "artist_supplied": False,
+    },
+    {
+        "key": "outcomes",
+        "title": "Outcomes",
+        "guidance": ("Public outcomes, not commercial ones — what changes for people if this "
+                     "succeeds; draft together with the Need before anything else."),
+        "inputs": ("outcomes",),
+        "needs": "the public outcomes — what changes for people if this succeeds",
+        "artist_supplied": False,
+    },
+    {
+        "key": "audience",
+        "title": "Audience",
+        "guidance": ("Who benefits and how they will be reached — public-benefit framing, not "
+                     "market positioning."),
+        "inputs": ("audience",),
+        "needs": "who benefits and how they will be reached",
+        "artist_supplied": False,
+    },
+    {
+        "key": "activities",
+        "title": "Activities",
+        "guidance": "Every activity ties to a named outcome — no orphan activities.",
+        "inputs": ("activities", "project", "timeline"),
+        "needs": "the project activities, each tied to an outcome",
+        "artist_supplied": False,
+    },
+    {
+        "key": "budget",
+        "title": "Budget",
+        "guidance": "Every budget line ties to an activity and, through it, to an outcome.",
+        "inputs": ("budget_lines", "requested_amount"),
+        "needs": "budget lines and requested amount, each tied to an activity",
+        "artist_supplied": False,
+    },
+    {
+        "key": "evaluation",
+        "title": "Evaluation",
+        "guidance": ("How you will know the outcomes happened — simple, honest measures reported "
+                     "back to the funder."),
+        "inputs": ("evaluation",),
+        "needs": "how the outcomes will be measured and reported",
+        "artist_supplied": False,
+    },
+)
+
+# Fallback for tracks with no dedicated skeleton (crowdfunding / future
+# foundation / export tracks): a general project-proposal structure, clearly
+# marked GENERIC so Jade never presents it as a fund's own form.
+GENERIC_SECTIONS = (
+    {
+        "key": "summary",
+        "title": "Project Summary (generic skeleton)",
+        "guidance": ("GENERIC project-proposal structure — this track has no dedicated skeleton. "
+                     "Who the artist is and what the project is, answer-first."),
+        "inputs": ("summary", "bio", "career_stage"),
+        "needs": "a short summary — who the artist is and what the project is",
+        "artist_supplied": False,
+    },
+    {
+        "key": "project_description",
+        "title": "Project Description (generic skeleton)",
+        "guidance": "What will be made, by whom, by when — concrete deliverables and dates.",
+        "inputs": ("project", "project_description", "timeline"),
+        "needs": "project description — what is being made, by whom, by when",
+        "artist_supplied": False,
+    },
+    {
+        "key": "budget",
+        "title": "Budget (generic skeleton)",
+        "guidance": "Line items that add up; name any co-funding the artist brings.",
+        "inputs": ("budget_lines", "requested_amount", "match_source"),
+        "needs": "budget lines and requested amount",
+        "artist_supplied": False,
+    },
+    {
+        "key": "impact",
+        "title": "Impact / Outcomes (generic skeleton)",
+        "guidance": "What this project changes for the artist's career or audience — be concrete.",
+        "inputs": ("impact", "outcomes", "targets"),
+        "needs": "the project's intended impact/outcomes",
+        "artist_supplied": False,
+    },
+)
+
+GRANT_SECTION_SKELETONS = {
+    "industry": INDUSTRY_SECTIONS,
+    "arts_council": ARTS_COUNCIL_SECTIONS,
+}
+
+
+def compute_cost_share(requested_amount, program) -> dict:
+    """Express the funder-vs-artist split HONESTLY from structured amount data.
+
+    Pure, no I/O. Uses ONLY the program's structured ``amount_max`` cap:
+      - cap known + amount requested → the funder covers at most
+        min(requested, cap); anything above the cap is the artist's minimum
+        contribution. That is the whole computation — nothing else is derivable
+        from the structured data.
+      - cap unlisted (amount_max None / stub) → "verify live — cannot compute
+        an exact split", never a made-up number.
+
+    A percentage share is NEVER computed or invented: no record structures one.
+    Any share language (e.g. FACTOR's "75% cost share") lives in the
+    data-supplied ``amount_notes``, which is passed through verbatim for Jade
+    to quote as the program's own wording.
+    """
+    program = dict(program or {})
+    currency = program.get("currency", "") or ""
+    amount_max = program.get("amount_max")
+    try:
+        requested = int(requested_amount or 0)
+    except (TypeError, ValueError):
+        requested = 0
+    base = {
+        "currency":         currency,
+        "requested_amount": requested,
+        "amount_max":       amount_max,
+        "amount_notes":     program.get("amount_notes", "") or "",
+    }
+    if amount_max is None:
+        return {
+            **base,
+            "computable": False,
+            "note": ("This program's amount data is unlisted — verify live. I cannot compute an "
+                     "exact funder/artist split and will not invent one."),
+        }
+    if requested <= 0:
+        return {
+            **base,
+            "computable": False,
+            "note": (f"No requested amount supplied yet. Funder cap on file: {amount_max} "
+                     f"{currency} (approximate — verify live)."),
+        }
+    funder_max = min(requested, amount_max)
+    artist_min = requested - funder_max
+    return {
+        **base,
+        "computable":              True,
+        "funder_max_contribution": funder_max,
+        "artist_min_contribution": artist_min,
+        "note": (f"Derived ONLY from the program's listed cap ({amount_max} {currency}, "
+                 f"approximate — verify live): the funder covers at most {funder_max}, leaving at "
+                 f"least {artist_min} to the artist. Any percentage cost-share in amount_notes is "
+                 "the program's own wording, not a computed figure."),
+    }
+
+
+def _sections_for_track(track) -> tuple[tuple, str]:
+    """Pick the section skeleton for a program track (generic fallback)."""
+    t = (track or "").strip().lower()
+    skeleton = GRANT_SECTION_SKELETONS.get(t)
+    if skeleton is not None:
+        return skeleton, t
+    return GENERIC_SECTIONS, "generic"
+
+
+async def build_grant_application_scaffold(
+    artist_id: str, program_id: str, artist_inputs: dict
+) -> dict:
+    """Build a compact, section-by-section application scaffold for one fund.
+
+    DATA/SCAFFOLD tool — no model call, no prose generation, no I/O. Jade calls
+    this AFTER her Phase-A interview; ``artist_inputs`` is whatever she gathered
+    (free-form dict: bio, project, targets, budget_lines, timeline, need,
+    outcomes, …). Each skeleton section is filled ONLY from artist_inputs; any
+    section/field nothing covers comes back as an explicit "[NEEDS: ...]" gap
+    marker for Jade to reproduce verbatim in her draft. Non-draftable material
+    (assessment tracks / press / letters) is flagged, never faked.
+
+    Returns a compact dict: {status, program_id, program_name, track, skeleton,
+    currency, sections: [{key, title, guidance, artist_supplied_flag,
+    content_or_gap}], cost_share, missing, nondraftable_reminders} —
+    ingredients, not prose.
+    """
+    program = _get_program(program_id)
+    if program is None:
+        return {
+            "status":     "program_not_found",
+            "program_id": (program_id or "").strip(),
+            "message": (
+                f"No grant program on file matches id '{(program_id or '').strip()}'. "
+                "Confirm the program with the artist before scaffolding an application."
+            ),
+        }
+
+    inputs = dict(artist_inputs or {})
+
+    def _covered(v) -> bool:
+        return v not in (None, "", [], {}, ())
+
+    skeleton, skeleton_name = _sections_for_track(program.get("track"))
+
+    sections, missing, nondraftable, used_keys = [], [], [], set()
+    for spec in skeleton:
+        entry = {
+            "key":                  spec["key"],
+            "title":                spec["title"],
+            "guidance":             spec["guidance"],
+            "artist_supplied_flag": spec["artist_supplied"],
+        }
+        if spec["artist_supplied"]:
+            entry["content_or_gap"] = (
+                "[ARTIST-SUPPLIED: cannot be drafted — the artist gathers and attaches "
+                "their own materials]"
+            )
+            nondraftable.append(f"{spec['title']}: {spec['guidance']}")
+        else:
+            supplied = {k: inputs[k] for k in spec["inputs"] if _covered(inputs.get(k))}
+            used_keys |= set(supplied)
+            if not supplied:
+                gap = _GAP.format(spec["needs"])
+                entry["content_or_gap"] = gap
+                missing.append(gap)
+            else:
+                content = {}
+                for k in spec["inputs"]:
+                    if k in supplied:
+                        content[k] = supplied[k]
+                    else:
+                        gap = _GAP.format(k)
+                        content[k] = gap
+                        missing.append(gap)
+                entry["content_or_gap"] = content
+        sections.append(entry)
+
+    # A key can back more than one section (e.g. timeline); report each gap once.
+    missing = list(dict.fromkeys(missing))
+    # Gathered facts no section claims still ride along verbatim — never dropped,
+    # never rewritten (Jade decides where they belong in the draft).
+    unmapped = {k: v for k, v in inputs.items() if k not in used_keys and _covered(v)}
+
+    result = {
+        "status":       "scaffold_ready",
+        "program_id":   program["id"],
+        "program_name": program["name"],
+        "track":        program.get("track", ""),
+        "skeleton":     skeleton_name,
+        "currency":     program.get("currency", "") or "",
+        "sections":     sections,
+        "cost_share":   compute_cost_share(inputs.get("requested_amount"), program),
+        "missing":      missing,
+        "nondraftable_reminders": nondraftable,
+        "note": ("Scaffold only — write the draft yourself from these ingredients, keep every "
+                 "[NEEDS: ...] marker verbatim, and never invent a fact. The draft is a starting "
+                 "point for the artist and their manager to review — not submit-ready."),
+    }
+    if unmapped:
+        result["unmapped_inputs"] = unmapped
+    return result

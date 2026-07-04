@@ -571,3 +571,231 @@ def test_never_invents_a_date_across_no_date_paths(monkeypatch):
         assert r["status"] in ("round_not_announced", "lookup_unavailable", "program_not_found")
         assert "deadline_text" not in r
         assert not _DATE_RE.search(r["message"]), (r["status"], r["message"])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Unit 4 — build_grant_application_scaffold (data/scaffold tool; Jade writes the
+# prose). All deterministic, ZERO real LLM/network calls: the pure-service tests
+# never touch a client at all, and the tool-loop test fakes messages.create.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_INDUSTRY_PROGRAM = "factor-canada-music-fund"   # industry track, cap 75000 CAD
+_ARTS_COUNCIL_PROGRAM = "arts-council-england"   # arts_council track
+_STUB_PROGRAM = "musicaction"                    # amount_max None → unlisted
+
+_FULL_INDUSTRY_INPUTS = {
+    "bio":              "Toronto rapper, two EPs out",
+    "career_stage":     "developing",
+    "project":          "Debut full-length album, ten tracks",
+    "timeline":         "Tracking March to May, release in October",
+    "marketing_plan":   "Playlist pitching plus three videos",
+    "targets":          "first-week stream and press-feature targets set",
+    "budget_lines":     ["studio", "mixing", "video"],
+    "requested_amount": 20000,
+    "match_source":     "label advance",
+}
+
+
+# ── industry scaffold: FACTOR sections + cost-share + non-draftable flag ──────
+
+def test_scaffold_industry_sections_and_nondraftable_flag():
+    res = _run(fps.build_grant_application_scaffold(
+        "artist-1", _INDUSTRY_PROGRAM, _FULL_INDUSTRY_INPUTS))
+    assert res["status"] == "scaffold_ready"
+    assert res["track"] == "industry"
+    assert res["skeleton"] == "industry"
+    assert res["currency"] == "CAD"
+
+    keys = [s["key"] for s in res["sections"]]
+    assert "marketing_release_plan" in keys
+    assert "budget" in keys
+    by_key = {s["key"]: s for s in res["sections"]}
+    assert "cost share" in by_key["budget"]["title"].lower()
+
+    # artist_supplied_flag set ONLY on the audio/press/letters reminder section.
+    assert by_key["assessment_materials"]["artist_supplied_flag"] is True
+    assert all(s["artist_supplied_flag"] is False
+               for s in res["sections"] if s["key"] != "assessment_materials")
+    assert by_key["assessment_materials"]["content_or_gap"].startswith("[ARTIST-SUPPLIED")
+    assert res["nondraftable_reminders"], "reminder list must carry the non-draftable section"
+    assert any("letters" in r.lower() for r in res["nondraftable_reminders"])
+
+    # Fully supplied inputs → the mapped sections carry them verbatim, no gaps.
+    assert by_key["artist_bio"]["content_or_gap"]["bio"] == _FULL_INDUSTRY_INPUTS["bio"]
+    assert by_key["budget"]["content_or_gap"]["requested_amount"] == 20000
+    # cost_share computed from the structured cap (20000 < 75000 → fully fundable).
+    cs = res["cost_share"]
+    assert cs["computable"] is True
+    assert cs["funder_max_contribution"] == 20000
+    assert cs["artist_min_contribution"] == 0
+    assert cs["currency"] == "CAD"
+
+
+# ── arts_council scaffold: Need → Outcomes → Audience → Activities → Budget →
+#    Evaluation order ──────────────────────────────────────────────────────────
+
+def test_scaffold_arts_council_section_order():
+    res = _run(fps.build_grant_application_scaffold(
+        "artist-1", _ARTS_COUNCIL_PROGRAM,
+        {"need": "no all-ages venue programming in the borough",
+         "outcomes": "young people gain performance access"}))
+    assert res["status"] == "scaffold_ready"
+    assert res["track"] == "arts_council"
+    assert res["skeleton"] == "arts_council"
+    keys = [s["key"] for s in res["sections"]]
+    assert keys == ["need", "outcomes", "audience", "activities", "budget", "evaluation"], keys
+    by_key = {s["key"]: s for s in res["sections"]}
+    assert by_key["need"]["content_or_gap"]["need"].startswith("no all-ages")
+    # Public-benefit guidance rides along for Jade to write in the funder's logic.
+    assert all(s["guidance"] for s in res["sections"])
+
+
+# ── gap markers: omitted inputs come back as [NEEDS: ...], never a value ──────
+
+def test_scaffold_gap_markers_for_missing_inputs():
+    partial = {"bio": "Toronto rapper", "project": "Debut album"}
+    res = _run(fps.build_grant_application_scaffold("artist-1", _INDUSTRY_PROGRAM, partial))
+    by_key = {s["key"]: s for s in res["sections"]}
+
+    # Whole sections with no covering input → a single [NEEDS: ...] string.
+    mk = by_key["marketing_release_plan"]["content_or_gap"]
+    assert isinstance(mk, str) and mk.startswith("[NEEDS:"), mk
+    budget = by_key["budget"]["content_or_gap"]
+    assert isinstance(budget, str) and budget.startswith("[NEEDS:"), budget
+    # No fabricated value stands in for the gaps — no digits invented anywhere.
+    assert not re.search(r"\d", json.dumps([mk, budget]))
+
+    # Partially covered section: supplied field verbatim, missing fields gapped.
+    bio = by_key["artist_bio"]["content_or_gap"]
+    assert bio["bio"] == "Toronto rapper"
+    assert bio["career_stage"] == "[NEEDS: career_stage]"
+
+    # Every gap surfaces in missing[].
+    for gap in (mk, budget, "[NEEDS: career_stage]"):
+        assert gap in res["missing"], (gap, res["missing"])
+
+
+# ── cost-share honesty: known cap → computed split; stub → verify-live note ───
+
+def test_cost_share_known_cap_computes_split():
+    program = fps._get_program(_INDUSTRY_PROGRAM)
+    cs = fps.compute_cost_share(90000, program)      # over the 75000 cap
+    assert cs["computable"] is True
+    assert cs["funder_max_contribution"] == 75000
+    assert cs["artist_min_contribution"] == 15000
+    assert cs["currency"] == "CAD"
+    # The computed note never invents a percentage.
+    assert "%" not in cs["note"]
+
+
+def test_cost_share_stub_returns_verify_live_not_invented():
+    program = fps._get_program(_STUB_PROGRAM)        # amount_max None
+    cs = fps.compute_cost_share(10000, program)
+    assert cs["computable"] is False
+    assert cs["amount_max"] is None
+    assert "verify live" in cs["note"].lower()
+    assert "funder_max_contribution" not in cs
+    assert "artist_min_contribution" not in cs
+    # NO invented percentage or split anywhere in the computed fields.
+    assert "%" not in cs["note"]
+
+
+def test_scaffold_stub_program_cost_share_flows_through():
+    res = _run(fps.build_grant_application_scaffold(
+        "artist-1", _STUB_PROGRAM, {"requested_amount": 10000}))
+    assert res["status"] == "scaffold_ready"
+    assert res["cost_share"]["computable"] is False
+    assert "verify live" in res["cost_share"]["note"].lower()
+
+
+# ── program_not_found: bogus id → structured miss, no scaffold ────────────────
+
+def test_scaffold_program_not_found():
+    res = _run(fps.build_grant_application_scaffold(
+        "artist-1", "no-such-fund-xyz", {"bio": "x"}))
+    assert res["status"] == "program_not_found"
+    assert res["program_id"] == "no-such-fund-xyz"
+    assert "sections" not in res
+    assert "cost_share" not in res
+
+
+# ── INVARIANT: the scaffold never contains a fact artist_inputs didn't supply ─
+
+def test_scaffold_invariant_no_fabricated_artist_facts():
+    inputs = {"bio": "SENTINEL_BIO_TEXT", "requested_amount": 4242}
+    res = _run(fps.build_grant_application_scaffold("artist-1", _INDUSTRY_PROGRAM, inputs))
+
+    supplied_values = {str(v) for v in inputs.values()}
+    for s in res["sections"]:
+        content = s["content_or_gap"]
+        leaves = list(content.values()) if isinstance(content, dict) else [content]
+        for leaf in leaves:
+            text = str(leaf)
+            assert (text in supplied_values
+                    or text.startswith("[NEEDS:")
+                    or text.startswith("[ARTIST-SUPPLIED")), (s["key"], text)
+
+    # No extra numeric/biographical fact leaked into section content: the only
+    # digits anywhere in the sections are the supplied 4242. (ensure_ascii=False
+    # so an escaped em-dash "—" can't masquerade as the digits 2014.)
+    blob = json.dumps([s["content_or_gap"] for s in res["sections"]], ensure_ascii=False)
+    assert set(re.findall(r"\d+", blob)) <= {"4242"}, blob
+    assert "SENTINEL_BIO_TEXT" in blob
+
+
+# ── tool loop: scaffold dispatch, ungated by the funding portal ───────────────
+
+def test_fund_tool_loop_scaffold_dispatch_not_portal_gated(monkeypatch, tmp_path):
+    m = _load_main(monkeypatch, tmp_path)
+
+    # NO portal connected — the scaffold is drafting help, not a submission,
+    # so it must work anyway (portal_not_connected stays False).
+    monkeypatch.delenv("FUNDING_PORTAL_CONNECTED", raising=False)
+
+    responses = [
+        _Resp([_Block("tool_use", name="build_grant_application_scaffold",
+                      input={"program_id": _INDUSTRY_PROGRAM,
+                             "artist_inputs": {"bio": "Toronto rapper",
+                                               "requested_amount": 20000}},
+                      id="t1")], "tool_use"),
+        _Resp([_Block("text", text="Here is your FACTOR draft — gaps are marked [NEEDS: ...].")],
+              "end_turn"),
+    ]
+    create_calls = []
+
+    async def fake_create(**kwargs):
+        create_calls.append(kwargs)
+        return responses[len(create_calls) - 1]
+
+    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
+
+    client = TestClient(m.app)
+    resp = client.post("/api/chat_stream", json={
+        "agent_id":  "fund-phantom",
+        "message":   "draft my FACTOR application",
+        "artist_id": "artist-9",
+        "history":   "[]",
+        "tts":       False,
+    })
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types  = [e["type"] for e in events]
+    assert "done" in types
+    assert "error" not in types, types
+
+    actions_evt = next(e for e in events if e["type"] == "actions")
+    assert actions_evt["portal_not_connected"] is False
+    action = actions_evt["actions_taken"][0]
+    assert action["tool"] == "build_grant_application_scaffold"
+    assert "scaffold_ready" in action["result"]
+    assert "gap(s)" in action["result"]
+
+    # The new tool is in the schema Jade receives, and FUND_PHANTOM_TOOLS is
+    # passed on every create() round-trip.
+    assert len(create_calls) == 2
+    assert all(kw.get("tools") == m.FUND_PHANTOM_TOOLS for kw in create_calls)
+    assert any(t["name"] == "build_grant_application_scaffold" for t in m.FUND_PHANTOM_TOOLS)
+    # The compact structured scaffold (not prose) was fed back as the tool_result.
+    fed_back = json.dumps(create_calls[1]["messages"], default=str)
+    assert "scaffold_ready" in fed_back
+    assert "[NEEDS:" in fed_back

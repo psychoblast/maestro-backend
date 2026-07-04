@@ -1906,6 +1906,40 @@ FUND_PHANTOM_TOOLS = [
             "required": ["program_id"],
         },
     },
+    {
+        "name": "build_grant_application_scaffold",
+        "description": ("Build a section-by-section application scaffold for one specific fund. "
+                        "Call this ONLY AFTER you have interviewed the artist and gathered the "
+                        "detail THIS fund's track actually requires (industry funders like FACTOR: "
+                        "career momentum, release/marketing plan with concrete targets, budget with "
+                        "the artist's cost-share; arts councils like ACE/Canada Council: the Need, "
+                        "public Outcomes, Audience). YOU judge when enough is gathered — most "
+                        "artists don't know what a grant needs. Pass everything gathered in "
+                        "artist_inputs. The tool returns a compact scaffold: per-section guidance, "
+                        "an honest funder/artist cost-share, and explicit [NEEDS: ...] gaps for "
+                        "anything missing. Then WRITE the application draft yourself in your reply "
+                        "from that scaffold — follow each section's guidance, keep every "
+                        "[NEEDS: ...] gap marker verbatim, and NEVER invent a fact, number, or "
+                        "credential. The draft is a starting point for the artist and their manager "
+                        "to review — NOT submit-ready, NOT a legal document."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "program_id": {"type": "string"},
+                "artist_inputs": {
+                    "type": "object",
+                    "description": ("Everything gathered from the artist in the interview, as "
+                                    "free-form keys, e.g. bio, career_stage, career_highlights, "
+                                    "project, timeline, marketing_plan, release_plan, targets, "
+                                    "budget_lines, requested_amount, match_source, need, outcomes, "
+                                    "audience, activities, evaluation. Include ONLY what the artist "
+                                    "actually told you — omit anything not gathered so it comes "
+                                    "back as an explicit gap instead of an invented fact."),
+                },
+            },
+            "required": ["program_id"],
+        },
+    },
 ]
 
 
@@ -2008,6 +2042,28 @@ async def _execute_fund_phantom_tool(name: str, tool_input: dict, artist_id: str
         summary = {
             "input": f"program={program_id or 'unspecified'}",
             "result": res.get("status", "unknown"),
+        }
+        return res, summary, False
+
+    if name == "build_grant_application_scaffold":
+        # Read/consult action — drafting help, NOT a submission. Deliberately NOT
+        # gated behind FUNDING_PORTAL_CONNECTED (that flag is only for submit).
+        # The service owns all degradation (program_not_found is a structured
+        # result), so this never raises and portal_not_connected is always False.
+        program_id    = (tool_input.get("program_id") or "").strip()
+        artist_inputs = tool_input.get("artist_inputs")
+        if not isinstance(artist_inputs, dict):
+            artist_inputs = {}
+        res = await fund_phantom_service.build_grant_application_scaffold(
+            artist_id, program_id, artist_inputs,
+        )
+        gaps = res.get("missing") or []
+        result_desc = res.get("status", "unknown")
+        if res.get("status") == "scaffold_ready":
+            result_desc += f", {len(res.get('sections', []))} section(s), {len(gaps)} gap(s)"
+        summary = {
+            "input": f"program={program_id or 'unspecified'} inputs={len(artist_inputs)} field(s)",
+            "result": result_desc,
         }
         return res, summary, False
 
