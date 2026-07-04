@@ -20,12 +20,20 @@ Everything is in-process and deterministic. NO network / LLM / submission calls 
 the Anthropic client is faked and the fund_phantom_service boundary is exercised
 through recording wrappers over the REAL (pure, mock-first) functions.
 """
+import asyncio
 import importlib
 import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+import fund_phantom_service as fps  # pure, mock-first — no network / LLM
+
+
+def _run(coro):
+    """Drive one pure async service call to completion without pytest-asyncio."""
+    return asyncio.run(coro)
 
 
 # ── Fake Anthropic SDK shapes ────────────────────────────────────────────────
@@ -103,9 +111,11 @@ def test_fund_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pat
     real_elig   = m.fund_phantom_service.check_eligibility
     real_submit = m.fund_phantom_service.submit_grant_application
 
-    async def rec_search(genre="", region="", max_award=0):
-        search_calls.append({"genre": genre, "region": region, "max_award": max_award})
-        return await real_search(genre=genre, region=region, max_award=max_award)
+    async def rec_search(genre="", region="", max_award=0, country="", track=""):
+        search_calls.append({"genre": genre, "region": region, "max_award": max_award,
+                             "country": country, "track": track})
+        return await real_search(genre=genre, region=region, max_award=max_award,
+                                 country=country, track=track)
 
     async def rec_elig(artist_id, program_id="", requested_amount=0, project_type=""):
         elig_calls.append({"artist_id": artist_id, "program_id": program_id,
@@ -162,7 +172,8 @@ def test_fund_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pat
     types  = [e["type"] for e in events]
 
     # All three internal functions invoked with correct args.
-    assert search_calls == [{"genre": "hip-hop", "region": "regional", "max_award": 0}], search_calls
+    assert search_calls == [{"genre": "hip-hop", "region": "regional", "max_award": 0,
+                             "country": "", "track": ""}], search_calls
     assert elig_calls == [{
         "artist_id": "artist-9", "program_id": "factor-canada-music-fund",
         "requested_amount": 5000, "project_type": "recording",
@@ -340,3 +351,117 @@ def test_fund_portal_auth_expired_is_handled(monkeypatch, tmp_path):
     actions_evt = next(e for e in events if e["type"] == "actions")
     assert actions_evt["portal_not_connected"] is True
     assert actions_evt["actions_taken"][0]["result"] == "portal_auth_expired"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Unit 2 — real logic over the structured grant_data axes.
+# These exercise the pure fund_phantom_service functions directly (deterministic,
+# no stream / LLM / network). They prove the lossy back-compat filters were
+# replaced with country/track-aware search and funds-membership eligibility.
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── search: country filter excludes wrong-country funds ──────────────────────
+
+def test_search_country_filter_excludes_wrong_country():
+    # A UK-scoped query must NOT surface FACTOR (a Canadian fund).
+    res = _run(fps.search_grant_programs(country="UK"))
+    ids = [p["id"] for p in res["programs"]]
+    assert "factor-canada-music-fund" not in ids
+    assert res["count"] > 0, "UK should still have funds"
+    assert all(p["country"] == "UK" for p in res["programs"]), ids
+    # Case-insensitive code match still works.
+    assert _run(fps.search_grant_programs(country="ca"))["count"] > 0
+
+
+# ── search: crowdfunding excluded unless explicitly requested ────────────────
+
+def test_search_excludes_crowdfunding_unless_requested():
+    normal = _run(fps.search_grant_programs())
+    assert normal["count"] > 0
+    assert all(p["track"] != "crowdfunding" for p in normal["programs"]), \
+        "crowdfunding must not appear in a normal grant search"
+    # Even a country search must not leak crowdfunding.
+    au = _run(fps.search_grant_programs(country="AU"))
+    assert all(p["track"] != "crowdfunding" for p in au["programs"])
+    # Explicit opt-in returns exactly the six crowdfunding records.
+    cf = _run(fps.search_grant_programs(track="crowdfunding"))
+    assert cf["count"] == 6
+    assert all(p["track"] == "crowdfunding" for p in cf["programs"])
+
+
+# ── search: track filter ─────────────────────────────────────────────────────
+
+def test_search_track_filter_arts_council():
+    res = _run(fps.search_grant_programs(track="arts_council"))
+    assert res["count"] > 0
+    assert all(p["track"] == "arts_council" for p in res["programs"])
+
+
+# ── eligibility: project_type membership in funds (not scalar focus) ─────────
+
+def test_eligibility_project_type_membership():
+    # recording IS in FACTOR's funds → eligible / apply.
+    ok = _run(fps.check_eligibility(
+        "artist-1", program_id="factor-canada-music-fund",
+        requested_amount=5000, project_type="recording"))
+    assert ok["eligible"] is True
+    assert ok["recommendation"] == "apply"
+    assert "recording" in ok["funds"]
+    assert ok["currency"] == "CAD"           # currency surfaced, no FX
+    assert ok["country"] == "CA"
+    assert ok["track"] == "industry"
+    assert ok["amount_unlisted"] is False
+
+    # production is NOT in FACTOR's funds → purpose mismatch → ineligible.
+    bad = _run(fps.check_eligibility(
+        "artist-1", program_id="factor-canada-music-fund",
+        requested_amount=5000, project_type="production"))
+    assert bad["eligible"] is False
+    assert bad["recommendation"] == "ineligible"
+    assert any("not in program funds" in r for r in bad["reasons"]), bad["reasons"]
+
+
+# ── eligibility: stub with unknown ceiling is NOT rejected on amount ─────────
+
+def test_eligibility_stub_amount_unlisted_non_blocking():
+    # musicaction has amount_max=None → any requested amount is non-blocking.
+    res = _run(fps.check_eligibility(
+        "artist-1", program_id="musicaction",
+        requested_amount=999_999, project_type="recording"))
+    assert res["amount_unlisted"] is True
+    assert res["amount_max"] is None
+    assert res["eligible"] is True           # not rejected on an unknown cap
+    assert res["recommendation"] == "apply"
+    assert "amount_unlisted_verify_live" in res["reasons"]
+
+
+# ── eligibility: over a KNOWN cap → adjust (not ineligible) ──────────────────
+
+def test_eligibility_over_known_cap_recommends_adjust():
+    res = _run(fps.check_eligibility(
+        "artist-1", program_id="factor-canada-music-fund",
+        requested_amount=999_999, project_type="recording"))
+    assert res["eligible"] is False
+    assert res["recommendation"] == "adjust"
+    assert res["amount_unlisted"] is False
+
+
+# ── suggest_crowdfunding: situational decision helper (pure) ─────────────────
+
+def test_suggest_crowdfunding_raises_when_not_qualified():
+    d = fps.suggest_crowdfunding(qualifies_for_grants=False)
+    assert d["raise"] is True
+    assert len(d["platforms"]) == 6
+    assert all(p["track"] == "crowdfunding" for p in d["platforms"])
+
+
+def test_suggest_crowdfunding_quiet_when_qualified():
+    d = fps.suggest_crowdfunding(qualifies_for_grants=True, complements_grant=False)
+    assert d["raise"] is False
+    assert d["platforms"] == []
+
+
+def test_suggest_crowdfunding_raises_when_complementary():
+    d = fps.suggest_crowdfunding(qualifies_for_grants=True, complements_grant=True)
+    assert d["raise"] is True
+    assert len(d["platforms"]) == 6

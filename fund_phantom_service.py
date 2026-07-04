@@ -48,23 +48,49 @@ async def search_grant_programs(
     genre: str = "",
     region: str = "",
     max_award: int = 0,
+    country: str = "",
+    track: str = "",
 ) -> dict:
-    """Search open grant programs by genre, region, and/or minimum award ceiling.
+    """Search open grant programs by country, track, genre, region, and/or ceiling.
 
-    All filters are optional. ``genre`` / ``region`` are matched
-    case-insensitively as substrings (programs marked "any"/"national" always
-    match a genre/region query). ``max_award`` filters to programs whose ceiling
-    is at least that amount. Returns {"programs": [...], "count": int}. Pure — no
-    I/O.
+    All filters are optional and combine with AND. Pure — no I/O.
+
+    Real (Unit-2) filters, over the structured axes in grant_data:
+      - ``country``: exact ISO-ish code match, case-insensitive (e.g. "CA", "UK").
+        Records whose ``country`` differs are excluded. (Geography is filtered on
+        the structured ``country`` field only — ``residency`` is free text and is
+        NEVER parsed as a filter; it rides along as a human-readable note.)
+      - ``track``: exact match on ``track`` (industry / arts_council /
+        crowdfunding).
+
+    Crowdfunding is situational and is EXCLUDED from normal grant searches: a
+    record with track=="crowdfunding" only appears when the caller explicitly
+    passes track="crowdfunding".
+
+    Back-compat filters (kept working for existing callers):
+      - ``genre`` / ``region`` matched case-insensitively as substrings (programs
+        marked "any"/"national" always match).
+      - ``max_award`` floors on the legacy ``max_award`` int.
+
+    Returns {"programs": [...], "count": int} with full records via dict(p).
     """
     g = (genre or "").strip().lower()
     r = (region or "").strip().lower()
+    c = (country or "").strip().lower()
+    t = (track or "").strip().lower()
     try:
         floor = int(max_award or 0)
     except (TypeError, ValueError):
         floor = 0
     matches = []
     for p in _GRANT_PROGRAMS:
+        # Crowdfunding stays out of normal searches unless explicitly requested.
+        if p.get("track") == "crowdfunding" and t != "crowdfunding":
+            continue
+        if c and (p.get("country") or "").lower() != c:
+            continue
+        if t and (p.get("track") or "").lower() != t:
+            continue
         if g and g not in p["genre"] and p["genre"] != "any":
             continue
         if r and r not in p["region"] and p["region"] != "national":
@@ -92,9 +118,21 @@ async def check_eligibility(
     """Screen a project against a grant program's rules and return an assessment.
 
     Deterministic keyword/threshold screen — never contacts a wire. Looks the
-    program up by id and checks the requested amount against its ceiling and the
-    project type against its focus. Returns a structured eligibility result with a
-    recommendation of "apply" / "adjust" / "ineligible".
+    program up by id and judges two things against the structured record:
+
+      1. Purpose (project_type): eligible on purpose if no project_type is given,
+         OR the project_type is in the program's ``funds`` list. ``focus`` is used
+         only as a fallback when a record has no ``funds`` (permissive "any").
+      2. Amount: compared against the structured ``amount_max`` when it is known.
+         When ``amount_max`` is None (a stub with no listed ceiling) the amount is
+         NON-BLOCKING — we cannot judge a cap we do not have — and the result is
+         flagged ``amount_unlisted=True`` (verify live) rather than rejected.
+
+    Currency-aware but FX-free: the program's ``currency`` is surfaced so the
+    caller never implies cross-currency equivalence; NO conversion is performed.
+
+    Returns a structured eligibility result with a recommendation of
+    "apply" / "adjust" / "ineligible".
     """
     program = _get_program(program_id)
     if program is None:
@@ -110,23 +148,44 @@ async def check_eligibility(
     except (TypeError, ValueError):
         amount = 0
     ptype = (project_type or "").strip().lower()
+    currency = program.get("currency", "") or ""
 
     reasons = []
-    over_cap = amount > program["max_award"]
-    if over_cap:
+
+    # ── Purpose: membership in funds; focus is fallback only when funds absent ──
+    funds = program.get("funds") or ()
+    if not ptype:
+        purpose_mismatch = False
+    elif funds:
+        purpose_mismatch = ptype not in funds
+    else:
+        focus = program.get("focus", "any")
+        purpose_mismatch = focus != "any" and ptype != focus
+    if purpose_mismatch:
+        target = list(funds) if funds else program.get("focus", "any")
         reasons.append(
-            f"requested {amount} exceeds max award {program['max_award']}"
-        )
-    focus_mismatch = bool(ptype) and program["focus"] != "any" and ptype != program["focus"]
-    if focus_mismatch:
-        reasons.append(
-            f"project type '{ptype}' does not match program focus '{program['focus']}'"
+            f"project type '{ptype}' is not in program funds {target}"
         )
 
-    eligible = not (over_cap or focus_mismatch)
+    # ── Amount: use structured amount_max; None => unlisted, non-blocking ──
+    if "amount_max" in program:
+        amount_max = program["amount_max"]
+    else:
+        amount_max = program.get("max_award")  # legacy fallback only
+    amount_unlisted = amount_max is None
+    over_cap = (amount_max is not None) and (amount > amount_max)
+    if over_cap:
+        reasons.append(
+            f"requested {amount} exceeds max award {amount_max} {currency}".strip()
+        )
+    if amount_unlisted and amount:
+        reasons.append("amount_unlisted_verify_live")
+
+    # amount_unlisted alone never makes a program ineligible.
+    eligible = not (over_cap or purpose_mismatch)
     if eligible:
         recommendation = "apply"
-    elif over_cap and not focus_mismatch:
+    elif over_cap and not purpose_mismatch:
         recommendation = "adjust"
     else:
         recommendation = "ineligible"
@@ -137,8 +196,17 @@ async def check_eligibility(
         "program_id": program["id"],
         "program_name": program["name"],
         "max_award": program["max_award"],
-        "focus": program["focus"],
+        "focus": program.get("focus", "any"),
         "recommendation": recommendation,
+        # ── additive (Unit 2) — structured axes surfaced for the model ──
+        "funds": list(funds),
+        "track": program.get("track", ""),
+        "country": program.get("country", ""),
+        "currency": currency,
+        "language": program.get("language", ""),
+        "residency": program.get("residency", ""),
+        "amount_max": amount_max,
+        "amount_unlisted": amount_unlisted,
     }
 
 
@@ -191,3 +259,35 @@ async def submit_grant_application(
         "project_title": title,
         "requested_amount": amount,
     }
+
+
+def suggest_crowdfunding(qualifies_for_grants: bool, complements_grant: bool = False) -> dict:
+    """Situational crowdfunding decision (pure, no I/O, no tool wiring).
+
+    Encodes the grant map's rule: crowdfunding is a SECONDARY option, not a
+    default. Raise it when the artist does NOT qualify for the available grants
+    (a real alternative rather than a dead end), OR when it complements a grant
+    (e.g. income that counts toward a matched-funding requirement, or a campaign
+    that proves fan demand in an application). Stay quiet when the artist clearly
+    qualifies for grants and just needs help landing one — offering crowdfunding
+    there is noise.
+
+    Returns {"raise": bool, "reason": str, "platforms": [...]}. The platform list
+    (the six crowdfunding records from grant_data) is included only when this
+    recommends raising crowdfunding; otherwise it is empty.
+    """
+    should_raise = (not qualifies_for_grants) or complements_grant
+    if not qualifies_for_grants:
+        reason = ("artist does not qualify for the available grants — crowdfunding "
+                  "is a real alternative")
+    elif complements_grant:
+        reason = ("crowdfunding complements a grant (matched-funding income / proof "
+                  "of fan demand)")
+    else:
+        reason = ("artist clearly qualifies for grants and just needs to land one — "
+                  "raising crowdfunding would be noise")
+    platforms = (
+        [dict(p) for p in _GRANT_PROGRAMS if p.get("track") == "crowdfunding"]
+        if should_raise else []
+    )
+    return {"raise": should_raise, "reason": reason, "platforms": platforms}

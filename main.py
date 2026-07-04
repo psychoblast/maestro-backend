@@ -1847,13 +1847,17 @@ FUND_PHANTOM_MAX_TOOL_ITERS = 5
 FUND_PHANTOM_TOOLS = [
     {
         "name": "search_grant_programs",
-        "description": "Search open arts grant/funding programs by genre, region, or minimum award ceiling",
+        "description": ("Search open arts grant/funding programs by country (e.g. 'CA', 'UK'), "
+                        "track (industry|arts_council|crowdfunding), genre, region, or minimum "
+                        "award ceiling. Crowdfunding is excluded unless track='crowdfunding'."),
         "input_schema": {
             "type": "object",
             "properties": {
                 "genre": {"type": "string"},
                 "region": {"type": "string", "enum": ["national", "regional"]},
                 "max_award": {"type": "integer"},
+                "country": {"type": "string"},
+                "track": {"type": "string", "enum": ["industry", "arts_council", "crowdfunding"]},
             },
         },
     },
@@ -1907,11 +1911,15 @@ async def _execute_fund_phantom_tool(name: str, tool_input: dict, artist_id: str
         genre     = (tool_input.get("genre") or "").strip()
         region    = (tool_input.get("region") or "").strip()
         max_award = tool_input.get("max_award") or 0
+        country   = (tool_input.get("country") or "").strip()
+        track     = (tool_input.get("track") or "").strip()
         res = await fund_phantom_service.search_grant_programs(
             genre=genre, region=region, max_award=max_award,
+            country=country, track=track,
         )
         summary = {
-            "input": f"genre={genre or 'any'} region={region or 'any'}",
+            "input": f"genre={genre or 'any'} region={region or 'any'} "
+                     f"country={country or 'any'} track={track or 'any'}",
             "result": f"{res['count']} program(s) found",
         }
         return res, summary, False
