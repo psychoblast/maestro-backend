@@ -80,7 +80,10 @@ async def search_grant_programs(
     Back-compat filters (kept working for existing callers):
       - ``genre`` / ``region`` matched case-insensitively as substrings (programs
         marked "any"/"national" always match).
-      - ``max_award`` floors on the legacy ``max_award`` int.
+      - ``max_award`` is a CEILING: only grants available at or below this
+        amount are returned. A grant is excluded only when its ``amount_min``
+        is known and exceeds the ceiling; grants with an unknown ``amount_min``
+        (None / "verify live") are never dropped by this filter.
 
     Returns {"programs": [...], "count": int} with full records via dict(p).
     """
@@ -89,9 +92,9 @@ async def search_grant_programs(
     c = (country or "").strip().lower()
     t = (track or "").strip().lower()
     try:
-        floor = int(max_award or 0)
+        ceiling = int(max_award or 0)
     except (TypeError, ValueError):
-        floor = 0
+        ceiling = 0
     matches = []
     for p in _GRANT_PROGRAMS:
         # Crowdfunding stays out of normal searches unless explicitly requested.
@@ -105,7 +108,12 @@ async def search_grant_programs(
             continue
         if r and r not in p["region"] and p["region"] != "national":
             continue
-        if floor and p["max_award"] < floor:
+        # ``max_award`` is a CEILING: keep grants the artist can ask about at or
+        # under it. Exclude a grant only when its amount_min is KNOWN and sits
+        # entirely above the ceiling. amount_min=None ("verify live") is never
+        # excluded by an amount filter — unknown ≠ rejected (Unit 1 honesty rule).
+        amt_min = p.get("amount_min")
+        if ceiling and amt_min is not None and amt_min > ceiling:
             continue
         matches.append(dict(p))
     return {"programs": matches, "count": len(matches)}

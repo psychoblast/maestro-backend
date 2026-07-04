@@ -1848,14 +1848,18 @@ FUND_PHANTOM_TOOLS = [
     {
         "name": "search_grant_programs",
         "description": ("Search open arts grant/funding programs by country (e.g. 'CA', 'UK'), "
-                        "track (industry|arts_council|crowdfunding), genre, region, or minimum "
-                        "award ceiling. Crowdfunding is excluded unless track='crowdfunding'."),
+                        "track (industry|arts_council|crowdfunding), genre, region, or max_award "
+                        "ceiling (only return grants available at or below this amount). "
+                        "Crowdfunding is excluded unless track='crowdfunding'."),
         "input_schema": {
             "type": "object",
             "properties": {
                 "genre": {"type": "string"},
                 "region": {"type": "string", "enum": ["national", "regional"]},
-                "max_award": {"type": "integer"},
+                "max_award": {
+                    "type": "integer",
+                    "description": "Only return grants available at or below this amount (a ceiling, in the grant's own currency).",
+                },
                 "country": {"type": "string"},
                 "track": {"type": "string", "enum": ["industry", "arts_council", "crowdfunding"]},
             },

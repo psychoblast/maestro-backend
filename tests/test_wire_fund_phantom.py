@@ -398,6 +398,62 @@ def test_search_track_filter_arts_council():
     assert all(p["track"] == "arts_council" for p in res["programs"])
 
 
+# ── search: max_award is a CEILING (direction locked so it can't re-invert) ──
+#
+# Report 3 (HIGH) fix. max_award means "grants available at or below $X". A grant
+# is excluded ONLY when its amount_min is known and sits entirely above the
+# ceiling; unknown amount_min (None / "verify live") must survive — unknown ≠
+# rejected (Unit 1 honesty rule). The first three monkeypatch a tiny synthetic
+# dataset so the direction is pinned regardless of the live grant map.
+
+def _award_rec(rec_id, amount_min, amount_max):
+    """Minimal grant record carrying just the fields the search filter reads."""
+    return {
+        "id": rec_id, "name": rec_id, "genre": "any", "region": "national",
+        "country": "CA", "track": "industry",
+        "amount_min": amount_min, "amount_max": amount_max,
+        "max_award": amount_max or 0,
+    }
+
+
+def test_search_max_award_ceiling_excludes_grant_entirely_above(monkeypatch):
+    # $25k ceiling must DROP a grant that starts at $50k (whole range above cap).
+    monkeypatch.setattr(fps, "_GRANT_PROGRAMS", [_award_rec("big", 50000, 75000)])
+    res = _run(fps.search_grant_programs(max_award=25000))
+    assert res["count"] == 0, \
+        "a grant whose amount_min ($50k) exceeds the $25k ceiling must be excluded"
+
+
+def test_search_max_award_ceiling_includes_straddling_range(monkeypatch):
+    # A grant whose range straddles the ceiling (min $10k / max $40k) is reachable
+    # at or below $25k, so it must be KEPT — not treated as a floor.
+    monkeypatch.setattr(fps, "_GRANT_PROGRAMS", [_award_rec("straddle", 10000, 40000)])
+    res = _run(fps.search_grant_programs(max_award=25000))
+    assert [p["id"] for p in res["programs"]] == ["straddle"], \
+        "a grant reachable at/below the ceiling (amount_min $10k) must be kept"
+
+
+def test_search_max_award_ceiling_keeps_unknown_amount_min(monkeypatch):
+    # Honesty rule: a grant with unknown amount_min (None, "verify live") must NOT
+    # be dropped by an amount filter — unknown ≠ rejected.
+    monkeypatch.setattr(fps, "_GRANT_PROGRAMS", [_award_rec("unlisted", None, None)])
+    res = _run(fps.search_grant_programs(max_award=25000))
+    assert [p["id"] for p in res["programs"]] == ["unlisted"], \
+        "unknown amount_min must survive an amount filter (unknown != rejected)"
+
+
+def test_search_max_award_ceiling_direction_holds_on_real_data():
+    # Invariant over the live grant map: with a $25k ceiling, nothing returned may
+    # have a KNOWN amount_min above $25k, and unknown-amount grants still appear.
+    res = _run(fps.search_grant_programs(max_award=25000))
+    assert res["count"] > 0
+    leaked = [p["id"] for p in res["programs"]
+              if p.get("amount_min") is not None and p["amount_min"] > 25000]
+    assert leaked == [], f"ceiling leaked grants starting above $25k: {leaked}"
+    assert any(p.get("amount_min") is None for p in res["programs"]), \
+        "unknown-amount grants must survive the ceiling filter"
+
+
 # ── eligibility: project_type membership in funds (not scalar focus) ─────────
 
 def test_eligibility_project_type_membership():
