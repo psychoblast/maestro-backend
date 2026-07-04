@@ -97,7 +97,7 @@ Phase 4 — iOS backend foundation                             ✅ CODE-COMPLETE
 Phase 4 — iOS frontend (React Native)                        ❌ DEFERRED (separate session)
 ```
 
-All backend phases are code-complete. The only remaining code work is the React Native frontend (separate repo: `~/Desktop/[scrubbed]/`, separate entity: [scrubbed] LLC, separate Claude Code session).
+All backend phases are code-complete. The only remaining code work is the React Native frontend, which lives in the frontend repo (separate repo, separate session).
 
 ---
 

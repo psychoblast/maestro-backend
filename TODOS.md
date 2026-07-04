@@ -35,9 +35,9 @@ Last updated: 2026-05-10 (Tier 3 risk mitigations added — R-06/R-07/R-21/R-22/
 | 0.F | TTS audio cache persist on Railway volume | ✅ ON MAIN | `dd19298` — AUDIO_CACHE at /data/audio_cache |
 | 0.F-2 | Static greeting always — remove has_history branch | ✅ ON MAIN | `6bc14b5` |
 | 0.4 | Agent handoff — full context passed | ✅ ON MAIN | `37172f8` — profile + history + reason + actions |
-| 0.1 | Voice mapping — fix in frontend CallScreen.js | 🔵 FRONTEND | Backend correct. Fix lives in ~/Desktop/[scrubbed]/ |
+| 0.1 | Voice mapping — fix in frontend CallScreen.js | 🔵 FRONTEND | Backend correct. Fix lives in the frontend repo (separate directory) |
 | 0.2 | Voice delay — verify /api/tts/synth wiring | 🔵 FRONTEND | Backend wired. Frontend verification pending |
-| 0.3 | Audio stops on hangup — AbortController | 🔵 FRONTEND | Fix lives in ~/Desktop/[scrubbed]/ |
+| 0.3 | Audio stops on hangup — AbortController | 🔵 FRONTEND | Fix lives in the frontend repo (separate directory) |
 | 0.5 / 0.D | Twilio SMS OTP — real end-to-end test | 🔴 OPEN | Needs Tommy's physical device. Dev bypass active |
 | 0.E | First call failure — audio/connect issue | 🔴 OPEN | Needs logcat from real device + reproduction steps |
 
@@ -165,7 +165,7 @@ Nothing in this section requires new code. All are Railway/Google/Buffer dashboa
 | **2** | B. Replace 3–5 curator emails | 🔴 PENDING | File: `data/curators_seed.json`. 3–5 only first — sender rep risk. |
 | **3** | C. Bug 1 Railway verification | 🔴 PENDING | `GET /api/reports/weekly/{id}` → confirm `momentum_score`, `headline`, `highlights` in response. |
 | **4** | D. End-to-end Phase 1 Gmail test | 🔴 PENDING | Browser OAuth → generate → send to 1 curator → confirm Sent folder → scan inbox → status = "replied". |
-| **5** | E. Phase 0 device items | 🔵 SEPARATE SESSION | Twilio OTP (0.D), logcat (0.E), CallScreen.js (0.1/0.2/0.3). Physical device + ~/Desktop/[scrubbed]/ required. |
+| **5** | E. Phase 0 device items | 🔵 SEPARATE SESSION | Twilio OTP (0.D), logcat (0.E), CallScreen.js (0.1/0.2/0.3). Physical device + the frontend repo (separate directory) required. |
 | **6** | F. Buffer OAuth | 🟡 DEFERRABLE | buffer.com/developers/apps. Set `BUFFER_CLIENT_ID`, `BUFFER_CLIENT_SECRET`, `BUFFER_REDIRECT_URI`. Only needed when Phase 3 social scheduling goes live. |
 | **7** | G. Enable scheduler | 🟡 LAST STEP | `SCHEDULER_ENABLED=true` on Railway. Arms: inbox poll 6h, weekly report Sundays 18:00 UTC, release execute-due hourly. Do after A–D verified. |
 
@@ -208,7 +208,7 @@ then merge-to-main after sign-off.
 ## STANDING ITEMS
 
 - [ ] Tommy to test 0.D (Twilio OTP) on real device
-- [ ] Tommy to complete frontend 0.1/0.2/0.3 fixes in CallScreen.js (~/Desktop/[scrubbed]/)
+- [ ] Tommy to complete frontend 0.1/0.2/0.3 fixes in CallScreen.js (in the frontend repo, separate directory)
 - [ ] Decide: keep SQLite on /data volume or add Railway Postgres add-on (DATABASE_URL)
 - [ ] Rotate any keys if exposed (check: ANTHROPIC, ELEVENLABS, TWILIO, STRIPE)
 - [ ] Set `APP_BASE_URL` on Railway (AU-1 above — do before next Stripe test)

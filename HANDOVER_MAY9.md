@@ -205,7 +205,7 @@ In priority order:
 6. **Phase 0 device-bound items:**
    - 0.D — test Twilio OTP on real device
    - 0.E — reproduce first call failure and capture logcat
-   - 0.1/0.2/0.3 — frontend CallScreen.js fixes (separate session in ~/Desktop/[scrubbed]/)
+   - 0.1/0.2/0.3 — frontend CallScreen.js fixes (separate session in the frontend repo, separate directory)
 7. **Enable scheduler** — set `SCHEDULER_ENABLED=true` on Railway when ready for automatic inbox polling (every 6h for pitches/PR/booking) and weekly Sunday reports
 
 ---
@@ -225,7 +225,7 @@ In priority order:
 | Social scheduling | Buffer API | OAuth stubs only; real posting commented out |
 | Scheduler | APScheduler AsyncIOScheduler | Inbox poll 6h + weekly report Sundays 18:00 UTC |
 | Repo | github.com/psychoblast/maestro-backend | Branch: main |
-| Frontend | ~/Desktop/[scrubbed]/ | React Native — NOT touched tonight |
+| Frontend | frontend repo (separate directory) | React Native — NOT touched tonight |
 
 ---
 
@@ -282,4 +282,4 @@ docs/DEPLOYMENT_CHECKLIST.md     Railway deploy steps + smoke tests
 - **Commit after every working change** — never batch multiple units into one commit
 - **Test with real data** — curl with real payloads, not synthetic test data
 - **Verify Railway is serving new code** after every push (check logs, not status page)
-- **Frontend lives at ~/Desktop/[scrubbed]/** — separate session, separate concern; never touch from ~/maestro/ session
+- **Frontend lives in a separate repo (separate directory)** — separate session, separate concern; never touch from ~/maestro/ session

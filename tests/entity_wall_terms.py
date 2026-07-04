@@ -13,11 +13,11 @@ provenance marker appears as plaintext in source.
 
 SCOPE — PROVENANCE MARKERS ONLY
 -------------------------------
-FORBIDDEN_TERMS contains ONLY true provenance markers: the prior toolchain name
-("[scrubbed]" / "[scrubbed]"), the prior owning entity ("[scrubbed]" /
-"[scrubbed]"), and the scrubbed rubric codenames.
+FORBIDDEN_TERMS contains ONLY true provenance markers: the prior-owner and
+prior-toolchain provenance strings plus the scrubbed rubric codenames, all
+stored base64-encoded below so the literal terms never appear in source.
 
-It deliberately does NOT contain sibling product names. Those are not
+It deliberately does NOT contain sibling-brand product names. Those are not
 provenance — they must not live in this repository at all, in any form,
 encoded or otherwise. They are therefore neither stored nor checked here.
 """

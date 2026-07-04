@@ -104,7 +104,7 @@ and confirm response contains momentum_score, headline, highlights.
 - 0.D — Twilio SMS OTP test on real Android device
 - 0.E — first call failure: capture logcat from real device
 - 0.1/0.2/0.3 — frontend CallScreen.js voice mapping fixes
-  (these live in ~/Desktop/[scrubbed]/, NOT ~/maestro/ — separate session, separate concern)
+  (these live in the frontend repo, separate directory, NOT ~/maestro/ — separate session, separate concern)
 
 ### F. Buffer OAuth (deferrable until Phase 3 social scheduling actually used)
 - buffer.com/developers/apps
@@ -156,7 +156,7 @@ real OAuth credentials.
 
 If you have remaining time/energy, Phase 0 device items (E) are the next
 unblock. Frontend CallScreen.js fixes are in a separate codebase
-(~/Desktop/[scrubbed]/) — DO NOT touch from a ~/maestro/ session.
+(the frontend repo, separate directory) — DO NOT touch from a ~/maestro/ session.
 
 ---
 
@@ -170,4 +170,4 @@ unblock. Frontend CallScreen.js fixes are in a separate codebase
 - Commit after every working change; never batch units
 - Test with real data once OAuth is live
 - Verify Railway is serving new code after every push
-- Frontend lives at ~/Desktop/[scrubbed]/ — separate session, separate concern
+- Frontend lives in a separate repo (separate directory) — separate session, separate concern
