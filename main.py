@@ -6016,6 +6016,51 @@ INK_AND_AIR_TOOLS = [
             "required": ["contributors"],
         },
     },
+    {
+        "name": "build_publishing_doc_scaffold",
+        "description": ("Build a compact document scaffold for one of two publishing documents, "
+                        "AFTER you have interviewed the artist and gathered what the document "
+                        "actually requires. doc_type 'split_sheet': song fields + one record per "
+                        "contributor (same canonical fields as validate_split_sheet) — the scaffold "
+                        "returns ordered sections, both 100%-sum checks over supplied values, the "
+                        "best-practice master-side block, amendment rule, and signature lines. "
+                        "doc_type 'sync_pack': the sync metadata fields plus one_stop_confirmations "
+                        "— one-stop is asserted ONLY when master control, 100% publishing control, "
+                        "and no-uncleared-samples are EACH explicitly confirmed by the artist; "
+                        "anything unconfirmed returns cannot_assert_one_stop with the missing "
+                        "conditions named. Include ONLY what the artist actually told you — omit "
+                        "unknowns so they come back as [NEEDS: ...] gaps instead of invented facts. "
+                        "Then WRITE the document draft yourself in your reply from the scaffold: "
+                        "follow each section's guidance, keep every [NEEDS: ...] and "
+                        "[ARTIST-SUPPLIED: ...] marker verbatim, and never invent a fact, IPI, or %. "
+                        "The draft is a review starting point for the artist and their manager — "
+                        "NOT submit-ready, NOT a legal document."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_type": {"type": "string", "enum": ["split_sheet", "sync_pack"]},
+                "inputs": {
+                    "type": "object",
+                    "description": ("Everything gathered from the artist. For split_sheet: 'song' "
+                                    "(object) and 'contributors' (array of records with the "
+                                    "canonical field names), plus optional master-side fields "
+                                    "(recording_info, isrc, master_ownership_percent). For "
+                                    "sync_pack: the metadata fields (genre_specific, moods, "
+                                    "tempo_bpm, instrumentation, vocals, similar_artists, "
+                                    "suggested_placements, rights_breakdown, "
+                                    "clearance_contact_composition, clearance_contact_master, "
+                                    "stems_available, instrumental_available, "
+                                    "clean_version_available, samples_cleared_declaration, isrc, "
+                                    "iswc, pro_affiliation, ipi) plus 'one_stop_confirmations' "
+                                    "(object with booleans master_control_confirmed, "
+                                    "publishing_control_100_confirmed, no_uncleared_samples — set "
+                                    "true ONLY on the artist's explicit confirmation). Omit "
+                                    "anything not gathered."),
+                },
+            },
+            "required": ["doc_type"],
+        },
+    },
 ]
 
 
@@ -6112,6 +6157,22 @@ async def _execute_ink_and_air_tool(name: str, tool_input: dict, artist_id: str)
             "result": (f"valid_structure={res['valid_structure']}, "
                        f"{len(res['needs'])} gap(s)"),
         }
+        return res, summary, False
+
+    if name == "build_publishing_doc_scaffold":
+        # Deliberately NOT gated — data/scaffold tool, no account needed.
+        dt = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await ink_and_air_service.build_publishing_doc_scaffold(
+            artist_id, doc_type=dt, inputs=raw_inputs,
+        )
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={dt or '(missing)'}", "result": result_str}
         return res, summary, False
 
     return (

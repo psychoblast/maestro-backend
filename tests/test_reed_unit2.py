@@ -361,11 +361,13 @@ def test_wire_new_tools_not_portal_gated_even_when_expired(monkeypatch, tmp_path
     assert actions_evt["actions_taken"][0]["result"].startswith("1 performance")
 
 
-def test_ink_and_air_tools_now_five_with_new_schemas(monkeypatch, tmp_path):
+def test_ink_and_air_tools_expose_unit2_schemas(monkeypatch, tmp_path):
+    # Unit 2 added tools #4 and #5 after the original three; later units may
+    # append more (the exact roster is asserted in the newest unit's tests).
     m = _load_main(monkeypatch, tmp_path)
     names = [t["name"] for t in m.INK_AND_AIR_TOOLS]
-    assert names == ["search_publishing_deals", "review_split_sheet", "register_composition",
-                     "lookup_publishing_societies", "validate_split_sheet"]
+    assert names[:5] == ["search_publishing_deals", "review_split_sheet", "register_composition",
+                         "lookup_publishing_societies", "validate_split_sheet"]
     lookup = next(t for t in m.INK_AND_AIR_TOOLS if t["name"] == "lookup_publishing_societies")
     assert lookup["input_schema"]["required"] == ["country_code"]
     validate = next(t for t in m.INK_AND_AIR_TOOLS if t["name"] == "validate_split_sheet")
