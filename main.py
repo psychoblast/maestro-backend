@@ -5944,6 +5944,78 @@ INK_AND_AIR_TOOLS = [
             "required": ["work_title"],
         },
     },
+    {
+        "name": "lookup_publishing_societies",
+        "description": ("Look up where a songwriter registers in one country: the performance (PRO) "
+                        "and mechanical societies, whether one unified CMO covers both streams, and "
+                        "the home-society-once/CISAC doctrine (a writer joins their HOME society once "
+                        "and collects worldwide — never registers with multiple PROs). Covered: CA, "
+                        "US, UK, AU, NZ, DE, FR, SE, DK, NO, FI. Any other country returns "
+                        "country_not_in_corpus — relay that honestly and NEVER guess a society."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "country_code": {"type": "string",
+                                 "description": "Country code, e.g. 'CA', 'US', 'UK' — the writer's HOME country"},
+            },
+            "required": ["country_code"],
+        },
+    },
+    {
+        "name": "validate_split_sheet",
+        "description": ("Validate a STRUCTURED split sheet. Pass the song fields and one record per "
+                        "contributor using the canonical field names. Include ONLY values the artist "
+                        "actually supplied — OMIT anything unknown so it comes back as an explicit "
+                        "[NEEDS: ...] gap instead of an invented fact (never invent an IPI or a %). "
+                        "Percentage sums are checked ONLY over supplied values; a side with a missing "
+                        "share reports sum_not_checkable and the remainder is NOT inferred. Free-text "
+                        "notes pass through unparsed. Keep every [NEEDS: ...] marker verbatim in your "
+                        "reply. The canonical spec requires per contributor: legal_name, contact, "
+                        "role, lyrics_percent, music_percent, pro_affiliation, writer_ipi, "
+                        "publisher_name ('SELF' if self-published), publisher_ipi, signature; and per "
+                        "song: song_title, date, samples_used (+ sample_sources when samples_used is "
+                        "yes)."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "song": {
+                    "type": "object",
+                    "description": "Song-level fields the artist supplied",
+                    "properties": {
+                        "song_title":       {"type": "string"},
+                        "alternate_titles": {"type": "string"},
+                        "date":             {"type": "string"},
+                        "samples_used":     {"type": "string", "enum": ["yes", "no"]},
+                        "sample_sources":   {"type": "string"},
+                    },
+                },
+                "contributors": {
+                    "type": "array",
+                    "description": ("One record per contributor. Omit unknown fields — they surface "
+                                    "as [NEEDS: ...] gaps. publisher_share_percent is needed for the "
+                                    "publisher-side 100% sum check. Extra keys (e.g. residency, deal "
+                                    "notes) pass through as unparsed notes."),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "legal_name":              {"type": "string"},
+                            "contact":                 {"type": "string"},
+                            "role":                    {"type": "string"},
+                            "lyrics_percent":          {"type": "number"},
+                            "music_percent":           {"type": "number"},
+                            "pro_affiliation":         {"type": "string"},
+                            "writer_ipi":              {"type": "string"},
+                            "publisher_name":          {"type": "string"},
+                            "publisher_ipi":           {"type": "string"},
+                            "publisher_share_percent": {"type": "number"},
+                            "signature":               {"type": "string"},
+                        },
+                    },
+                },
+            },
+            "required": ["contributors"],
+        },
+    },
 ]
 
 
@@ -6012,6 +6084,35 @@ async def _execute_ink_and_air_tool(name: str, tool_input: dict, artist_id: str)
                 {"input": f"work_title={nm}", "result": "auth_expired"},
                 True,
             )
+
+    if name == "lookup_publishing_societies":
+        # Deliberately NOT gated on INK_AND_AIR_CONNECTED — pure corpus read,
+        # no account needed (mirrors Jade's ungated lookup/scaffold tools).
+        code = (tool_input.get("country_code") or "").strip()
+        res = await ink_and_air_service.lookup_publishing_societies(code)
+        if res.get("status") == "ok":
+            result_str = (f"{len(res['performance'])} performance + "
+                          f"{len(res['mechanical'])} mechanical societies")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"country_code={code or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "validate_split_sheet":
+        # Deliberately NOT gated — pure validation, no account needed.
+        song = tool_input.get("song")
+        contributors = tool_input.get("contributors")
+        song = song if isinstance(song, dict) else {}
+        contributors = contributors if isinstance(contributors, list) else []
+        res = await ink_and_air_service.validate_split_sheet(
+            artist_id, song=song, contributors=contributors,
+        )
+        summary = {
+            "input": f"contributors={len(contributors)}",
+            "result": (f"valid_structure={res['valid_structure']}, "
+                       f"{len(res['needs'])} gap(s)"),
+        }
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},
