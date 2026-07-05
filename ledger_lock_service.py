@@ -11,6 +11,17 @@ the artist knows the true net they should book, and file a tax document (an
 estimate, an annual return, a 1099, etc.) with the artist's connected bookkeeping
 account so the filing actually gets lodged on their behalf.
 
+Unit 2: lookup_recording_societies and build_registration_checklist are pure
+reads/computations over the royalties_data corpus (Nadia Unit 1) — the corpus
+is the single source of truth; no domain fact is invented here. The lookup
+resolves composition-side context ids via publishing_data (read-only import in
+the SERVICE layer only — corpora stay import-free). The checklist applies
+REGISTRATION_RULES to EXPLICITLY supplied situation flags only: an unsupplied
+axis is a [NEEDS:<flag>] gap and its rule branch does NOT fire
+(HONESTY_RULES.situation_flags_explicit_only). No split is ever stated as fact
+except the US statutory SoundExchange 50/45/5 — everything else surfaces as
+varies_verify_with_society (HONESTY_RULES.only_statutory_split_hardcoded).
+
 MOCK-FIRST CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live tax/bookkeeping APIs, no filing portals, no LLM.
@@ -24,6 +35,9 @@ MOCK-FIRST CONTRACT (hard rules for this module):
 """
 import hashlib
 import os
+
+import publishing_data
+import royalties_data
 
 
 class LedgerAccountNotConnected(Exception):
@@ -196,6 +210,179 @@ async def reconcile_royalty_statement(
         "net_amount": net_amount,
         "line_items": line_items,
         "recommendation": recommendation,
+    }
+
+
+# ── Unit-2 plumbing (pure; corpus-driven) ─────────────────────────────────────
+_GAP = "[NEEDS:{}]"
+
+
+def _resolve_recording_bodies(ids):
+    """Resolve recording-society ids to full records; None passes through as None."""
+    if ids is None:
+        return None
+    return [dict(royalties_data.RECORDING_SOCIETIES[sid]) for sid in ids]
+
+
+async def lookup_recording_societies(country_code: str = "") -> dict:
+    """Look up who collects RECORDING-side royalties in one country — pure corpus read.
+
+    Returns the recording-side body records (with capacities via ``represents``
+    and their scope/registration notes) plus the composition-side society ids
+    for context (resolved read-only via publishing_data — those bodies are
+    Reed's domain and are referenced, never duplicated). A country outside the
+    11-country corpus returns a structured ``country_not_in_corpus`` result
+    listing the supported codes — a body is NEVER guessed
+    (HONESTY_RULES.unknown_is_none). A country whose recording side is
+    unverified in the corpus (NZ) surfaces None + the verify-live note honestly.
+    """
+    code = (country_code or "").strip().upper()
+    record = royalties_data.COUNTRY_ROYALTY_TABLE.get(code)
+    if record is None:
+        return {
+            "status": "country_not_in_corpus",
+            "country": code or "(missing)",
+            "supported_countries": list(royalties_data.ROYALTY_COUNTRIES),
+            "message": ("No verified royalty-routing data for this country in the "
+                        "corpus. Do not guess a body — tell the artist to verify "
+                        "with a local authority, or pick from the supported list."),
+        }
+    recording_bodies = _resolve_recording_bodies(record["recording_performance_ids"])
+    result = {
+        "status": "ok",
+        "country": code,
+        "recording_bodies": recording_bodies,
+        "composition_context": {
+            "performance_ids": list(record["composition_performance_ids"]),
+            "mechanical_ids": list(record["composition_mechanical_ids"]),
+            "performance_names": [publishing_data.SOCIETIES[sid]["name"]
+                                  for sid in record["composition_performance_ids"]],
+            "mechanical_names": [publishing_data.SOCIETIES[sid]["name"]
+                                 for sid in record["composition_mechanical_ids"]],
+            "note": "Composition side is Reed's (ink-and-air) domain — ids "
+                    "reference publishing_data verbatim.",
+        },
+        "notes": record["notes"],
+    }
+    if recording_bodies is None:
+        result["recording_side_status"] = "unverified"
+        result["recording_side_note"] = ("No verified recording-side body in the "
+                                         "corpus for this country — verify live; "
+                                         "a body is never guessed.")
+    return result
+
+
+def _flag_supplied(situation: dict, axis: str) -> bool:
+    """A flag counts as supplied ONLY when present and not None — never defaulted."""
+    return axis in situation and situation[axis] is not None
+
+
+def _entry_split(stream_id: str):
+    """The split payload for a checklist entry — statutory quote or the sentinel.
+
+    Quoting the SoundExchange statutory 50/45/5 is the ONLY split ever stated
+    as fact; every other stream where a split could be implied carries
+    varies_verify_with_society (HONESTY_RULES.only_statutory_split_hardcoded).
+    """
+    if stream_id == "us_digital_recording_performance":
+        return dict(royalties_data.RECORDING_SOCIETIES["soundexchange"]["statutory_split"])
+    return royalties_data.SPLIT_UNKNOWN_SENTINEL
+
+
+async def build_registration_checklist(situation: dict = None) -> dict:
+    """Apply royalties_data.REGISTRATION_RULES to EXPLICIT situation flags only.
+
+    Pure computation over the Unit-1 corpus — compact structured data, no
+    prose, no I/O, no LLM. Every axis a rule needs that was not explicitly
+    supplied becomes a [NEEDS:<flag>] gap and that rule branch does NOT fire —
+    a flag is never defaulted or inferred
+    (HONESTY_RULES.situation_flags_explicit_only). Rule order is preserved from
+    the corpus. Bodies resolve per body_ref (specific body) or by_country
+    (COUNTRY_ROYALTY_TABLE / publishing_data routing); an unverified recording
+    side (NZ) surfaces bodies=None + verify-live. Splits are never stated as
+    fact except the statutory SoundExchange 50/45/5.
+    """
+    situation = dict(situation) if isinstance(situation, dict) else {}
+    spec_axes = tuple(royalties_data.REGISTRATION_SITUATION_SPEC)
+
+    country = None
+    if _flag_supplied(situation, "country_of_residence"):
+        country = str(situation["country_of_residence"]).strip().upper()
+    country_record = royalties_data.COUNTRY_ROYALTY_TABLE.get(country) if country else None
+
+    needs, registrations, notes = [], [], []
+    if country and country_record is None:
+        notes.append({"source": "country_of_residence", "text": country,
+                      "note": ("country_not_in_corpus — routing bodies cannot be "
+                               "resolved; verify live. Supported: "
+                               + ", ".join(royalties_data.ROYALTY_COUNTRIES))})
+
+    for rule in royalties_data.REGISTRATION_RULES:
+        condition = rule["condition"]
+        axis = condition["axis"]
+        if not _flag_supplied(situation, axis):
+            needs.append(_GAP.format(axis))
+            continue  # explicit-only: the branch does NOT fire on a missing flag
+        if "equals" in condition:
+            supplied = situation[axis]
+            if axis == "country_of_residence":
+                supplied = country
+            if supplied != condition["equals"]:
+                continue
+
+        stream_id = rule["stream_id"]
+        if country == "US" and rule.get("stream_id_us_override"):
+            stream_id = rule["stream_id_us_override"]
+
+        bodies = None
+        if rule["body_ref"] is not None:
+            pool = (publishing_data.SOCIETIES
+                    if rule["body_ref_corpus"] == "publishing_data"
+                    else royalties_data.RECORDING_SOCIETIES)
+            bodies = [dict(pool[rule["body_ref"]])]
+        elif country_record is not None:
+            if royalties_data.STREAMS[stream_id]["side"] == "composition":
+                ids = country_record["composition_performance_ids"]
+                bodies = [dict(publishing_data.SOCIETIES[sid]) for sid in ids]
+            else:
+                bodies = _resolve_recording_bodies(
+                    country_record["recording_performance_ids"])
+
+        entry = {
+            "rule_id": rule["id"],
+            "registration": rule["registration"],
+            "capacity": rule["capacity"],
+            "stream_id": stream_id,
+            "bodies": bodies,
+            "reason": rule["reason"],
+            "notes": rule["notes"],
+            "split": _entry_split(stream_id),
+        }
+        if bodies is None:
+            entry["body_status"] = "unverified"
+            entry["body_note"] = ("No verified body resolvable for this "
+                                  "registration — verify live; a body is never "
+                                  "guessed.")
+        registrations.append(entry)
+
+    supplied_flags = {axis: situation[axis] for axis in spec_axes
+                      if _flag_supplied(situation, axis)}
+    unmapped = {k: v for k, v in situation.items() if k not in spec_axes}
+    for key, value in unmapped.items():
+        notes.append({"source": "situation", "field": key, "text": value,
+                      "note": "free text — carried verbatim, never parsed"})
+
+    needs = list(dict.fromkeys(needs))
+    return {
+        "complete": not needs,
+        "situation": supplied_flags,
+        "registrations": registrations,
+        "needs": needs,
+        "notes": notes,
+        "metadata_reminders": dict(royalties_data.METADATA_DOCTRINE),
+        "split_discipline": ("Only the US statutory SoundExchange 50/45/5 split "
+                             "is ever stated as fact; every other split is "
+                             + royalties_data.SPLIT_UNKNOWN_SENTINEL + "."),
     }
 
 

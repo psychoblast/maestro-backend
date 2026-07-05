@@ -2739,6 +2739,59 @@ LEDGER_LOCK_TOOLS = [
             "required": ["filing_type", "period"],
         },
     },
+    {
+        "name": "lookup_recording_societies",
+        "description": ("Look up who collects RECORDING-side royalties (neighbouring rights / "
+                        "recording performance) in one country: the recording body records with "
+                        "their capacities (performers / rights_owners / both) and registration "
+                        "notes, plus the composition-side society ids for context (that side is "
+                        "Reed's domain). Covered: CA, US, UK, AU, NZ, DE, FR, SE, DK, NO, FI. "
+                        "US: SoundExchange digital non-interactive ONLY — no terrestrial-radio "
+                        "neighbouring right. FR: four bodies split by role. A country whose "
+                        "recording side is unverified (NZ) returns None + a verify-live note; "
+                        "any other country returns country_not_in_corpus — relay that honestly "
+                        "and NEVER guess a body. Never state a split as fact except the US "
+                        "statutory SoundExchange 50/45/5 — everything else is "
+                        "varies_verify_with_society."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "country_code": {"type": "string",
+                                 "description": "Country code, e.g. 'CA', 'US', 'UK' — the artist's HOME country"},
+            },
+            "required": ["country_code"],
+        },
+    },
+    {
+        "name": "build_registration_checklist",
+        "description": ("Build the artist's royalty-registration checklist from their EXPLICITLY "
+                        "confirmed situation. Pass ONLY flags the artist actually confirmed — "
+                        "OMIT anything unconfirmed so it comes back as an explicit [NEEDS:<flag>] "
+                        "gap and that branch is skipped, instead of a guessed registration "
+                        "(flags are never inferred). Axes: country_of_residence (code), "
+                        "self_published (bool), owns_masters (bool), performed_on_recording "
+                        "(bool), has_producers_or_session_players (bool). Returns ordered "
+                        "registration entries (body + capacity + reason + stream), metadata-"
+                        "consistency reminders (ISRC/ISWC/IPI/legal names), and the split "
+                        "discipline (only the US statutory 50/45/5 is ever quoted; all other "
+                        "splits are varies_verify_with_society). Keep every [NEEDS:...] marker "
+                        "verbatim in your reply. This is registration logistics — NOT tax or "
+                        "legal advice; route tax questions to a professional and agreements to "
+                        "Lex as draft-for-review."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "situation": {
+                    "type": "object",
+                    "description": ("The artist's explicitly confirmed flags. Include ONLY what "
+                                    "the artist actually told you: country_of_residence (e.g. "
+                                    "'US'), self_published, owns_masters, performed_on_recording, "
+                                    "has_producers_or_session_players (booleans). Extra keys pass "
+                                    "through as unparsed notes."),
+                },
+            },
+        },
+    },
 ]
 
 
@@ -2825,6 +2878,32 @@ async def _execute_ledger_lock_tool(name: str, tool_input: dict, artist_id: str)
                 {"input": f"filing_type={filing_type}", "result": "ledger_account_auth_expired"},
                 True,
             )
+
+    if name == "lookup_recording_societies":
+        # Deliberately NOT gated on LEDGER_LOCK_ACCOUNT_CONNECTED — pure corpus
+        # read, no account needed (mirrors Reed's ungated lookup tool).
+        code = (tool_input.get("country_code") or "").strip()
+        res = await ledger_lock_service.lookup_recording_societies(code)
+        if res.get("status") == "ok":
+            bodies = res.get("recording_bodies")
+            result_str = (f"{len(bodies)} recording bod(y/ies)" if bodies is not None
+                          else "recording side unverified — verify live")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"country_code={code or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "build_registration_checklist":
+        # Deliberately NOT gated — pure corpus-rule application, no account needed.
+        situation = tool_input.get("situation")
+        situation = situation if isinstance(situation, dict) else {}
+        res = await ledger_lock_service.build_registration_checklist(situation)
+        summary = {
+            "input": f"flags={sorted(res['situation'])!r}",
+            "result": (f"{len(res['registrations'])} registration(s), "
+                       f"{len(res['needs'])} gap(s)"),
+        }
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},
