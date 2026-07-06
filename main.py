@@ -6546,6 +6546,36 @@ LABEL_SERVICES_TOOLS = [
             },
         },
     },
+    {
+        "name": "build_release_doc_scaffold",
+        "description": ("Assemble a release document SCAFFOLD once the artist wants a "
+                        "metadata sheet or a permanent release record written up: "
+                        "doc_type='metadata_sheet' lays out the ordered release-level "
+                        "fields plus a per-track section for every track (or every empty "
+                        "slot when only a track_count is known); doc_type='release_record' "
+                        "lays out the permanent per-release record. Pass everything the "
+                        "artist has actually supplied in 'inputs'. THE HARD RULE: no "
+                        "identifier (ISRC/UPC), release date, or credit is EVER generated "
+                        "— each field comes back as the supplied value VERBATIM (a supplied "
+                        "artist name passes through byte-exact, never re-cased), an explicit "
+                        "[NEEDS:<fact>] gap (an absent per-track ISRC is a "
+                        "[NEEDS:isrc_track_N] slot, never a minted code), or an "
+                        "[ARTIST-SUPPLIED:<field>] confirm for an optional field. The "
+                        "result is a scaffold to review and complete — NOT submit-ready."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_type": {"type": "string",
+                             "enum": ["metadata_sheet", "release_record"]},
+                "inputs": {"type": "object",
+                           "description": ("Whatever the artist has supplied — release-level "
+                                           "fields, a 'tracks' list (or a 'track_count'), and "
+                                           "any record fields. Missing items become gaps, "
+                                           "never invented.")},
+            },
+            "required": ["doc_type"],
+        },
+    },
 ]
 
 
@@ -6641,6 +6671,20 @@ async def _execute_label_services_tool(name: str, tool_input: dict, artist_id: s
             "result": (f"{len(res['checklist'])} item(s), {len(res['missing'])} gap(s), "
                        f"{len(res['warnings'])} warning(s)"),
         }
+        return res, summary, False
+
+    if name == "build_release_doc_scaffold":
+        # Deliberately NOT gated — data-only scaffold over the corpus (option B).
+        doc_type = (tool_input.get("doc_type") or "").strip()
+        res = await label_services_service.build_release_doc_scaffold(
+            doc_type=doc_type,
+            inputs=tool_input.get("inputs"),
+        )
+        if res.get("status") == "scaffold_ready":
+            result_str = f"scaffold_ready ({len(res['missing'])} gap(s))"
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={doc_type or '(missing)'}", "result": result_str}
         return res, summary, False
 
     return (

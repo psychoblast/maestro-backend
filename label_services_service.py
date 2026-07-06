@@ -292,3 +292,153 @@ async def build_release_checklist(release_type=None, weeks_to_release=None,
                  "invented; unsupplied inputs are [NEEDS:] gaps, never defaulted."),
         "honesty_rules": [dict(r) for r in release_data.HONESTY_RULES],
     }
+
+
+# ── Unit-3 release doc scaffold (option B: data tool, ZERO model call) ──────────
+# build_release_doc_scaffold assembles a metadata sheet or a permanent release
+# record as STRUCTURED SLOTS over the release_data field specs — no prose, no
+# model call, no I/O. Every slot is the artist's supplied value VERBATIM
+# (artist names ride byte-exact — the exact-match doctrine forbids re-casing),
+# an explicit [NEEDS:<fact>] gap, or an [ARTIST-SUPPLIED:<field>] confirm for a
+# genuinely optional field. NO identifier (ISRC/UPC), date, or credit is EVER
+# generated here — an absent code is a gap, never a minted value.
+
+RELEASE_DOC_TYPES = ("metadata_sheet", "release_record")
+
+# Genuinely optional fields — absent, they surface as an [ARTIST-SUPPLIED:]
+# confirm (prompt the artist to supply/verify), never a hard [NEEDS:] gap.
+_OPTIONAL_RELEASE_LEVEL = frozenset({"territories"})
+_OPTIONAL_TRACK_LEVEL = frozenset({"version_field", "featured_artists",
+                                   "producer_contributor_roles", "lyrics_optional"})
+_OPTIONAL_RECORD = frozenset({"version", "platform_uris",
+                              "takedown_redelivery_notes"})
+
+_NOT_SUBMIT_READY_NOTE = (
+    "This is a SCAFFOLD — NOT submit-ready. Every slot is the artist's supplied "
+    "value verbatim (artist names ride byte-exact — never re-cased), an explicit "
+    "[NEEDS:] gap, or an [ARTIST-SUPPLIED:] confirm for an optional field. No "
+    "identifier (ISRC/UPC), release date, or credit is generated here — fill "
+    "every gap from the artist's own records and verify against the distributor "
+    "before submitting anything."
+)
+
+
+def _doc_slot(field, note, value, missing, optional=False, gap_marker=None):
+    """Map one field to a {key, content_or_gap, doctrine} slot.
+
+    A supplied value rides through VERBATIM (byte-exact, never normalized or
+    re-cased). An absent field becomes an [ARTIST-SUPPLIED:<field>] confirm when
+    optional, otherwise a hard [NEEDS:<field>] gap (``gap_marker`` overrides it —
+    e.g. per-track [NEEDS:isrc_track_N]) that is recorded in ``missing``. The
+    field's corpus note rides along as ``doctrine`` so the artist sees the rule.
+    """
+    slot = {"key": field, "doctrine": note}
+    supplied = value is not None and not (isinstance(value, str) and value.strip() == "")
+    if supplied:
+        slot["content_or_gap"] = value            # verbatim — never re-cased
+        return slot
+    if optional:
+        slot["content_or_gap"] = f"[ARTIST-SUPPLIED:{field}]"
+        return slot
+    gap = gap_marker or f"[NEEDS:{field}]"
+    slot["content_or_gap"] = gap
+    missing.append(gap)
+    return slot
+
+
+async def build_release_doc_scaffold(doc_type: str = "", inputs=None) -> dict:
+    """Assemble a metadata sheet or permanent release record — DATA only, no prose.
+
+    ``doc_type`` is one of RELEASE_DOC_TYPES. ``inputs`` is a dict of whatever the
+    artist has actually supplied. metadata_sheet returns ordered release-level
+    slots plus a per-track section for each supplied track (or each empty slot
+    when only a ``track_count`` is given); release_record returns the permanent-
+    record sections. In BOTH branches every field is mapped verbatim / [NEEDS:] /
+    [ARTIST-SUPPLIED:], an absent per-track ISRC is a [NEEDS:isrc_track_N] slot
+    (NEVER a generated code), unmapped inputs ride along verbatim, a ``missing``
+    aggregate lists every hard gap, and a not-submit-ready reminder + the full
+    honesty-rule set are attached. An unknown doc_type returns a structured
+    error. No model call, no I/O, no anthropic — nothing is invented here.
+    """
+    dt = (doc_type or "").strip()
+    data = dict(inputs) if isinstance(inputs, dict) else {}
+
+    if dt not in RELEASE_DOC_TYPES:
+        return {
+            "status": "unknown_doc_type",
+            "doc_type": dt or "(missing)",
+            "supported_doc_types": list(RELEASE_DOC_TYPES),
+            "message": ("Unsupported doc_type. Supported: "
+                        + ", ".join(RELEASE_DOC_TYPES) + "."),
+        }
+
+    missing = []
+    honesty_rules = [dict(r) for r in release_data.HONESTY_RULES]
+
+    if dt == "metadata_sheet":
+        consumed = {"tracks", "track_count"}
+        release_level = []
+        for f in release_data.METADATA_FIELDS["release_level"]:
+            field = f["field"]
+            consumed.add(field)
+            release_level.append(_doc_slot(
+                field, f["note"], data.get(field), missing,
+                optional=field in _OPTIONAL_RELEASE_LEVEL))
+
+        raw_tracks = data.get("tracks")
+        count = data.get("track_count")
+        if isinstance(raw_tracks, list) and raw_tracks:
+            track_dicts = [t if isinstance(t, dict) else {} for t in raw_tracks]
+        elif isinstance(count, int) and not isinstance(count, bool) and count > 0:
+            track_dicts = [{} for _ in range(count)]
+        else:
+            track_dicts = []
+            missing.append("[NEEDS:tracks]")
+
+        tracks_out = []
+        for idx, tdict in enumerate(track_dicts, start=1):
+            td = tdict if isinstance(tdict, dict) else {}
+            fields = []
+            for f in release_data.METADATA_FIELDS["track_level"]:
+                field = f["field"]
+                if field == "isrc":
+                    fields.append(_doc_slot(
+                        field, f["note"], td.get(field), missing,
+                        gap_marker=f"[NEEDS:isrc_track_{idx}]"))
+                else:
+                    fields.append(_doc_slot(
+                        field, f["note"], td.get(field), missing,
+                        optional=field in _OPTIONAL_TRACK_LEVEL))
+            tracks_out.append({"track": idx, "fields": fields})
+
+        unmapped = {k: v for k, v in data.items() if k not in consumed}
+        return {
+            "status": "scaffold_ready",
+            "doc_type": "metadata_sheet",
+            "release_level": release_level,
+            "tracks": tracks_out,
+            "missing": list(dict.fromkeys(missing)),
+            "unmapped_inputs": unmapped,
+            "note": _NOT_SUBMIT_READY_NOTE,
+            "honesty_rules": honesty_rules,
+        }
+
+    # dt == "release_record" — the permanent per-release record.
+    consumed = set()
+    sections = []
+    for f in release_data.RELEASE_RECORD_SPEC["fields"]:
+        field = f["field"]
+        consumed.add(field)
+        sections.append(_doc_slot(
+            field, f["note"], data.get(field), missing,
+            optional=field in _OPTIONAL_RECORD))
+    unmapped = {k: v for k, v in data.items() if k not in consumed}
+    return {
+        "status": "scaffold_ready",
+        "doc_type": "release_record",
+        "sections": sections,
+        "missing": list(dict.fromkeys(missing)),
+        "unmapped_inputs": unmapped,
+        "note": _NOT_SUBMIT_READY_NOTE,
+        "honesty_rules": honesty_rules,
+    }
