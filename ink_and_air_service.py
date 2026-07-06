@@ -12,6 +12,13 @@ Unit 3: build_publishing_doc_scaffold is a DATA tool (Jade-U4 pattern) — it
 returns compact ingredients (sections, [NEEDS: ...] gaps, [ARTIST-SUPPLIED: ...]
 reminders); Reed writes the draft in his own turn. No model call here.
 
+Honesty pass: the invented deal reference catalog is DELETED. lookup_deal_types
+is a pure read of publishing_data's DEAL_TYPES / DEAL_TRAP_TERMS / DEAL_HONESTY
+doctrine (structures and trap terms — never offer evaluations, never a quoted
+market number; the only numeric range is the admin fee 10-25% of publisher's
+share labeled typical/negotiable). search_publishing_deals remains as a thin
+alias so the wired tool name keeps working.
+
 Unit 2: lookup_publishing_societies and validate_split_sheet are pure reads/
 computations over the publishing_data corpus (Unit 1) — the corpus is the single
 source of truth; no domain fact is invented here. review_split_sheet routes
@@ -47,15 +54,6 @@ class PublishingAdminNotConnected(Exception):
 
 class PublishingAdminAuthExpired(Exception):
     """Raised when a previously connected publishing administration account's authorization expired."""
-
-
-# ── Reference catalog (in-memory reference data — no I/O) ─────────────────────
-_INK_AND_AIR_CATALOG = [
-    {'id': 'p-admin', 'deal_type': 'administration', 'territory': 'worldwide', 'name': 'Admin Deal', 'note': 'Writer keeps copyright; admin takes 10-15% for collection.'},
-    {'id': 'p-copub', 'deal_type': 'co_publishing', 'territory': 'worldwide', 'name': 'Co-Pub Deal', 'note': "Publisher takes 50% of publisher's share; writer keeps writer's share."},
-    {'id': 'p-sub', 'deal_type': 'sub_publishing', 'territory': 'eu', 'name': 'EU Sub-Pub', 'note': 'Local collection in-territory; short term.'},
-    {'id': 'p-full', 'deal_type': 'full_publishing', 'territory': 'worldwide', 'name': 'Full Publishing', 'note': 'Assign copyright — highest advance, least ownership.'},
-]
 
 
 # ── Split-sheet validation plumbing (pure; corpus-driven) ─────────────────────
@@ -98,20 +96,58 @@ def _yes(value) -> bool:
     return isinstance(value, str) and value.strip().lower() in ("yes", "y", "true")
 
 
-async def search_publishing_deals(deal_type: str = "", territory: str = "") -> dict:
-    """Search the reference catalog by deal_type and/or territory.
+async def lookup_deal_types(deal_type: str = "", territory: str = "") -> dict:
+    """Look up publishing deal-TYPE doctrine — pure read of publishing_data.
 
-    Both filters are optional and matched case-insensitively as substrings.
-    Returns {"items": [...], "count": int}. Pure — no I/O.
+    Honesty pass: the old invented reference catalog is GONE. This returns the
+    corpus DEAL_TYPES records (structures: ownership, writer income flow,
+    typical-and-negotiable shapes — the ONLY numeric range anywhere is the
+    admin fee 10-25% of publisher's share, labeled a typical range), the
+    DEAL_TRAP_TERMS every conversation should surface, and the DEAL_HONESTY
+    doctrine (Reed explains structures and flags traps — he NEVER evaluates a
+    specific offer; real agreements route to Lex as draft-for-review).
+
+    ``deal_type`` optionally narrows to matching type records (matched
+    case-insensitively, substring in either direction, against id and name).
+    ``territory`` is accepted for call-shape compatibility but is NOT a filter
+    — deal structures are not territory records; it is carried back as a note
+    (HONESTY_RULES.free_text_is_note_only). Pure — no I/O.
     """
     a = (deal_type or "").strip().lower()
-    b = (territory or "").strip().lower()
     matches = [
-        dict(c)
-        for c in _INK_AND_AIR_CATALOG
-        if (not a or a in c["deal_type"]) and (not b or b in c["territory"])
+        dict(record)
+        for record in publishing_data.DEAL_TYPES.values()
+        if not a
+        or a in record["id"] or record["id"] in a
+        or a in record["name"].lower()
     ]
-    return {"items": matches, "count": len(matches)}
+    result = {
+        "count": len(matches),
+        "deal_types": matches,
+        "trap_terms": [dict(t) for t in publishing_data.DEAL_TRAP_TERMS],
+        "honesty": dict(publishing_data.DEAL_HONESTY),
+    }
+    if a and not matches:
+        result["supported_deal_types"] = list(publishing_data.DEAL_TYPES)
+        result["message"] = ("No deal-type doctrine matches that filter — pick "
+                             "from the supported types; a deal structure is "
+                             "never invented.")
+    if (territory or "").strip():
+        result["notes"] = [{"source": "territory", "text": territory,
+                            "note": ("free text — carried verbatim, never a "
+                                     "filter; deal-type doctrine is not "
+                                     "territory-scoped (sub-publishing is the "
+                                     "territory-scoped cousin of admin/full "
+                                     "deals — see the admin record's notes)")}]
+    return result
+
+
+async def search_publishing_deals(deal_type: str = "", territory: str = "") -> dict:
+    """Thin alias for lookup_deal_types — kept so the wired tool name and its
+    call sites keep working; the honest implementation lives in
+    lookup_deal_types (honesty pass: the invented catalog this name used to
+    search no longer exists)."""
+    return await lookup_deal_types(deal_type=deal_type, territory=territory)
 
 
 async def lookup_publishing_societies(country_code: str = "") -> dict:

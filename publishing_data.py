@@ -46,6 +46,10 @@ SCHEMA (per constant):
     SPLIT_SHEET_SPEC, SYNC_METADATA_SPEC
   Discipline (stable ids later units cite in outputs):
     HONESTY_RULES, DOCTRINE
+  Deal-type doctrine (honesty pass — structures, never offer evaluations;
+  the ONLY numeric range anywhere is the admin fee 10-25% of publisher's
+  share, labeled typical/negotiable):
+    DEAL_TYPES, DEAL_TRAP_TERMS, DEAL_HONESTY
 """
 
 # ── Controlled vocabularies (reference constants — data only, no logic) ───────
@@ -628,4 +632,169 @@ DOCTRINE = {
     "societies_pay_writer_publisher_50_50": "Societies pay 50/50 writer/publisher "
                                             "— why BOTH sides of a split sheet "
                                             "must each sum to 100%.",
+}
+
+
+# ── Deal-type doctrine (honesty pass — replaces the service's invented catalog) ─
+# STRUCTURES, not offers: each record describes how a deal TYPE works — who owns
+# what, how writer income flows, and the typical (negotiable) shape. The ONLY
+# numeric range stated anywhere is the admin-fee 10-25% of publisher's share,
+# and it is labeled a typical range — EVERY deal is negotiable; no number here
+# is ever a quote for a specific deal. Sub-publishing is the territory-scoped
+# cousin of admin/full deals abroad — deliberately NOT a separate type record.
+_EVERY_DEAL_NEGOTIABLE = "typical range — every deal negotiable"
+
+DEAL_TYPES = {
+    "admin": {
+        "id": "admin",
+        "name": "Administration Deal",
+        "ownership": "writer_retains_100",
+        "writer_income_structure": "The writer keeps the full writer's share AND "
+                                   "the publisher's share, minus the admin fee — "
+                                   "the administrator collects and takes a fee, "
+                                   "it does not take ownership.",
+        "fee_or_split_typical": {
+            "range_pct": (10, 25),
+            "of": "publisher's share",
+            "label": _EVERY_DEAL_NEGOTIABLE,
+            "shape_note": "10-15% domestic / 15-20% foreign is a common shape — "
+                          "still " + _EVERY_DEAL_NEGOTIABLE + ".",
+        },
+        "term_typical": {"deal_term": "~1-3 years — " + _EVERY_DEAL_NEGOTIABLE},
+        "advance_norm": "none_or_low",
+        "services_norm": "Registration, collection, and licensing administration "
+                         "— typically no creative/exploitation obligation.",
+        "notes": "Territory-scoped administration abroad is often called "
+                 "sub-publishing — the same structure, per territory, not a "
+                 "separate deal type here.",
+    },
+    "co_publishing": {
+        "id": "co_publishing",
+        "name": "Co-Publishing Deal",
+        "ownership": "copyright_co_owned_50_50",
+        "writer_income_structure": "100% writer's share + 50% publisher's share "
+                                   "= 75% of total publishing income to the "
+                                   "writer.",
+        "fee_or_split_typical": {
+            "structure": "75/25 of total publishing income (writer/publisher) — "
+                         "structural, not a fee.",
+            "label": _EVERY_DEAL_NEGOTIABLE,
+        },
+        "term_typical": {
+            "deal_term": "~1-3 years with options — " + _EVERY_DEAL_NEGOTIABLE,
+            "retention_asymmetry": "The deal TERM and the RETENTION on the "
+                                   "assigned copyright share are different "
+                                   "clocks: retention can run to life of "
+                                   "copyright — a short term does NOT mean the "
+                                   "rights come back when the term ends.",
+        },
+        "advance_norm": "customary_recoupable",
+        "services_norm": "Active creative work and pitching are typically part "
+                         "of the bargain — that is what the assigned share pays "
+                         "for.",
+        "notes": None,
+    },
+    "full_publishing": {
+        "id": "full_publishing",
+        "name": "Exclusive Publishing Deal (traditional full-service)",
+        "ownership": "publisher_owns_publisher_share",
+        "writer_income_structure": "The writer's share only — the publisher "
+                                   "keeps the entire publisher's share.",
+        "fee_or_split_typical": {
+            "structure": "Publisher keeps the publisher's share entirely — "
+                         "structural, not a fee.",
+            "label": _EVERY_DEAL_NEGOTIABLE,
+        },
+        "term_typical": {
+            "deal_term": "varies — " + _EVERY_DEAL_NEGOTIABLE,
+            "retention_asymmetry": "Assigned copyrights have historically been "
+                                   "retained up to life of copyright — the "
+                                   "retention clause is the clause to scrutinize.",
+        },
+        "advance_norm": "largest",
+        "services_norm": "Full-service exploitation is the expectation in "
+                         "exchange for the ownership transfer.",
+        "notes": None,
+    },
+    "work_for_hire": {
+        "id": "work_for_hire",
+        "name": "Work For Hire",
+        "ownership": "everything_transferred",
+        "writer_income_structure": "A flat fee and NO ongoing income — the "
+                                   "commissioning party owns the work outright "
+                                   "from creation.",
+        "fee_or_split_typical": {
+            "structure": "Flat fee — structural, not a fee/split on income.",
+            "label": _EVERY_DEAL_NEGOTIABLE,
+        },
+        "term_typical": {"deal_term": "not a term deal — a transfer at creation."},
+        "advance_norm": "flat_fee",
+        "services_norm": "Delivery of the commissioned work; no ongoing "
+                         "publisher services owed to the writer.",
+        "notes": None,
+    },
+}
+
+
+# ── Deal trap terms (stable ids — later units cite these in outputs) ───────────
+DEAL_TRAP_TERMS = (
+    {"id": "recoupment",
+     "term": "Recoupment",
+     "explanation": "An advance is a LOAN against future royalties — royalties "
+                    "pay it back before the writer sees new money. Unrecouped "
+                    "balances are typically not repayable out of pocket, but "
+                    "they CAN extend the contract until recouped.",
+     "writer_note": "Ask what recoups, from which income, and whether an "
+                    "unrecouped balance extends the term."},
+    {"id": "cross_collateralization",
+     "term": "Cross-Collateralization",
+     "explanation": "One project's unrecouped advance is recouped from ANOTHER "
+                    "project's (or deal's) income — a hit can end up paying for "
+                    "an old advance.",
+     "writer_note": "Ask whether accounts are cross-collateralized across "
+                    "songs, albums, or other agreements."},
+    {"id": "retention_period",
+     "term": "Retention Period",
+     "explanation": "How long the publisher keeps the assigned rights after "
+                    "the term: ~2 years to life of copyright — "
+                    + _EVERY_DEAL_NEGOTIABLE + ". Shorter favors the writer.",
+     "writer_note": "The retention clock, not the deal term, decides when "
+                    "rights come home."},
+    {"id": "pipeline_songs",
+     "term": "Pipeline Songs / Pipeline Income",
+     "explanation": "Income earned during the term but paid after it — the "
+                    "deal decides whether the publisher keeps collecting it "
+                    "after the rights revert.",
+     "writer_note": "Ask how pipeline income is defined, capped, and cut off."},
+    {"id": "at_source_collection",
+     "term": "At-Source Collection",
+     "explanation": "Whether the fee/split is computed on income AT SOURCE in "
+                    "each territory, or after foreign sub-collectors have each "
+                    "taken a cut — 'at source' protects the writer from "
+                    "double-dipping.",
+     "writer_note": "Ask for at-source language on foreign collection."},
+    {"id": "writers_share_untouchable",
+     "term": "Writer's Share",
+     "explanation": "The writer's share of performance income is conventionally "
+                    "untouchable — ANY deal language that touches the writer's "
+                    "share is a red flag to surface, not a norm.",
+     "red_flag": True,
+     "writer_note": "Surface it immediately and route the agreement to a "
+                    "lawyer."},
+)
+
+
+# ── Deal honesty doctrine (what Reed does and does NOT do with this data) ──────
+DEAL_HONESTY = {
+    "explains_never_evaluates": "Reed explains deal STRUCTURES and flags trap "
+                                "terms — he NEVER evaluates a specific offer as "
+                                "good or bad, and never quotes a number as the "
+                                "market rate for a specific deal.",
+    "every_number_negotiable": "The only numeric shapes in this doctrine are "
+                               "labeled typical ranges — every deal is "
+                               "negotiable and real terms come from the paper "
+                               "in front of the writer.",
+    "real_agreements_to_lawyer": "A real agreement routes to lawyer review — "
+                                 "Lex, framed as draft-for-review — before "
+                                 "anyone signs anything.",
 }

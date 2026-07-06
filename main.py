@@ -6151,12 +6151,21 @@ INK_AND_AIR_MAX_TOOL_ITERS = 5
 INK_AND_AIR_TOOLS = [
     {
         "name": "search_publishing_deals",
-        "description": "Search standard publishing deal structures by type or territory",
+        "description": ("Look up publishing deal-TYPE doctrine: how each structure works (admin, "
+                        "co-publishing, exclusive/full publishing, work for hire) — ownership, "
+                        "writer income flow, typical (ALWAYS negotiable) fee/term shapes — plus "
+                        "the trap terms to surface (recoupment, cross-collateralization, "
+                        "retention period, pipeline songs, at-source collection, and any "
+                        "language touching the writer's share — a red flag). Explain structures "
+                        "and flag traps ONLY: NEVER evaluate a specific offer as good or bad, "
+                        "never quote a number as a market rate for a specific deal — the only "
+                        "numeric shape in the doctrine is the admin-fee typical range, and "
+                        "every deal is negotiable. A real agreement routes to Lex framed as "
+                        "draft-for-review."),
         "input_schema": {
             "type": "object",
             "properties": {
-                "deal_type": {"type": "string", "enum": ['co_publishing', 'administration', 'sub_publishing', 'full_publishing']},
-                "territory": {"type": "string"},
+                "deal_type": {"type": "string", "enum": ['admin', 'co_publishing', 'full_publishing', 'work_for_hire']},
             },
         },
     },
