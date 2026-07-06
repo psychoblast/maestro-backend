@@ -1943,6 +1943,30 @@ FUND_PHANTOM_TOOLS = [
             "required": ["program_id"],
         },
     },
+    {
+        "name": "suggest_crowdfunding",
+        "description": ("Decide whether to raise crowdfunding as an option for THIS artist. "
+                        "Crowdfunding is a SECONDARY path, not a default: raise it when the artist "
+                        "does NOT qualify for the available grants (a real alternative), OR when it "
+                        "complements a grant (matched-funding income / proof of fan demand). Stay "
+                        "quiet when the artist clearly qualifies for grants and just needs to land "
+                        "one. Returns {raise, reason, platforms}; platforms is populated only when "
+                        "it recommends raising. Read/consult only — takes no external action."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "qualifies_for_grants": {
+                    "type": "boolean",
+                    "description": "True if the artist qualifies for the grants currently available to them.",
+                },
+                "complements_grant": {
+                    "type": "boolean",
+                    "description": "True if crowdfunding would complement a grant (matched-funding income or proof of fan demand).",
+                },
+            },
+            "required": ["qualifies_for_grants"],
+        },
+    },
 ]
 
 
@@ -2067,6 +2091,22 @@ async def _execute_fund_phantom_tool(name: str, tool_input: dict, artist_id: str
         summary = {
             "input": f"program={program_id or 'unspecified'} inputs={len(artist_inputs)} field(s)",
             "result": result_desc,
+        }
+        return res, summary, False
+
+    if name == "suggest_crowdfunding":
+        # Read/consult action — a pure situational decision helper, NOT a
+        # submission. Deliberately NOT gated behind FUNDING_PORTAL_CONNECTED
+        # (that flag is only for submit); this never raises, so portal_not_connected
+        # is always False.
+        qualifies    = bool(tool_input.get("qualifies_for_grants"))
+        complements  = bool(tool_input.get("complements_grant"))
+        res = fund_phantom_service.suggest_crowdfunding(
+            qualifies_for_grants=qualifies, complements_grant=complements,
+        )
+        summary = {
+            "input": f"qualifies={qualifies} complements={complements}",
+            "result": f"raise={res['raise']}, {len(res['platforms'])} platform(s)",
         }
         return res, summary, False
 
