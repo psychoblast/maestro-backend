@@ -1690,137 +1690,134 @@ async def _execute_marcus_tool(name: str, tool_input: dict, artist_id: str) -> t
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Unit 1.8 — Lex (lex-cipher) tool_use: search_clause_library + review_agreement
-#            + file_ip_registration
+# Lex (lex-cipher) tool_use: lookup_legal_concepts + build_legal_doc_scaffold
 # ═══════════════════════════════════════════════════════════════════════════════
-# Mirrors the Marcus (Unit 1.7) pattern exactly: these tools are passed to the
-# Anthropic API for the lex-cipher agent ONLY (see the gate in chat_stream).
-# Every other agent — including Marcus — takes its own unchanged path and never
-# receives LEX_CIPHER_TOOLS. Handlers map straight onto the mock-first
-# lex_cipher_service functions; they make ZERO network calls and read no secrets.
+# DOC-WRITER Option B (legal-education engine). These tools are passed to
+# the Anthropic API for the lex-cipher agent ONLY (see the gate in chat_stream).
+# Every other agent takes its own unchanged path and never receives
+# LEX_CIPHER_TOOLS. Handlers map straight onto the legal-education
+# lex_cipher_service functions; they make ZERO network calls, read no secrets,
+# and are UNGATED (both are pure corpus-read / data-scaffold tools). THE ONE RULE:
+# Lex never gives legal advice and never produces a signable contract — every
+# scaffold is preparation material FOR THE ARTIST'S OWN LAWYER.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 LEX_CIPHER_MAX_TOOL_ITERS = 5
 
 LEX_CIPHER_TOOLS = [
     {
-        "name": "search_clause_library",
-        "description": "Search the standard entertainment-law clause library by clause type or deal type",
+        "name": "lookup_legal_concepts",
+        "description": (
+            "Look up legal-education material from Lex's corpus — filter by agreement "
+            "type, clause term, red-flag key, and/or jurisdiction key. Returns "
+            "preparation material FOR THE ARTIST'S OWN LAWYER; it is not legal advice. "
+            "Call with no filters to browse the available keys."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "clause_type": {"type": "string"},
-                "deal_type": {
+                "agreement_type": {
                     "type": "string",
-                    "enum": ["record_deal", "publishing", "sync_license", "brand_deal", "management"],
+                    "enum": list(lex_cipher_service.legal_data.AGREEMENT_TYPES),
+                },
+                "clause_term": {
+                    "type": "string",
+                    "enum": list(lex_cipher_service.legal_data.CLAUSE_GLOSSARY),
+                },
+                "flag_key": {
+                    "type": "string",
+                    "enum": list(lex_cipher_service.legal_data.RED_FLAG_DOCTRINE),
+                },
+                "jurisdiction_key": {
+                    "type": "string",
+                    "enum": list(lex_cipher_service.legal_data.JURISDICTION_DIVERGENCE),
                 },
             },
         },
     },
     {
-        "name": "review_agreement",
-        "description": "Screen an agreement's text for red-flag clauses and return a risk assessment",
+        "name": "build_legal_doc_scaffold",
+        "description": (
+            "Assemble COMPACT ingredients for a legal-prep document the artist takes "
+            "to their own lawyer — a contract_review_brief or a negotiation_prep_memo. "
+            "Returns a checklist, glossary questions, red-flag levers, and gap markers; "
+            "you write the prose in your turn. This is NEVER a signable contract and "
+            "NEVER legal advice. Jurisdiction-specific content is withheld unless a "
+            "jurisdiction is supplied."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "agreement_type": {"type": "string"},
-                "agreement_text": {"type": "string"},
-            },
-            "required": ["agreement_text"],
-        },
-    },
-    {
-        "name": "file_ip_registration",
-        "description": "File an IP/copyright registration for a work on behalf of the artist",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "work_title": {"type": "string"},
-                "work_type": {
+                "doc_type": {
                     "type": "string",
-                    "enum": ["sound_recording", "composition", "lyrics", "artwork"],
+                    "enum": list(lex_cipher_service.DOC_TYPES),
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": (
+                        "Artist-supplied fields: agreement_type, jurisdiction, "
+                        "deal_points / contract_text (review brief), priorities "
+                        "(negotiation memo). Anything unsupplied becomes a gap marker."
+                    ),
                 },
             },
-            "required": ["work_title"],
+            "required": ["doc_type"],
         },
     },
 ]
 
 
 async def _execute_lex_cipher_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
-    """Execute one Lex tool call against the mock-first lex_cipher_service.
+    """Execute one Lex tool call against the legal-education lex_cipher_service.
 
     Returns (result_for_model, action_summary, registry_not_connected).
       - result_for_model: dict fed back as the tool_result content (JSON-encoded).
       - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - registry_not_connected: True when a filing was blocked on a missing/expired
-        IP-registry filing account.
+      - registry_not_connected: retained for the shared generator's 3-tuple
+        contract; ALWAYS False now — Lex's tools are pure corpus-read / data-
+        scaffold tools with no connected account and no gate (the old IP-registry
+        filing action and its gate are retired; filing lives with ledger-lock).
     Never raises — every failure is converted into a structured tool_result so the
     loop can continue and Lex can explain the outcome to the artist. Mirrors
     _execute_marcus_tool.
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_clause_library":
-        clause_type = (tool_input.get("clause_type") or "").strip()
-        deal_type   = (tool_input.get("deal_type") or "").strip()
-        res = await lex_cipher_service.search_clause_library(
-            clause_type=clause_type, deal_type=deal_type,
+    if name == "lookup_legal_concepts":
+        agreement_type   = (tool_input.get("agreement_type") or "").strip()
+        clause_term      = (tool_input.get("clause_term") or "").strip()
+        flag_key         = (tool_input.get("flag_key") or "").strip()
+        jurisdiction_key = (tool_input.get("jurisdiction_key") or "").strip()
+        res = await lex_cipher_service.lookup_legal_concepts(
+            agreement_type=agreement_type, clause_term=clause_term,
+            flag_key=flag_key, jurisdiction_key=jurisdiction_key,
         )
-        summary = {
-            "input": f"clause_type={clause_type or 'any'} deal_type={deal_type or 'any'}",
-            "result": f"{res['count']} clause(s) found",
-        }
+        filters = ",".join(f for f in (agreement_type, clause_term, flag_key,
+                                       jurisdiction_key) if f) or "none"
+        if res.get("mode") == "index":
+            result_str = "index browsed"
+        else:
+            hit = (len(res.get("agreement_types", [])) + len(res.get("clauses", []))
+                   + len(res.get("red_flags", [])) + len(res.get("jurisdictions", [])))
+            miss = len(res.get("not_found", []))
+            result_str = f"{hit} match(es), {miss} not found"
+        summary = {"input": f"filters={filters}", "result": result_str}
         return res, summary, False
 
-    if name == "review_agreement":
-        agreement_type = (tool_input.get("agreement_type") or "").strip()
-        agreement_text = tool_input.get("agreement_text") or ""
-        res = await lex_cipher_service.review_agreement(
-            artist_id, agreement_type=agreement_type, agreement_text=agreement_text,
+    if name == "build_legal_doc_scaffold":
+        doc_type   = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await lex_cipher_service.build_legal_doc_scaffold(
+            doc_type=doc_type, inputs=raw_inputs,
         )
-        summary = {
-            "input": f"type={agreement_type or 'unspecified'} chars={len(agreement_text)}",
-            "result": f"{res['flag_count']} flag(s), {res['recommendation']}",
-        }
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={doc_type or '(missing)'}", "result": result_str}
         return res, summary, False
-
-    if name == "file_ip_registration":
-        work_title = (tool_input.get("work_title") or "").strip()
-        work_type  = (tool_input.get("work_type") or "sound_recording").strip()
-        if not work_title:
-            return (
-                {"error": "missing_work_title"},
-                {"input": "work_title=", "result": "missing work title"},
-                False,
-            )
-        try:
-            filed = await lex_cipher_service.file_ip_registration(artist_id, work_title, work_type)
-            return (
-                {"status": "filed", "reference": filed.get("reference"), "work_title": work_title},
-                {"input": f"work={work_title} type={work_type}", "result": "registration filed"},
-                False,
-            )
-        except lex_cipher_service.RegistryNotConnected:
-            return (
-                {
-                    "registry_not_connected": True,
-                    "message": ("Artist has not connected an IP-registry filing account. Tell them to "
-                                "connect one before you can file registrations."),
-                },
-                {"input": f"work={work_title}", "result": "registry_not_connected"},
-                True,
-            )
-        except lex_cipher_service.RegistryAuthExpired:
-            return (
-                {
-                    "registry_not_connected": True,
-                    "message": ("IP-registry authorization expired. Tell the artist to re-connect their "
-                                "filing account before you can file registrations."),
-                },
-                {"input": f"work={work_title}", "result": "registry_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
