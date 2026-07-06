@@ -2695,7 +2695,14 @@ LEDGER_LOCK_MAX_TOOL_ITERS = 5
 LEDGER_LOCK_TOOLS = [
     {
         "name": "search_royalty_sources",
-        "description": "Search royalty income sources by source type or region (each carries its typical withholding rate)",
+        "description": ("Search royalty income sources by source type or region. Sources carry NO "
+                        "stored withholding rates (honesty pass) — each match resolves the "
+                        "withholding MECHANISM to verify against: the US statutory 30% default on "
+                        "US-source royalties to foreign persons is the ONLY rate stated as a "
+                        "number; treaty reductions vary by treaty AND income category (W-8BEN / "
+                        "W-8BEN-E filed with the withholding agent — verify via IRS treaty "
+                        "tables), and non-US regimes vary (home society statement + tax "
+                        "professional). Never state any other withholding number."),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -2712,13 +2719,21 @@ LEDGER_LOCK_TOOLS = [
     },
     {
         "name": "reconcile_royalty_statement",
-        "description": "Reconcile a royalty statement by applying a source's withholding rate to a gross amount to compute the net to book",
+        "description": ("Reconcile a royalty statement from the figures ON the statement: the "
+                        "gross and the withheld amount the statement itself reports. NEVER "
+                        "computes or assumes a withholding rate — if the statement's withheld "
+                        "figure is missing, the result returns a [NEEDS:withheld_amount] gap "
+                        "plus the withholding-mechanism records to verify against (US statutory "
+                        "30% default / treaty varies — verify via IRS treaty tables / non-US "
+                        "varies — home society statement + tax professional)."),
         "input_schema": {
             "type": "object",
             "properties": {
                 "source_id": {"type": "string"},
                 "statement_period": {"type": "string"},
                 "gross_amount": {"type": "number"},
+                "withheld_amount": {"type": "number",
+                                    "description": "The withholding figure AS REPORTED on the statement — omit if the statement does not show one; never estimate it"},
             },
             "required": ["source_id"],
         },
@@ -2865,9 +2880,10 @@ async def _execute_ledger_lock_tool(name: str, tool_input: dict, artist_id: str)
         source_id        = (tool_input.get("source_id") or "").strip()
         statement_period = (tool_input.get("statement_period") or "").strip()
         gross_amount     = tool_input.get("gross_amount") or 0
+        withheld_amount  = tool_input.get("withheld_amount")  # None = not on statement
         res = await ledger_lock_service.reconcile_royalty_statement(
             artist_id, source_id=source_id, statement_period=statement_period,
-            gross_amount=gross_amount,
+            gross_amount=gross_amount, withheld_amount=withheld_amount,
         )
         summary = {
             "input": f"source={source_id or 'unspecified'} period={statement_period or 'unspecified'}",

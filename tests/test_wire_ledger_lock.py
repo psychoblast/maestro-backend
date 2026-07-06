@@ -108,11 +108,14 @@ def test_ledger_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_p
         search_calls.append({"source_type": source_type, "region": region})
         return await real_search(source_type=source_type, region=region)
 
-    async def rec_recon(artist_id, source_id="", statement_period="", gross_amount=0):
+    async def rec_recon(artist_id, source_id="", statement_period="", gross_amount=0,
+                        withheld_amount=None):
         recon_calls.append({"artist_id": artist_id, "source_id": source_id,
-                            "statement_period": statement_period, "gross_amount": gross_amount})
+                            "statement_period": statement_period, "gross_amount": gross_amount,
+                            "withheld_amount": withheld_amount})
         return await real_recon(artist_id, source_id=source_id,
-                                statement_period=statement_period, gross_amount=gross_amount)
+                                statement_period=statement_period, gross_amount=gross_amount,
+                                withheld_amount=withheld_amount)
 
     async def rec_file(artist_id, filing_type, period, amount=0):
         file_calls.append({"artist_id": artist_id, "filing_type": filing_type,
@@ -129,7 +132,10 @@ def test_ledger_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_p
                       input={"source_type": "streaming", "region": "foreign"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="reconcile_royalty_statement",
                       input={"source_id": "src-streaming-foreign",
-                             "statement_period": "2026-Q1", "gross_amount": 10000}, id="t2")], "tool_use"),
+                             "statement_period": "2026-Q1", "gross_amount": 10000,
+                             # honesty pass: the withheld figure is AS REPORTED
+                             # on the statement — never computed from a bucket
+                             "withheld_amount": 3000}, id="t2")], "tool_use"),
         _Resp([_Block("tool_use", name="file_tax_document",
                       input={"filing_type": "quarterly_estimate", "period": "2026-Q1",
                              "amount": 2100}, id="t3")], "tool_use"),
@@ -165,6 +171,7 @@ def test_ledger_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_p
     assert recon_calls == [{
         "artist_id": "artist-9", "source_id": "src-streaming-foreign",
         "statement_period": "2026-Q1", "gross_amount": 10000,
+        "withheld_amount": 3000,
     }], recon_calls
     assert file_calls == [{
         "artist_id": "artist-9", "filing_type": "quarterly_estimate",
@@ -186,7 +193,8 @@ def test_ledger_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_p
     # Real, deterministic results surfaced in the action summaries.
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
     assert "source(s) found" in by_tool["search_royalty_sources"]["result"]
-    # period present, source known, positive gross → reconciled / record.
+    # period present, source known, positive gross, statement-supplied
+    # withheld figure → reconciled / record (no rate is ever computed).
     assert "reconciled=True" in by_tool["reconcile_royalty_statement"]["result"]
     assert "record" in by_tool["reconcile_royalty_statement"]["result"]
     assert by_tool["file_tax_document"]["result"] == "tax document filed"

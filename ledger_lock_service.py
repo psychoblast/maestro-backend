@@ -4,12 +4,22 @@ PLMKR Ledger-Lock — accountant action service (mock-first).
 Backs the Ledger-Lock (Nadia — Accountant) agent's tool_use loop in
 /api/chat_stream (see LEDGER_LOCK_TOOLS in main.py). Nadia does not just advise on
 tax, bookkeeping, and royalty statements — these functions let the agent take real
-accountant actions: look up the royalty income sources an artist earns from (each
-carrying the withholding rate typically applied before net pay-out), reconcile an
-incoming royalty statement by applying that source's withholding to the gross so
-the artist knows the true net they should book, and file a tax document (an
-estimate, an annual return, a 1099, etc.) with the artist's connected bookkeeping
-account so the filing actually gets lodged on their behalf.
+accountant actions: look up the royalty income sources an artist earns from,
+reconcile an incoming royalty statement from the figures ON that statement, and
+file a tax document (an estimate, an annual return, a 1099, etc.) with the
+artist's connected bookkeeping account so the filing actually gets lodged on
+their behalf.
+
+Honesty pass: the invented per-source withholding buckets are DELETED. No
+source stores a rate and no rate is ever computed here. The withholding story
+is royalties_data.WITHHOLDING_MECHANISM: the US statutory 30% NRA default
+(the ONLY withholding rate stated as a number anywhere), treaty reduction as
+rate-None-verify-live (W-8BEN / W-8BEN-E filed with the withholding agent),
+reporting mechanics, and non-US regimes as rate-None-verify-live.
+reconcile_royalty_statement books figures the STATEMENT supplies (gross and
+the reported withheld amount) — a missing withheld figure is a
+[NEEDS:withheld_amount] gap plus mechanism guidance, never a computed rate
+(HONESTY_RULES: unknown_is_none, no_tax_or_legal_advice).
 
 Unit 3: build_royalty_doc_scaffold is a DATA tool (Jade-U4 / Reed-U3 pattern,
 option B) — it returns compact ingredients (ordered sections, [NEEDS:<field>]
@@ -63,63 +73,77 @@ class LedgerAccountAuthExpired(Exception):
 
 
 # ── Royalty income source library (in-memory reference data) ───────────────────
-# A curated set of royalty income sources an artist earns from. Each source carries
-# the withholding percentage typically deducted before the net pay-out reaches the
-# artist (foreign withholding tax, agency/collection fees, etc.), so the agent can
-# reconcile an incoming statement by applying the source's withholding to a gross
-# figure. Keyed loosely on source type / region so the agent can surface the right
-# reconciliation basis. No I/O.
+# A curated set of royalty income sources an artist earns from, keyed loosely on
+# source type / region. Honesty pass: NO source stores a withholding rate — the
+# old invented buckets are deleted. Each source instead carries the ids of the
+# royalties_data.WITHHOLDING_MECHANISM records that govern verification for its
+# region; the actual withheld figure always comes from the statement. No I/O.
+_DOMESTIC_MECHANISM_REFS = ("reporting",)
+_FOREIGN_MECHANISM_REFS = ("us_statutory_default", "treaty_reduction",
+                           "royalty_categories_note", "non_us_regimes",
+                           "file_before_first_payment")
+
 _SOURCES = [
     {
         "id": "src-streaming-domestic",
         "name": "Domestic Streaming (DSP)",
         "source_type": "streaming",
         "region": "domestic",
-        "withholding_pct": 0,
+        "withholding_mechanism_refs": _DOMESTIC_MECHANISM_REFS,
     },
     {
         "id": "src-streaming-foreign",
         "name": "Foreign Streaming (DSP)",
         "source_type": "streaming",
         "region": "foreign",
-        "withholding_pct": 30,
+        "withholding_mechanism_refs": _FOREIGN_MECHANISM_REFS,
     },
     {
         "id": "src-mechanical",
         "name": "Mechanical Royalties",
         "source_type": "mechanical",
         "region": "domestic",
-        "withholding_pct": 0,
+        "withholding_mechanism_refs": _DOMESTIC_MECHANISM_REFS,
     },
     {
         "id": "src-performance-domestic",
         "name": "Domestic Performance Royalties (PRO)",
         "source_type": "performance",
         "region": "domestic",
-        "withholding_pct": 0,
+        "withholding_mechanism_refs": _DOMESTIC_MECHANISM_REFS,
     },
     {
         "id": "src-performance-foreign",
         "name": "Foreign Performance Royalties (PRO)",
         "source_type": "performance",
         "region": "foreign",
-        "withholding_pct": 15,
+        "withholding_mechanism_refs": _FOREIGN_MECHANISM_REFS,
     },
     {
         "id": "src-sync",
         "name": "Sync Licensing Income",
         "source_type": "sync",
         "region": "domestic",
-        "withholding_pct": 0,
+        "withholding_mechanism_refs": _DOMESTIC_MECHANISM_REFS,
     },
     {
         "id": "src-neighbouring-foreign",
         "name": "Foreign Neighbouring Rights",
         "source_type": "neighbouring",
         "region": "foreign",
-        "withholding_pct": 20,
+        "withholding_mechanism_refs": _FOREIGN_MECHANISM_REFS,
     },
 ]
+
+# What every consumer states instead of a stored/computed rate.
+_WITHHOLDING_POLICY = "statement_supplied_or_verify_live"
+_WITHHOLDING_HONESTY_RULE_IDS = ("unknown_is_none", "no_tax_or_legal_advice",
+                                 "only_statutory_split_hardcoded")
+
+
+def _mechanism_records(refs) -> list[dict]:
+    """Resolve mechanism-record ids to corpus records — pure read, no invention."""
+    return [dict(royalties_data.WITHHOLDING_MECHANISM[r]) for r in refs]
 
 # Tax filing document types the platform recognises on a filing action.
 _VALID_FILING_TYPES = (
@@ -133,17 +157,30 @@ async def search_royalty_sources(source_type: str = "", region: str = "") -> dic
     Both filters are optional and matched case-insensitively as substrings.
     ``source_type`` matches the source type (e.g. "streaming", "performance"), and
     ``region`` matches the region (e.g. "domestic", "foreign").
-    Returns {"sources": [...], "count": int}. Pure — no I/O.
+
+    Honesty pass: no source carries a rate. Each match resolves its
+    ``withholding_mechanism_refs`` into the corpus WITHHOLDING_MECHANISM
+    records (the US statutory 30% NRA default is the only number; treaty and
+    non-US rates come back rate-None with a verify pointer), and the result
+    carries the statement-supplied-only policy plus the honesty rule ids.
+    Returns {"sources": [...], "count": int, "withholding_policy": ...,
+    "withholding_honesty_rule_ids": ...}. Pure — no I/O.
     """
     st = (source_type or "").strip().lower()
     rg = (region or "").strip().lower()
     matches = [
-        dict(s)
+        {**{k: v for k, v in s.items() if k != "withholding_mechanism_refs"},
+         "withholding_mechanism": _mechanism_records(s["withholding_mechanism_refs"])}
         for s in _SOURCES
         if (not st or st in s["source_type"].lower())
         and (not rg or rg in s["region"].lower())
     ]
-    return {"sources": matches, "count": len(matches)}
+    return {
+        "sources": matches,
+        "count": len(matches),
+        "withholding_policy": _WITHHOLDING_POLICY,
+        "withholding_honesty_rule_ids": _WITHHOLDING_HONESTY_RULE_IDS,
+    }
 
 
 def _get_source(source_id: str) -> dict | None:
@@ -159,14 +196,19 @@ async def reconcile_royalty_statement(
     source_id: str = "",
     statement_period: str = "",
     gross_amount: float = 0,
+    withheld_amount: float | None = None,
 ) -> dict:
-    """Reconcile a royalty statement by applying a source's withholding to the gross.
+    """Reconcile a royalty statement from the figures ON the statement.
 
-    Deterministic reconciliation — never contacts a wire. Looks the source up by id,
-    checks a statement period and a positive gross figure are present, and computes
-    the withholding and net booked amount from the source's withholding percentage.
-    Returns a structured reconciliation with line items, net amount, and a
-    recommendation of "record" / "adjust" / "blocked".
+    Deterministic reconciliation — never contacts a wire, and NEVER computes a
+    withholding rate (honesty pass: the invented per-source buckets are gone).
+    ``withheld_amount`` is the withholding figure the statement itself reports;
+    when it is supplied, net = gross - withheld is plain arithmetic on supplied
+    inputs. When it is missing, the result carries a [NEEDS:withheld_amount]
+    gap plus the source's WITHHOLDING_MECHANISM records to verify against —
+    no rate is ever assumed. Returns a structured reconciliation with line
+    items, a withholding_basis block, and a recommendation of
+    "record" / "adjust" / "blocked".
     """
     source = _get_source(source_id)
 
@@ -174,6 +216,13 @@ async def reconcile_royalty_statement(
         gross = round(float(gross_amount or 0), 2)
     except (TypeError, ValueError):
         gross = 0.0
+
+    withheld = None
+    if withheld_amount is not None:
+        try:
+            withheld = round(float(withheld_amount), 2)
+        except (TypeError, ValueError):
+            withheld = None
 
     gaps = []
     if not (statement_period or "").strip():
@@ -184,24 +233,47 @@ async def reconcile_royalty_statement(
         gaps.append("unknown_source")
     if gross <= 0:
         gaps.append("non_positive_gross")
+    if withheld is None:
+        gaps.append("missing_withheld_amount")
+    elif withheld < 0:
+        gaps.append("negative_withheld_amount")
+    elif withheld > gross > 0:
+        gaps.append("withheld_exceeds_gross")
 
     line_items = []
-    withholding_pct    = source["withholding_pct"] if source else 0
-    withholding_amount = 0.0
-    net_amount         = gross
-    if source is not None and gross > 0:
-        withholding_amount = round(gross * withholding_pct / 100.0, 2)
-        net_amount = round(gross - withholding_amount, 2)
+    net_amount = None
+    booked_withheld = withheld if (withheld is not None and withheld >= 0) else None
+    if source is not None and gross > 0 and booked_withheld is not None:
+        net_amount = round(gross - booked_withheld, 2)
         line_items = [
-            {"label": "gross",       "amount": gross},
-            {"label": "withholding", "pct": withholding_pct, "amount": withholding_amount},
-            {"label": "net",         "amount": net_amount},
+            {"label": "gross", "amount": gross},
+            {"label": "withholding_as_reported_on_statement",
+             "amount": booked_withheld},
+            {"label": "net", "amount": net_amount},
         ]
+
+    mechanism = _mechanism_records(
+        source["withholding_mechanism_refs"] if source
+        else royalties_data.WITHHOLDING_MECHANISM,
+    )
+    withholding_basis = {
+        "policy": _WITHHOLDING_POLICY,
+        "note": "the withheld figure comes from the statement — never from a "
+                "stored or computed rate; the only rate stated as a number in "
+                "the mechanism is the US statutory 30% NRA default",
+        "mechanism": mechanism,
+        "honesty_rule_ids": _WITHHOLDING_HONESTY_RULE_IDS,
+    }
+    if withheld is None:
+        withholding_basis["gap"] = _GAP.format("withheld_amount")
+        withholding_basis["verify"] = ("read the withheld amount off the "
+                                       "actual statement, then verify the "
+                                       "regime per the mechanism records")
 
     if "unknown_source" in gaps or "missing_source" in gaps:
         # Without a valid source target the statement cannot be reconciled at all.
         recommendation = "blocked"
-    elif gaps or net_amount < 0:
+    elif gaps or (net_amount is not None and net_amount < 0):
         recommendation = "adjust"
     else:
         recommendation = "record"
@@ -214,10 +286,10 @@ async def reconcile_royalty_statement(
         "source_name": source["name"] if source else None,
         "statement_period": (statement_period or "").strip(),
         "gross_amount": gross,
-        "withholding_pct": withholding_pct,
-        "withholding_amount": withholding_amount,
+        "withheld_amount": withheld,
         "net_amount": net_amount,
         "line_items": line_items,
+        "withholding_basis": withholding_basis,
         "recommendation": recommendation,
     }
 

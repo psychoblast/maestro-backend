@@ -64,6 +64,10 @@ SCHEMA (per constant):
     LOD_SPEC
   Discipline (stable ids later units cite in outputs):
     METADATA_DOCTRINE, HONESTY_RULES
+  Withholding mechanism (honesty pass — MECHANISM, not rates: the ONLY
+  withholding rate stated as a number anywhere is the US statutory 30% NRA
+  default; treaty and non-US rates are None + a verify pointer):
+    WITHHOLDING_MECHANISM
 """
 
 # ── Controlled vocabularies (reference constants — data only, no logic) ───────
@@ -655,3 +659,55 @@ HONESTY_RULES = (
      "forbidden": "Advising on tax positions or presenting a generated "
                   "agreement as final/legal."},
 )
+
+
+# ── Withholding mechanism (section H — honesty pass) ───────────────────────────
+# MECHANISM, not rates: this section replaces the service layer's invented
+# per-source withholding buckets. The ONLY withholding rate stated as a number
+# anywhere in this repository is the US statutory 30% NRA default below.
+# Treaty rates VARY by the specific treaty AND the income category/income code
+# — they are NEVER stated numerically; the record carries rate None plus the
+# verify pointer. Non-US regimes likewise: rate None — home society statement
+# plus a tax professional. Data only; stable ids the service cites in outputs.
+WITHHOLDING_MECHANISM = {
+    "us_statutory_default": {
+        "id": "us_statutory_default",
+        "rate": 30,
+        "scope": "US-source royalties paid to foreign persons (IRC 1441)",
+        "note": "the ONLY withholding rate stated as a number anywhere",
+    },
+    "treaty_reduction": {
+        "id": "treaty_reduction",
+        "rate": None,
+        "note": "varies by specific treaty AND income category/income code — "
+                "verify via IRS Tax Treaty Tables / Pub 515 / Pub 901",
+        "claim_forms": ("W-8BEN individuals", "W-8BEN-E entities"),
+        "filed_with": "the withholding agent, NOT the IRS",
+        "tin_generally_required": True,
+        "without_valid_form": "agent must withhold the full statutory 30%",
+    },
+    "reporting": {
+        "id": "reporting",
+        "foreign_payee": "1042-S",
+        "us_person": "W-9 → 1099-MISC",
+        "over_withheld_recovery": "file 1040-NR",
+    },
+    "royalty_categories_note": {
+        "id": "royalty_categories_note",
+        "note": "royalty categories are treated separately for withholding — "
+                "motion picture/TV vs other copyright royalties differ by "
+                "treaty; never state one number for 'royalties'",
+    },
+    "non_us_regimes": {
+        "id": "non_us_regimes",
+        "rate": None,
+        "note": "varies by country and regime — read the home society "
+                "statement and verify with a tax professional",
+    },
+    "file_before_first_payment": {
+        "id": "file_before_first_payment",
+        "doctrine": "the treaty claim form goes to the withholding agent "
+                    "BEFORE the first payment — without a valid form on file "
+                    "the agent must withhold the full statutory 30%",
+    },
+}

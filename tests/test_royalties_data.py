@@ -30,7 +30,7 @@ _TOP_LEVEL_CONSTANTS = (
     "REPRESENTS_VALUES", "STREAM_SIDES", "COLLECTED_BY_REFS", "ROYALTY_COUNTRIES",
     "SPLIT_UNKNOWN_SENTINEL", "RECORDING_SOCIETIES", "STREAMS",
     "COUNTRY_ROYALTY_TABLE", "REGISTRATION_SITUATION_SPEC", "REGISTRATION_RULES",
-    "LOD_SPEC", "METADATA_DOCTRINE", "HONESTY_RULES",
+    "LOD_SPEC", "METADATA_DOCTRINE", "HONESTY_RULES", "WITHHOLDING_MECHANISM",
 )
 
 _SOURCE = pathlib.Path(rd.__file__).read_text(encoding="utf-8")
@@ -164,9 +164,11 @@ def test_soundexchange_international_mandate_note():
 
 
 def test_statutory_split_is_the_only_hardcoded_split():
-    # HARD RULE: 50/45/5 on soundexchange is the ONLY split stated as fact.
+    # HARD RULE: the ONLY numerics stated as fact anywhere in this corpus are
+    # the SoundExchange statutory 50/45/5 split and the US statutory 30% NRA
+    # withholding default (honesty pass — WITHHOLDING_MECHANISM).
     # 1) Numeric scan — the only non-bool numeric leaves in the whole corpus
-    #    are the three statutory percentages.
+    #    are the three statutory split percentages plus the statutory 30.
     def _numeric_leaves(value, path):
         if isinstance(value, bool):
             return
@@ -182,10 +184,12 @@ def test_statutory_split_is_the_only_hardcoded_split():
     found = []
     for name in _TOP_LEVEL_CONSTANTS:
         _numeric_leaves(getattr(rd, name), name)
-    assert sorted(v for _, v in found) == [5, 45, 50], found
-    for path, _ in found:
-        assert "soundexchange.statutory_split" in path, (
-            f"numeric split value outside the statutory split: {path}"
+    assert sorted(v for _, v in found) == [5, 30, 45, 50], found
+    for path, value in found:
+        assert ("soundexchange.statutory_split" in path
+                or path == "WITHHOLDING_MECHANISM.us_statutory_default.rate"), (
+            f"numeric value outside the statutory split / statutory "
+            f"withholding default: {path}={value}"
         )
     # 2) Source scan — every N/N(/N) split-shaped literal is the statutory one.
     for match in re.findall(r"\b\d{1,3}\s*/\s*\d{1,3}(?:\s*/\s*\d{1,3})?\b", _SOURCE):
