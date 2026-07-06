@@ -194,12 +194,13 @@ def test_service_imports_no_anthropic_unit2():
 
 # ── wiring through the real loop ───────────────────────────────────────────────
 
-def test_creative_director_tools_now_four(monkeypatch, tmp_path):
-    # This unit owns the EXACT tool roster (newest-unit-owns-roster pattern).
+def test_creative_director_tools_include_lookup(monkeypatch, tmp_path):
+    # Prefix-only here — the NEWEST unit owns the exact roster
+    # (test_cree_unit3, Reed/Nadia precedent).
     m = _load_main(monkeypatch, tmp_path)
     names = [t["name"] for t in m.CREATIVE_DIRECTOR_TOOLS]
-    assert names == ["search_rollout_templates", "assess_creative_concept",
-                     "schedule_rollout", "lookup_copy_conventions"]
+    assert names[:4] == ["search_rollout_templates", "assess_creative_concept",
+                         "schedule_rollout", "lookup_copy_conventions"]
     lookup = next(t for t in m.CREATIVE_DIRECTOR_TOOLS
                   if t["name"] == "lookup_copy_conventions")
     assert lookup["input_schema"]["required"] == ["doc_type"]

@@ -4790,7 +4790,8 @@ async def _execute_sync_agent_tool(name: str, tool_input: dict, artist_id: str) 
 
 
 # ── Unit — Creative-Director (creative-director) tool_use: search_rollout_templates
-#    + assess_creative_concept + schedule_rollout + lookup_copy_conventions ─────
+#    + assess_creative_concept + schedule_rollout + lookup_copy_conventions
+#    + build_copy_scaffold ──────────────────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
 # Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
@@ -4873,6 +4874,54 @@ CREATIVE_DIRECTOR_TOOLS = [
                     "type": "string",
                     "enum": ["bio_short", "bio_medium", "bio_long", "press_release",
                              "one_sheet", "epk_outline", "caption_set"],
+                },
+            },
+            "required": ["doc_type"],
+        },
+    },
+    {
+        "name": "build_copy_scaffold",
+        "description": ("Build a compact ingredient scaffold for ONE copy document, AFTER you "
+                        "have interviewed the artist and gathered what the document actually "
+                        "requires. Include ONLY what the artist actually told you — omit "
+                        "unknowns so they come back as explicit [NEEDS:<fact>] gaps instead of "
+                        "invented facts; NO fact, stat, press quote, or comparison is EVER "
+                        "invented. doc_type bio_short/bio_medium/bio_long: pass the fact slots "
+                        "you gathered (artist_name, genre_or_sound, distinctive_hook, "
+                        "hometown_or_scene, current_project, achievements, origin_story, "
+                        "artistic_direction as applicable; optional press_quote WITH "
+                        "press_quote_source) — the scaffold returns the slots verbatim plus the "
+                        "word range and bio conventions as reminders. press_release: headline, "
+                        "city, date, news_item, supporting_context, short_bio, boilerplate, "
+                        "contact_name/role/email, music_link, press_photos_link; a quote is "
+                        "included ONLY with quote_source — a quote without its source is "
+                        "withheld and comes back as [NEEDS:quote_source]. one_sheet: "
+                        "artist_name, genre, press_photo_link, short_bio, stats (passed through "
+                        "VERBATIM), press_quotes, release_title/date/one_sentence, "
+                        "social_streaming_links, contact_name/role; an empty stats block "
+                        "surfaces the skip-unimpressive-stats doctrine as a choice to OFFER the "
+                        "artist — never decide it silently. epk_outline: the three bios, "
+                        "artist_brief, promo_photos, tracks, video_links, press_and_reviews, "
+                        "highlights, social_streaming_links, contact, plus optional fact_sheet/"
+                        "tour_dates/artwork/rider/lyrics_liner_notes. caption_set: hook_line, "
+                        "context_line, cta, tag_link_placeholders — no invented urgency or "
+                        "milestones. Then WRITE the draft yourself in your reply from the "
+                        "scaffold: follow each section's guidance, keep every [NEEDS:...] and "
+                        "[ARTIST-SUPPLIED: ...] marker verbatim, and never invent a fact. The "
+                        "draft is for the artist's review — NEVER publish-ready."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_type": {
+                    "type": "string",
+                    "enum": ["bio_short", "bio_medium", "bio_long", "press_release",
+                             "one_sheet", "epk_outline", "caption_set"],
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": ("Everything gathered from the artist, keyed by the fact "
+                                    "field names above. Omit anything not gathered — unmapped "
+                                    "extras ride along verbatim."),
                 },
             },
             "required": ["doc_type"],
@@ -4974,6 +5023,22 @@ async def _execute_creative_director_tool(name: str, tool_input: dict, artist_id
         if res.get("status") == "ok":
             result_str = (f"{len(res['conventions'])} convention(s), "
                           f"{len(res['honesty_rules'])} honesty rule(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={dt or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "build_copy_scaffold":
+        # Deliberately NOT gated — data/scaffold tool, no studio account needed.
+        dt = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await creative_director_service.build_copy_scaffold(
+            doc_type=dt, inputs=raw_inputs,
+        )
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
         else:
             result_str = res.get("status", "error")
         summary = {"input": f"doc_type={dt or '(missing)'}", "result": result_str}
