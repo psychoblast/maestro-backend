@@ -26,6 +26,8 @@ MOCK-FIRST CONTRACT (hard rules for this module):
 import hashlib
 import os
 
+import brand_partnerships_data
+
 
 class BrandConnectAccountNotConnected(Exception):
     """Raised when the artist has not connected a brand-partnerships account.
@@ -253,4 +255,87 @@ async def submit_partnership_proposal(
         "brand_name": brand["name"],
         "campaign_type": ct,
         "proposed_fee": proposed_fee,
+    }
+
+
+# ── Unit-2 doctrine lookup + pitch send rail ───────────────────────────────────
+# lookup_brand_deal_doctrine is a PURE read over brand_partnerships_data (no gate,
+# no I/O). send_brand_pitch follows the Marcus send seam: the MODEL writes the
+# pitch body in its turn and passes it in — the tool SENDS (mock), it never
+# generates or edits the body — behind the same BRAND_CONNECT_ACCOUNT_CONNECTED
+# gate as submit_partnership_proposal, with a deterministic mock sha1 reference
+# and ZERO network. No market rate is ever invented in either function.
+
+# The one-topic doctrine surface: the seven DEAL_TERMS records by their stable id,
+# plus the category surface and the outreach doctrine. Built at import from the
+# corpus so the ids stay in lockstep. Reference only — nothing mutates these
+# objects (they ride out through json.dumps downstream).
+_BRAND_DOCTRINE_SECTIONS = {r["id"]: r for r in brand_partnerships_data.DEAL_TERMS}
+_BRAND_DOCTRINE_SECTIONS["categories"] = brand_partnerships_data.BRAND_CATEGORIES
+_BRAND_DOCTRINE_SECTIONS["outreach"] = brand_partnerships_data.OUTREACH_DOCTRINE
+
+BRAND_DOCTRINE_TOPICS = ("deliverables", "compensation", "usage_rights",
+                         "exclusivity", "approval_workflow", "disclosure",
+                         "termination_morals", "categories", "outreach")
+
+
+async def lookup_brand_deal_doctrine(topic: str = "") -> dict:
+    """Look up the doctrine for ONE brand-deal topic — pure corpus read, no gate.
+
+    Returns the relevant brand_partnerships_data section plus the FULL honesty-rule
+    set (no market rate is ever invented; deal evaluation is structural, never a
+    good/bad verdict; disclosure is convention, not legal advice). An unknown topic
+    returns a structured ``unknown_topic`` error listing the supported topics. No
+    I/O, no LLM, nothing invented.
+    """
+    t = (topic or "").strip().lower()
+    honesty_rules = [dict(r) for r in brand_partnerships_data.HONESTY_RULES]
+    if t in _BRAND_DOCTRINE_SECTIONS:
+        return {
+            "status": "ok",
+            "topic": t,
+            "data": _BRAND_DOCTRINE_SECTIONS[t],
+            "honesty_rules": honesty_rules,
+        }
+    return {
+        "status": "unknown_topic",
+        "topic": t or "(missing)",
+        "supported_topics": list(BRAND_DOCTRINE_TOPICS),
+        "message": ("Unsupported topic. Supported: "
+                    + ", ".join(BRAND_DOCTRINE_TOPICS) + "."),
+    }
+
+
+async def send_brand_pitch(artist_id: str, brand_id: str, subject: str = "",
+                           body: str = "") -> dict:
+    """Send an artist's brand pitch — the MODEL wrote the body; this tool only sends.
+
+    The pitch ``subject`` and ``body`` are written by the model in its turn and
+    passed in verbatim; this function NEVER generates or edits them and NEVER
+    invents a rate. It follows submit_partnership_proposal's gate seam: raises
+    BrandConnectAccountNotConnected / BrandConnectAuthExpired when no
+    brand-partnerships account is linked (so the caller can surface a 'connect your
+    account' message), returns a structured {"status": "unknown_brand"} for an
+    unknown brand, and on success returns a deterministic mock send reference —
+    NO network call is ever made and no pitch is actually delivered. The supplied
+    subject/body ride back out byte-exact so the caller can confirm what was sent.
+    """
+    if not _brand_connect_account_connected(artist_id):
+        raise BrandConnectAccountNotConnected(
+            "artist has not connected a brand-partnerships account"
+        )
+    brand = _get_brand(brand_id)
+    if brand is None:
+        return {"status": "unknown_brand", "brand_id": (brand_id or "").strip()}
+    digest = hashlib.sha1(
+        f"{artist_id}:{brand['id']}:{subject}:{body}".encode("utf-8")
+    ).hexdigest()
+    reference = "BPITCH-" + digest[:10].upper()
+    return {
+        "status": "sent",
+        "reference": reference,
+        "brand_id": brand["id"],
+        "brand_name": brand["name"],
+        "subject": subject,   # verbatim — the tool never edits the model's pitch
+        "body": body,         # verbatim — never generated or modified here
     }

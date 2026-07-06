@@ -4096,6 +4096,51 @@ BRAND_CONNECT_TOOLS = [
             "required": ["brand_id", "campaign_type"],
         },
     },
+    {
+        "name": "lookup_brand_deal_doctrine",
+        "description": ("Look up the doctrine for ONE brand-deal topic before acting: "
+                        "deliverables, compensation, usage_rights, exclusivity, "
+                        "approval_workflow, disclosure, or termination_morals (the deal "
+                        "terms), plus 'categories' (the brand-category surface) and "
+                        "'outreach' (the outreach doctrine). Use it to structure a deal "
+                        "or a pitch. THE HARD RULE OF THIS DOMAIN: NO market rate, fee "
+                        "range, or currency figure is ever invented or quoted — "
+                        "compensation is only ever the artist's own supplied number; deal "
+                        "evaluation is STRUCTURAL (which terms are present/missing), never "
+                        "a good/bad verdict; disclosure is the current convention, not "
+                        "legal advice (verify live)."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["deliverables", "compensation", "usage_rights",
+                             "exclusivity", "approval_workflow", "disclosure",
+                             "termination_morals", "categories", "outreach"],
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "send_brand_pitch",
+        "description": ("Send a personalized brand pitch on the artist's behalf. YOU write "
+                        "the pitch subject and body in your turn and pass them in — this "
+                        "tool SENDS them, it never writes or edits the pitch for you, and "
+                        "it never invents a rate (any figure must be one the artist "
+                        "supplied). Pass the brand_id of a brand from the directory. If the "
+                        "artist has not connected a brand-partnerships account the send is "
+                        "blocked and you must tell them to connect one first."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "brand_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+            },
+            "required": ["brand_id", "subject", "body"],
+        },
+    },
 ]
 
 
@@ -4184,6 +4229,66 @@ async def _execute_brand_connect_tool(name: str, tool_input: dict, artist_id: st
                     "partnerships_not_connected": True,
                     "message": ("Brand-partnerships authorization expired. Tell the artist to "
                                 "re-connect their account before you can submit proposals."),
+                },
+                {"input": f"brand_id={brand_id}", "result": "partnerships_auth_expired"},
+                True,
+            )
+
+    if name == "lookup_brand_deal_doctrine":
+        # Deliberately NOT gated on BRAND_CONNECT_ACCOUNT_CONNECTED — pure corpus
+        # read, no account needed (mirrors the ungated doctrine lookups).
+        topic = (tool_input.get("topic") or "").strip()
+        res = await brand_connect_service.lookup_brand_deal_doctrine(topic)
+        if res.get("status") == "ok":
+            result_str = f"{len(res['honesty_rules'])} honesty rule(s)"
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"topic={topic or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "send_brand_pitch":
+        # Marcus send seam: the MODEL wrote subject/body; the tool only sends.
+        brand_id = (tool_input.get("brand_id") or "").strip()
+        subject  = tool_input.get("subject") or ""
+        body     = tool_input.get("body") or ""
+        if not brand_id:
+            return (
+                {"error": "missing_brand_id"},
+                {"input": f"brand_id={brand_id or ''}", "result": "missing brand id"},
+                False,
+            )
+        try:
+            sent = await brand_connect_service.send_brand_pitch(
+                artist_id, brand_id, subject, body,
+            )
+            if sent.get("status") == "unknown_brand":
+                return (
+                    {"error": "unknown_brand", "brand_id": sent.get("brand_id")},
+                    {"input": f"brand_id={brand_id}", "result": "unknown brand"},
+                    False,
+                )
+            return (
+                sent,
+                {"input": f"brand_id={brand_id} subject={subject[:40]}",
+                 "result": "brand pitch sent"},
+                False,
+            )
+        except brand_connect_service.BrandConnectAccountNotConnected:
+            return (
+                {
+                    "partnerships_not_connected": True,
+                    "message": ("Artist has not connected a brand-partnerships account. Tell "
+                                "them to connect one before you can send brand pitches."),
+                },
+                {"input": f"brand_id={brand_id}", "result": "partnerships_not_connected"},
+                True,
+            )
+        except brand_connect_service.BrandConnectAuthExpired:
+            return (
+                {
+                    "partnerships_not_connected": True,
+                    "message": ("Brand-partnerships authorization expired. Tell the artist to "
+                                "re-connect their account before you can send brand pitches."),
                 },
                 {"input": f"brand_id={brand_id}", "result": "partnerships_auth_expired"},
                 True,
