@@ -1040,13 +1040,35 @@ async def detect_replies(artist_id: str) -> dict:
     msgs   = inbox.get("messages", [])
     results["scanned"] = len(msgs)
 
-    # PERF-MAY14: N+1 Gmail API calls — each message fetched individually (up to 50 round-trips).
-    # Suggested fix: use Gmail batch API (googleapiclient.http.BatchHttpRequest) to fetch all
-    # message details in one HTTP request. Medium complexity; defer until inbox scan is a bottleneck.
+    # Fetch every message detail in ONE batched HTTP request (Gmail batch API)
+    # instead of N sequential round-trips. The per-message `get` requests are
+    # added to a single BatchHttpRequest keyed by message id; the callback
+    # collects each response as it lands. A message whose individual fetch errors
+    # is simply skipped (it can't be matched/classified) — the surrounding
+    # GmailNotConnected / GmailAuthExpired auth degradation is unchanged (it fires
+    # in _get_gmail_service, before this point).
+    fetched: dict = {}
+
+    def _collect(request_id, response, exception):
+        if exception is not None:
+            return
+        fetched[request_id] = response
+
+    if msgs:
+        batch = service.new_batch_http_request(callback=_collect)
+        for ref in msgs:
+            batch.add(
+                service.users().messages().get(
+                    userId="me", id=ref["id"], format="full"
+                ),
+                request_id=ref["id"],
+            )
+        batch.execute()
+
     for ref in msgs:
-        msg     = service.users().messages().get(
-            userId="me", id=ref["id"], format="full"
-        ).execute()
+        msg = fetched.get(ref["id"])
+        if msg is None:
+            continue
         headers = {h["name"].lower(): h["value"]
                    for h in msg.get("payload", {}).get("headers", [])}
         thread_id = msg.get("threadId")

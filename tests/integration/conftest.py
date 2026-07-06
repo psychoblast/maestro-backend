@@ -85,6 +85,26 @@ def make_gmail_message(thread_id: str, subject: str, body_text: str,
     }
 
 
+class _FakeGmailBatch:
+    """Scripted stand-in for a googleapiclient BatchHttpRequest.
+
+    detect_replies now fetches message details via a single batch request. This
+    fake records each added request's id and, on execute(), invokes the callback
+    with the scripted message for that id — ZERO real API calls.
+    """
+    def __init__(self, callback, id_to_msg):
+        self._callback  = callback
+        self._id_to_msg = id_to_msg
+        self._pending   = []
+
+    def add(self, request, request_id=None):
+        self._pending.append(request_id)
+
+    def execute(self):
+        for rid in self._pending:
+            self._callback(rid, self._id_to_msg.get(rid), None)
+
+
 def mock_gmail_service(thread_id: str, subject: str, body_text: str) -> object:
     """Return a mock Gmail API service that simulates one inbox message."""
     from unittest.mock import MagicMock
@@ -93,8 +113,15 @@ def mock_gmail_service(thread_id: str, subject: str, body_text: str) -> object:
     inbox   = {"messages": [{"id": "gmail-msg-001", "threadId": thread_id}]}
     (svc.users.return_value.messages.return_value
         .list.return_value.execute.return_value) = inbox
+    # pitch_service.detect_replies fetches via a batch request; pr_service and
+    # booking_service still fetch each message with get().execute(). Script BOTH
+    # so this shared fake serves every consumer.
     (svc.users.return_value.messages.return_value
         .get.return_value.execute.return_value)  = msg
+    id_to_msg = {"gmail-msg-001": msg}
+    svc.new_batch_http_request.side_effect = (
+        lambda callback: _FakeGmailBatch(callback, id_to_msg)
+    )
     return svc
 
 

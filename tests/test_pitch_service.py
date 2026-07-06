@@ -468,6 +468,26 @@ def test_classify_reply_malformed_json_falls_back(ps):
 
 # ── detect_replies() ─────────────────────────────────────────────────────────
 
+class _FakeGmailBatch:
+    """Scripted stand-in for a googleapiclient BatchHttpRequest — no real API.
+
+    detect_replies now fetches all message details in one batch request; on
+    execute() this fake invokes the collect callback with the scripted message
+    for each added request id.
+    """
+    def __init__(self, callback, id_to_msg):
+        self._callback  = callback
+        self._id_to_msg = id_to_msg
+        self._pending   = []
+
+    def add(self, request, request_id=None):
+        self._pending.append(request_id)
+
+    def execute(self):
+        for rid in self._pending:
+            self._callback(rid, self._id_to_msg.get(rid), None)
+
+
 def _make_gmail_svc(thread_id: str, subject: str, body_text: str):
     import base64
     data = base64.urlsafe_b64encode(body_text.encode()).decode()
@@ -487,8 +507,10 @@ def _make_gmail_svc(thread_id: str, subject: str, body_text: str):
         .list.return_value.execute.return_value) = {
             "messages": [{"id": "msg-001", "threadId": thread_id}]
     }
-    (svc.users.return_value.messages.return_value
-        .get.return_value.execute.return_value) = msg
+    id_to_msg = {"msg-001": msg}
+    svc.new_batch_http_request.side_effect = (
+        lambda callback: _FakeGmailBatch(callback, id_to_msg)
+    )
     return svc
 
 
