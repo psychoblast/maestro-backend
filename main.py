@@ -2985,14 +2985,15 @@ async def _execute_ledger_lock_tool(name: str, tool_input: dict, artist_id: str)
 
 
 # ── Unit — Signal-Blaster (signal-blaster) tool_use: search_media_outlets +
-# draft_press_release + send_press_pitch ─────────────────────────────────────
-# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
-# Victor / Nadia pattern exactly: these tools are passed to the Anthropic API for
-# the signal-blaster agent ONLY (see the gate in chat_stream). Every other agent —
-# including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, and Nadia — takes its own
-# unchanged path and never receives SIGNAL_BLASTER_TOOLS. Handlers map straight
-# onto the mock-first signal_blaster_service functions; they make ZERO network
-# calls and read no secrets.
+# build_pitch_plan + lookup_publicity_doctrine + send_press_pitch ─────────────
+# Reworked to the Marcus/Nia/Solo OUTREACH pattern (Zara U2). These tools are
+# passed to the Anthropic API for the signal-blaster agent ONLY (see the gate in
+# chat_stream). Every other agent takes its own unchanged path and never receives
+# SIGNAL_BLASTER_TOOLS. Handlers map straight onto the mock-first
+# signal_blaster_service functions; they make ZERO network calls and read no
+# secrets. Press-release DRAFTING is NOT here — it is creative-director's
+# build_copy_scaffold (Cree writes, Zara sends); the boundary is encoded in
+# publicity_data doctrine, not a cross-service dispatch call.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 SIGNAL_BLASTER_MAX_TOOL_ITERS = 5
@@ -3000,45 +3001,114 @@ SIGNAL_BLASTER_MAX_TOOL_ITERS = 5
 SIGNAL_BLASTER_TOOLS = [
     {
         "name": "search_media_outlets",
-        "description": "Search media outlets / journalists by the beat they cover or their reach tier (A=major, B=mid, C=local)",
+        "description": ("Filter an ARTIST-SUPPLIED media list by beat or level. This "
+                        "tool NEVER invents outlet or journalist names — it has no "
+                        "built-in directory. Pass the artist's own media list in "
+                        "`media_list`; with no list it returns a [NEEDS:media_targets] "
+                        "gap you must surface (ask for a personalized list of writers "
+                        "covering the artist's level and current beat)."),
         "input_schema": {
             "type": "object",
             "properties": {
-                "beat": {
-                    "type": "string",
-                    "enum": ["indie", "mainstream", "hiphop", "electronic", "rock", "local"],
-                },
-                "tier": {
-                    "type": "string",
-                    "enum": ["A", "B", "C"],
+                "beat": {"type": "string"},
+                "level": {"type": "string"},
+                "media_list": {
+                    "type": "array",
+                    "description": ("Artist-supplied outlets/journalists. Each item is "
+                                    "an object with any of: name, beat, level/tier. "
+                                    "Never fabricate entries."),
+                    "items": {"type": "object"},
                 },
             },
         },
     },
     {
-        "name": "draft_press_release",
-        "description": "Draft a structured press release from a headline and story angle (with an optional artist quote)",
+        "name": "build_pitch_plan",
+        "description": ("Build COMPACT pitch-plan ingredients (you write the prose): a "
+                        "recommended pitch mode from the goal, a lead-ordered campaign "
+                        "timeline anchored to a release date, and a package checklist "
+                        "with an aggregated missing[]. If weeks_to_release is short, "
+                        "slots that cannot get their normal lead are flagged and an "
+                        "HONEST compression warning is returned — the schedule is "
+                        "never silently compressed. The press release is only "
+                        "REFERENCED (creative-director's build_copy_scaffold), never "
+                        "drafted here."),
         "input_schema": {
             "type": "object",
             "properties": {
-                "headline": {"type": "string"},
-                "angle": {"type": "string"},
-                "quote": {"type": "string"},
+                "release_date": {"type": "string"},
+                "weeks_to_release": {"type": "integer"},
+                "goal": {
+                    "type": "string",
+                    "description": ("The campaign goal (e.g. max impressions, a top-tier "
+                                    "feature, a coordinated announcement) — drives the "
+                                    "recommended mode."),
+                },
+                "package": {
+                    "type": "object",
+                    "description": ("What the artist already has for the pitch package "
+                                    "(audio link, artwork, photos, bio, credits, story "
+                                    "angle, release date). Absent items become "
+                                    "[NEEDS:] gaps."),
+                },
             },
-            "required": ["headline"],
+        },
+    },
+    {
+        "name": "lookup_publicity_doctrine",
+        "description": ("Look up the doctrine for ONE publicity topic before acting: "
+                        "'pitch_modes' (standard / embargo / exclusive + when to use "
+                        "each), 'embargo' (the hard embargo rules), 'lead_time' (the "
+                        "campaign timeline + windows), 'personalization' (list "
+                        "discipline), 'pitch_package' (what a complete package "
+                        "carries + follow-up rule), 'integrity', or 'boundaries' "
+                        "(what belongs to creative-director / puppet-master / airwave "
+                        "/ brand-connect). HARD RULES OF THIS DOMAIN: outlet, "
+                        "journalist, and coverage claims are NEVER invented; "
+                        "press-release / bio / EPK DRAFTING belongs to "
+                        "creative-director's build_copy_scaffold (Cree writes, Zara "
+                        "sends); an embargo needs a zoned lift; earned media is never "
+                        "paid; coverage is never guaranteed."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["pitch_modes", "embargo", "lead_time", "personalization",
+                             "pitch_package", "integrity", "boundaries"],
+                },
+            },
+            "required": ["topic"],
         },
     },
     {
         "name": "send_press_pitch",
-        "description": "Send a press pitch to a media outlet through the artist's connected press/email account on their behalf",
+        "description": ("Send a personalized press pitch on the artist's behalf. YOU "
+                        "write the pitch subject and body in your turn and pass them "
+                        "in — this tool SENDS them, it never writes or edits the pitch "
+                        "and never invents an outlet or a coverage claim. Identify the "
+                        "outlet with `outlet_id` or `outlet`. `pitch_mode` is explicit "
+                        "(standard / embargo / exclusive); an EMBARGO pitch REQUIRES "
+                        "`embargo_lift_datetime` stated WITH a time zone or the send is "
+                        "held. If the artist has not connected a press account the send "
+                        "is blocked and you must tell them to connect one first."),
         "input_schema": {
             "type": "object",
             "properties": {
                 "outlet_id": {"type": "string"},
+                "outlet": {"type": "string"},
                 "subject": {"type": "string"},
                 "body": {"type": "string"},
+                "pitch_mode": {
+                    "type": "string",
+                    "enum": ["standard", "embargo", "exclusive"],
+                },
+                "embargo_lift_datetime": {
+                    "type": "string",
+                    "description": "Lift date/time WITH time zone — required for embargo mode.",
+                },
             },
-            "required": ["outlet_id", "subject"],
+            "required": ["subject", "body"],
         },
     },
 ]
@@ -3059,54 +3129,82 @@ async def _execute_signal_blaster_tool(name: str, tool_input: dict, artist_id: s
     tool_input = dict(tool_input or {})
 
     if name == "search_media_outlets":
-        beat = (tool_input.get("beat") or "").strip()
-        tier = (tool_input.get("tier") or "").strip()
-        res = await signal_blaster_service.search_media_outlets(beat=beat, tier=tier)
+        beat       = (tool_input.get("beat") or "").strip()
+        level      = (tool_input.get("level") or "").strip()
+        media_list = tool_input.get("media_list")
+        res = await signal_blaster_service.search_media_outlets(
+            beat=beat, level=level, media_list=media_list,
+        )
+        if res.get("status") == "needs_targets":
+            result_str = "no media list supplied — [NEEDS:media_targets]"
+        else:
+            result_str = f"{res['count']} artist-supplied outlet(s) matched"
         summary = {
-            "input": f"beat={beat or 'any'} tier={tier or 'any'}",
-            "result": f"{res['count']} outlet(s) found",
+            "input": f"beat={beat or 'any'} level={level or 'any'}",
+            "result": result_str,
         }
         return res, summary, False
 
-    if name == "draft_press_release":
-        headline = (tool_input.get("headline") or "").strip()
-        angle    = (tool_input.get("angle") or "").strip()
-        quote    = (tool_input.get("quote") or "").strip()
-        res = await signal_blaster_service.draft_press_release(
-            artist_id, headline=headline, angle=angle, quote=quote,
+    if name == "build_pitch_plan":
+        release_date     = (tool_input.get("release_date") or "").strip()
+        weeks_to_release = tool_input.get("weeks_to_release")
+        goal             = (tool_input.get("goal") or "").strip()
+        package          = tool_input.get("package")
+        res = await signal_blaster_service.build_pitch_plan(
+            artist_id, release_date=release_date, weeks_to_release=weeks_to_release,
+            goal=goal, package=package,
         )
+        warn = " (compression warning)" if res.get("compression_warning") else ""
+        result_str = (f"mode={res['recommended_mode']}, "
+                      f"{len(res.get('missing', []))} package gap(s){warn}")
         summary = {
-            "input": f"headline={headline[:40] or 'unspecified'} angle={angle[:40] or 'unspecified'}",
-            "result": f"drafted={res['drafted']}, {res['recommendation']}",
+            "input": f"release_date={release_date or 'unspecified'} weeks={weeks_to_release if weeks_to_release is not None else 'unspecified'}",
+            "result": result_str,
         }
+        return res, summary, False
+
+    if name == "lookup_publicity_doctrine":
+        # Deliberately NOT gated — pure corpus read, no account needed.
+        topic = (tool_input.get("topic") or "").strip()
+        res = await signal_blaster_service.lookup_publicity_doctrine(topic)
+        if res.get("status") == "ok":
+            result_str = f"{len(res['honesty_rules'])} honesty rule(s)"
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"topic={topic or '(missing)'}", "result": result_str}
         return res, summary, False
 
     if name == "send_press_pitch":
+        # Marcus send seam: the MODEL wrote subject/body; the tool only sends.
         outlet_id = (tool_input.get("outlet_id") or "").strip()
-        subject   = (tool_input.get("subject") or "").strip()
-        body      = (tool_input.get("body") or "").strip()
-        if not outlet_id:
-            return (
-                {"error": "missing_outlet_id"},
-                {"input": f"outlet_id={outlet_id or ''} subject={subject[:40]}",
-                 "result": "missing outlet id"},
-                False,
-            )
+        outlet    = (tool_input.get("outlet") or "").strip()
+        subject   = tool_input.get("subject") or ""
+        body      = tool_input.get("body") or ""
+        pitch_mode = (tool_input.get("pitch_mode") or "standard").strip()
+        lift       = tool_input.get("embargo_lift_datetime")
         try:
             sent = await signal_blaster_service.send_press_pitch(
-                artist_id, outlet_id, subject, body,
+                artist_id, outlet_id=outlet_id, outlet=outlet, subject=subject,
+                body=body, pitch_mode=pitch_mode, embargo_lift_datetime=lift,
             )
-            if sent.get("status") == "unknown_outlet":
+            status = sent.get("status")
+            if status == "missing_outlet":
                 return (
-                    {"error": "unknown_outlet", "outlet_id": sent.get("outlet_id")},
-                    {"input": f"outlet_id={outlet_id}", "result": "unknown outlet"},
+                    {"error": "missing_outlet"},
+                    {"input": f"outlet_id={outlet_id or ''} outlet={outlet or ''}",
+                     "result": "missing outlet"},
+                    False,
+                )
+            if status == "needs_embargo_lift":
+                return (
+                    sent,
+                    {"input": f"outlet={outlet or outlet_id} mode=embargo",
+                     "result": "needs embargo lift datetime"},
                     False,
                 )
             return (
-                {"status": "sent", "reference": sent.get("reference"),
-                 "outlet_id": sent.get("outlet_id"), "outlet_name": sent.get("outlet_name"),
-                 "to": sent.get("to"), "subject": sent.get("subject")},
-                {"input": f"outlet_id={outlet_id} subject={subject[:40]}",
+                sent,
+                {"input": f"outlet={outlet or outlet_id} mode={pitch_mode} subject={subject[:40]}",
                  "result": "press pitch sent"},
                 False,
             )
@@ -3117,7 +3215,7 @@ async def _execute_signal_blaster_tool(name: str, tool_input: dict, artist_id: s
                     "message": ("Artist has not connected a press/email account. Tell them "
                                 "to connect one before you can send press pitches."),
                 },
-                {"input": f"outlet_id={outlet_id}", "result": "press_account_not_connected"},
+                {"input": f"outlet={outlet or outlet_id}", "result": "press_account_not_connected"},
                 True,
             )
         except signal_blaster_service.PressAccountAuthExpired:
@@ -3127,7 +3225,7 @@ async def _execute_signal_blaster_tool(name: str, tool_input: dict, artist_id: s
                     "message": ("Press-account authorization expired. Tell the artist to "
                                 "re-connect their account before you can send press pitches."),
                 },
-                {"input": f"outlet_id={outlet_id}", "result": "press_account_auth_expired"},
+                {"input": f"outlet={outlet or outlet_id}", "result": "press_account_auth_expired"},
                 True,
             )
 
