@@ -4509,6 +4509,56 @@ AIRWAVE_TOOLS = [
             "required": ["target_id", "track_title"],
         },
     },
+    {
+        "name": "lookup_radio_promo_doctrine",
+        "description": ("Look up the doctrine for ONE radio / DSP-editorial topic before "
+                        "acting: college_radio (NACC / Earshot mechanics + campaign "
+                        "shape), cancon (the 35%/50% quota + MAPL points), "
+                        "commercial_radio (the honest barrier), dsp_editorial (Spotify "
+                        "window/via/copy), servicing_platforms (the delivery layer), "
+                        "delivery_vs_outreach, or satellite_public. HARD RULES: NEVER "
+                        "assert or compute a song's CanCon / MAPL status — only the "
+                        "artist's DECLARED letters pass through (misdeclaration risks the "
+                        "STATION's licence); a pitch is CONSIDERATION, never a placement; "
+                        "costs/panel-sizes/processes are current conventions, verify "
+                        "live. Playlist-CURATOR outreach is OUT OF SCOPE — it belongs to "
+                        "the management department (Marcus), and a curator topic here "
+                        "returns that boundary."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["college_radio", "cancon", "commercial_radio",
+                             "dsp_editorial", "servicing_platforms",
+                             "delivery_vs_outreach", "satellite_public"],
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "send_radio_pitch",
+        "description": ("Send a personalized radio / DSP-editorial pitch on the artist's "
+                        "behalf. YOU write the pitch subject and body in your turn and "
+                        "pass them in — this tool SENDS them, it never writes or edits the "
+                        "pitch for you. NEVER assert a CanCon/MAPL status: pass the "
+                        "artist's own DECLARED letters (e.g. 'MAL') in mapl_declaration if "
+                        "they gave them, otherwise leave it and the pitch carries a "
+                        "[NEEDS:mapl_declaration] gap. Pass the target_id of a target from "
+                        "the directory. If the artist has not connected a plugging account "
+                        "the send is blocked and you must tell them to connect one."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "target_id": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
+                "mapl_declaration": {"type": "string"},
+            },
+            "required": ["target_id", "subject", "body"],
+        },
+    },
 ]
 
 
@@ -4594,6 +4644,69 @@ async def _execute_airwave_tool(name: str, tool_input: dict, artist_id: str) -> 
                     "plugging_not_connected": True,
                     "message": ("Plugging-account authorization expired. Tell the artist to "
                                 "re-connect their plugging account before you can submit pitches."),
+                },
+                {"input": f"target_id={target_id}", "result": "plugging_auth_expired"},
+                True,
+            )
+
+    if name == "lookup_radio_promo_doctrine":
+        # Deliberately NOT gated — pure corpus read. A curator topic returns the
+        # out-of-scope boundary (Marcus), never a curator action.
+        topic = (tool_input.get("topic") or "").strip()
+        res = await airwave_service.lookup_radio_promo_doctrine(topic)
+        status = res.get("status")
+        if status == "ok":
+            result_str = f"{len(res['honesty_rules'])} honesty rule(s)"
+        else:
+            result_str = status or "error"
+        summary = {"input": f"topic={topic or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "send_radio_pitch":
+        # Marcus send seam: the MODEL wrote subject/body; the tool only sends and
+        # NEVER asserts a MAPL status — declared letters ride through or a gap.
+        target_id = (tool_input.get("target_id") or "").strip()
+        subject   = tool_input.get("subject") or ""
+        body      = tool_input.get("body") or ""
+        mapl      = tool_input.get("mapl_declaration")
+        if not target_id:
+            return (
+                {"error": "missing_target_id"},
+                {"input": f"target_id={target_id or ''}", "result": "missing target id"},
+                False,
+            )
+        try:
+            sent = await airwave_service.send_radio_pitch(
+                artist_id, target_id, subject, body, mapl_declaration=mapl,
+            )
+            if sent.get("status") == "unknown_target":
+                return (
+                    {"error": "unknown_target", "target_id": sent.get("target_id")},
+                    {"input": f"target_id={target_id}", "result": "unknown target"},
+                    False,
+                )
+            return (
+                sent,
+                {"input": f"target_id={target_id} subject={subject[:40]}",
+                 "result": "radio pitch sent"},
+                False,
+            )
+        except airwave_service.AirwaveAccountNotConnected:
+            return (
+                {
+                    "plugging_not_connected": True,
+                    "message": ("Artist has not connected a radio-plugging/DSP-pitching account. "
+                                "Tell them to connect one before you can send radio pitches."),
+                },
+                {"input": f"target_id={target_id}", "result": "plugging_not_connected"},
+                True,
+            )
+        except airwave_service.AirwaveAuthExpired:
+            return (
+                {
+                    "plugging_not_connected": True,
+                    "message": ("Plugging-account authorization expired. Tell the artist to "
+                                "re-connect their plugging account before you can send pitches."),
                 },
                 {"input": f"target_id={target_id}", "result": "plugging_auth_expired"},
                 True,

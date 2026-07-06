@@ -26,6 +26,8 @@ MOCK-FIRST CONTRACT (hard rules for this module):
 import hashlib
 import os
 
+import radio_promo_data
+
 
 class AirwaveAccountNotConnected(Exception):
     """Raised when the artist has not connected a radio-plugging / DSP-pitching account.
@@ -257,4 +259,112 @@ async def submit_airplay_pitch(
         "target_name": target["name"],
         "track_title": tt,
         "release_date": rd,
+    }
+
+
+# ── Unit-2 doctrine lookup + radio/DSP pitch send rail ─────────────────────────
+# lookup_radio_promo_doctrine is a PURE read over radio_promo_data (no gate, no
+# I/O); a curator-related topic returns an OUT_OF_SCOPE answer naming the
+# management department (Marcus) — Solo runs radio + DSP editorial, never curator
+# outreach. send_radio_pitch follows the Marcus send seam: the MODEL writes the
+# pitch body in its turn and passes it in — the tool SENDS (deterministic mock
+# sha1 reference, ZERO network), never generates/edits the body, and NEVER asserts
+# or computes a MAPL status: the artist's DECLARED letters pass through verbatim,
+# or a [NEEDS:mapl_declaration] gap is surfaced.
+
+# The one-topic doctrine surface. Reference only — nothing mutates these objects.
+_RADIO_TOPIC_SECTIONS = {
+    "college_radio":        radio_promo_data.COLLEGE_RADIO,
+    "cancon":               radio_promo_data.CANCON,
+    "commercial_radio":     radio_promo_data.COMMERCIAL_RADIO,
+    "dsp_editorial":        radio_promo_data.DSP_EDITORIAL,
+    "servicing_platforms":  radio_promo_data.SERVICING_PLATFORMS,
+    "delivery_vs_outreach": radio_promo_data.DELIVERY_VS_OUTREACH_DOCTRINE,
+    "satellite_public":     radio_promo_data.SATELLITE_AND_PUBLIC,
+}
+
+RADIO_PROMO_TOPICS = ("college_radio", "cancon", "commercial_radio",
+                      "dsp_editorial", "servicing_platforms",
+                      "delivery_vs_outreach", "satellite_public")
+
+# Missing-MAPL sentinel — a declaration is the artist's to make, never computed.
+MAPL_DECLARATION_GAP = "[NEEDS:mapl_declaration]"
+
+
+async def lookup_radio_promo_doctrine(topic: str = "") -> dict:
+    """Look up the doctrine for ONE radio/DSP topic — pure corpus read, no gate.
+
+    Returns the relevant radio_promo_data section plus the FULL honesty-rule set
+    (never assert MAPL; a pitch is consideration, never a placement; costs and
+    processes verify live). A CURATOR-related topic returns a structured
+    ``out_of_scope`` answer naming the management department (Marcus) — playlist-
+    curator outreach is not Solo's lane. Any other unknown topic returns a
+    structured ``unknown_topic`` error. No I/O, no LLM, nothing invented.
+    """
+    t = (topic or "").strip().lower()
+    if "curator" in t or t in ("playlist_curator", "playlist_curator_outreach",
+                               "playlist_curators", "playlist"):
+        oos = radio_promo_data.OUT_OF_SCOPE["playlist_curator_outreach"]
+        return {
+            "status": "out_of_scope",
+            "topic": t,
+            "owner": oos["owner"],
+            "reason": oos["reason"],
+            "message": ("Playlist-curator outreach is handled by the management "
+                        "department (Marcus), not Solo. Solo covers radio + DSP "
+                        "editorial only."),
+        }
+    honesty_rules = [dict(r) for r in radio_promo_data.HONESTY_RULES]
+    if t in _RADIO_TOPIC_SECTIONS:
+        return {
+            "status": "ok",
+            "topic": t,
+            "data": _RADIO_TOPIC_SECTIONS[t],
+            "honesty_rules": honesty_rules,
+        }
+    return {
+        "status": "unknown_topic",
+        "topic": t or "(missing)",
+        "supported_topics": list(RADIO_PROMO_TOPICS),
+        "message": ("Unsupported topic. Supported: "
+                    + ", ".join(RADIO_PROMO_TOPICS) + "."),
+    }
+
+
+async def send_radio_pitch(artist_id: str, target_id: str, subject: str = "",
+                           body: str = "", mapl_declaration=None) -> dict:
+    """Send an artist's radio / DSP-editorial pitch — the MODEL wrote it; tool sends.
+
+    The ``subject`` and ``body`` are written by the model in its turn and passed in
+    verbatim; this function NEVER generates or edits them. It NEVER asserts or
+    computes a CanCon / MAPL status: the artist's DECLARED letters
+    (``mapl_declaration``) ride through byte-exact, and when none is supplied the
+    result carries a ``[NEEDS:mapl_declaration]`` gap — a status is never invented.
+    It follows submit_airplay_pitch's gate seam: raises AirwaveAccountNotConnected
+    / AirwaveAuthExpired when no plugging account is linked, returns a structured
+    {"status": "unknown_target"} for an unknown target, and on success returns a
+    deterministic mock send reference — NO network call is ever made.
+    """
+    if not _airwave_account_connected(artist_id):
+        raise AirwaveAccountNotConnected(
+            "artist has not connected a radio-plugging/DSP-pitching account"
+        )
+    target = _get_target(target_id)
+    if target is None:
+        return {"status": "unknown_target", "target_id": (target_id or "").strip()}
+    declared = mapl_declaration
+    if not (isinstance(declared, str) and declared.strip()):
+        declared = MAPL_DECLARATION_GAP        # never computed — a gap, not a status
+    digest = hashlib.sha1(
+        f"{artist_id}:{target['id']}:{subject}:{body}".encode("utf-8")
+    ).hexdigest()
+    reference = "RPITCH-" + digest[:10].upper()
+    return {
+        "status": "sent",
+        "reference": reference,
+        "target_id": target["id"],
+        "target_name": target["name"],
+        "subject": subject,                    # verbatim — never edited
+        "body": body,                          # verbatim — never generated
+        "mapl_declaration": declared,          # artist's declared letters or a gap
     }
