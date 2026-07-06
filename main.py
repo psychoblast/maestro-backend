@@ -1581,13 +1581,11 @@ MARCUS_MAX_TOOL_ITERS = 5
 MARCUS_TOOLS = [
     {
         "name": "search_curators",
-        "description": "Search curator database by genre, platform, or follower count",
+        "description": "Search the curator database by genre",
         "input_schema": {
             "type": "object",
             "properties": {
                 "genre": {"type": "string"},
-                "platform": {"type": "string", "enum": ["spotify", "apple_music", "youtube"]},
-                "min_followers": {"type": "integer"},
             },
         },
     },
@@ -1621,8 +1619,9 @@ async def _execute_marcus_tool(name: str, tool_input: dict, artist_id: str) -> t
 
     if name == "search_curators":
         genre = (tool_input.get("genre") or "").strip()
-        # The curators table is keyed on genre/tier (no platform/followers columns),
-        # so platform/min_followers are accepted per the schema but not used to filter.
+        # Filter on genre only — the sole axis the tool advertises. The curators
+        # table is keyed on genre/tier; tier is available at the service layer
+        # (_db_list_curators) but is not exposed as a tool param.
         rows = pitch_service._db_list_curators(genre=genre)
         curators = [
             {
