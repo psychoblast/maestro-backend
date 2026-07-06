@@ -2792,6 +2792,46 @@ LEDGER_LOCK_TOOLS = [
             },
         },
     },
+    {
+        "name": "build_royalty_doc_scaffold",
+        "description": ("Build a compact document scaffold for one of two royalty documents, "
+                        "AFTER you have interviewed the artist and gathered what the document "
+                        "actually requires. doc_type 'registration_checklist_doc': pass "
+                        "inputs.situation with ONLY the flags the artist explicitly confirmed "
+                        "(same axes as build_registration_checklist) — the scaffold returns the "
+                        "situation summary verbatim, one registration step per stream (body + "
+                        "capacity + reason), the metadata-consistency block (ISRC/ISWC/IPI/legal "
+                        "names), a Letter-of-Direction step when applicable, and the reminders. "
+                        "doc_type 'letter_of_direction': pass the canonical LOD fields "
+                        "(artist_legal_name, payee_legal_name, payee_contact, recordings_covered "
+                        "with ISRCs, percentage_directed, effective_date, "
+                        "signatures_both_parties) — percentage_directed is ALWAYS a supplied "
+                        "input the parties agreed; NEVER compute or suggest one; omit it if "
+                        "unknown so it comes back as [NEEDS:percentage_directed]. Include ONLY "
+                        "what the artist actually told you — omit unknowns so they come back as "
+                        "[NEEDS:...] gaps instead of invented facts. Then WRITE the document "
+                        "draft yourself in your reply from the scaffold: follow each section's "
+                        "guidance, keep every [NEEDS:...] and [ARTIST-SUPPLIED: ...] marker "
+                        "verbatim, and never invent a rate, %, or society rule. The draft is a "
+                        "review starting point — NOT submit-ready, NOT a legal document, NOT tax "
+                        "or legal advice."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_type": {"type": "string",
+                             "enum": ["registration_checklist_doc", "letter_of_direction"]},
+                "inputs": {
+                    "type": "object",
+                    "description": ("Everything gathered from the artist. For "
+                                    "registration_checklist_doc: 'situation' (object of "
+                                    "explicitly confirmed flags). For letter_of_direction: the "
+                                    "canonical LOD field names. Omit anything not gathered — "
+                                    "unmapped extras ride along verbatim."),
+                },
+            },
+            "required": ["doc_type"],
+        },
+    },
 ]
 
 
@@ -2903,6 +2943,22 @@ async def _execute_ledger_lock_tool(name: str, tool_input: dict, artist_id: str)
             "result": (f"{len(res['registrations'])} registration(s), "
                        f"{len(res['needs'])} gap(s)"),
         }
+        return res, summary, False
+
+    if name == "build_royalty_doc_scaffold":
+        # Deliberately NOT gated — data/scaffold tool, no account needed.
+        dt = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await ledger_lock_service.build_royalty_doc_scaffold(
+            doc_type=dt, inputs=raw_inputs,
+        )
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={dt or '(missing)'}", "result": result_str}
         return res, summary, False
 
     return (

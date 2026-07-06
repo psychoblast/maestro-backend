@@ -11,6 +11,15 @@ the artist knows the true net they should book, and file a tax document (an
 estimate, an annual return, a 1099, etc.) with the artist's connected bookkeeping
 account so the filing actually gets lodged on their behalf.
 
+Unit 3: build_royalty_doc_scaffold is a DATA tool (Jade-U4 / Reed-U3 pattern,
+option B) — it returns compact ingredients (ordered sections, [NEEDS:<field>]
+gaps, [ARTIST-SUPPLIED: ...] reminders); Nadia writes the draft in her own
+turn. No model call here — this module imports no LLM SDK. The
+registration_checklist_doc branch reuses build_registration_checklist (Unit 2)
+rather than duplicating its logic; the letter_of_direction branch consumes
+LOD_SPEC as data, and percentage_directed is a SUPPLIED input — NEVER computed
+or suggested; absent means [NEEDS:percentage_directed].
+
 Unit 2: lookup_recording_societies and build_registration_checklist are pure
 reads/computations over the royalties_data corpus (Nadia Unit 1) — the corpus
 is the single source of truth; no domain fact is invented here. The lookup
@@ -384,6 +393,195 @@ async def build_registration_checklist(situation: dict = None) -> dict:
                              "is ever stated as fact; every other split is "
                              + royalties_data.SPLIT_UNKNOWN_SENTINEL + "."),
     }
+
+
+# ── Unit-3 doc-scaffold plumbing (data only; Nadia writes the prose) ──────────
+
+_NOT_SUBMIT_READY_NOTE = (
+    "Scaffold only — write the draft yourself from these ingredients. The draft "
+    "is a review starting point for the artist and their manager — NOT "
+    "submit-ready, NOT a legal document, NOT tax or legal advice. Keep every "
+    "[NEEDS:...] and [ARTIST-SUPPLIED: ...] marker verbatim and never invent a "
+    "rate, a %, or a society rule. Tax questions route to a qualified "
+    "professional; agreements (including a Letter of Direction) route to Lex "
+    "framed as a draft-for-review."
+)
+
+
+def _missing_input(inputs: dict, field: str) -> bool:
+    """A field is missing when absent, None, or an empty/whitespace string."""
+    value = inputs.get(field)
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+async def build_royalty_doc_scaffold(doc_type: str = "", inputs: dict = None) -> dict:
+    """Build a compact document scaffold: registration_checklist_doc or letter_of_direction.
+
+    DATA/SCAFFOLD tool — no model call, no prose, no I/O (Jade-U4 / Reed-U3
+    pattern; this module imports no LLM SDK). Every content field in the
+    result is a supplied input verbatim, a [NEEDS:<field>] gap, or an
+    [ARTIST-SUPPLIED: ...] reminder — nothing is ever fabricated. The
+    registration_checklist_doc branch reuses build_registration_checklist
+    (Unit 2) for rule application and gaps rather than duplicating that logic.
+    The letter_of_direction branch consumes LOD_SPEC as data;
+    percentage_directed is a SUPPLIED input — NEVER computed or suggested;
+    absent means [NEEDS:percentage_directed].
+    """
+    dt = (doc_type or "").strip().lower()
+    inputs = dict(inputs) if isinstance(inputs, dict) else {}
+    if dt == "registration_checklist_doc":
+        return await _scaffold_registration_checklist_doc(inputs)
+    if dt == "letter_of_direction":
+        return _scaffold_letter_of_direction(inputs)
+    return {
+        "status": "unknown_doc_type",
+        "doc_type": dt or "(missing)",
+        "supported_doc_types": ["registration_checklist_doc", "letter_of_direction"],
+        "message": ("Unsupported doc_type. Supported: 'registration_checklist_doc' "
+                    "(the artist's royalty-registration checklist as a document) or "
+                    "'letter_of_direction' (directing a share of recording "
+                    "royalties to a producer / session player)."),
+    }
+
+
+async def _scaffold_registration_checklist_doc(inputs: dict) -> dict:
+    """Checklist document scaffold — rule application comes from Unit 2, reused."""
+    situation = inputs.get("situation")
+    situation = situation if isinstance(situation, dict) else {}
+    checklist = await build_registration_checklist(situation)
+
+    spec_axes = tuple(royalties_data.REGISTRATION_SITUATION_SPEC)
+    situation_summary = {
+        axis: (checklist["situation"][axis] if axis in checklist["situation"]
+               else _GAP.format(axis))
+        for axis in spec_axes
+    }
+
+    steps = []
+    for i, entry in enumerate(checklist["registrations"], start=1):
+        bodies = entry["bodies"]
+        steps.append({
+            "step": i,
+            "stream_id": entry["stream_id"],
+            "stream_description": royalties_data.STREAMS[entry["stream_id"]]["description"],
+            "registration": entry["registration"],
+            "capacity": entry["capacity"],
+            # recording-side records carry registration_notes; composition-side
+            # records (publishing_data) carry registration_fee_notes instead.
+            "bodies": ([{"id": b["id"], "name": b["name"],
+                         "registration_notes": b.get("registration_notes",
+                                                     b.get("registration_fee_notes"))}
+                        for b in bodies]
+                       if bodies is not None else None),
+            "reason": entry["reason"],
+            "notes": entry["notes"],
+            "split": entry["split"],
+            **({"body_status": entry["body_status"], "body_note": entry["body_note"]}
+               if bodies is None else {}),
+        })
+
+    lod_entries = [e for e in checklist["registrations"]
+                   if e["registration"] == "letter_of_direction"]
+
+    sections = [
+        {"key": "situation_summary", "title": "Situation",
+         "guidance": "The flags the artist explicitly confirmed — verbatim; an "
+                     "unconfirmed axis stays a [NEEDS:...] gap, never assumed.",
+         "content_or_gap": situation_summary},
+        {"key": "registration_steps", "title": "Registration Steps",
+         "guidance": "One step per required registration: which body, in which "
+                     "capacity, for which royalty stream, and why.",
+         "content_or_gap": steps or _GAP.format(
+             "registrations — no branch fired; supply the situation flags")},
+        {"key": "metadata_consistency", "title": "Metadata Consistency",
+         "guidance": "The same ISRC, ISWC, IPI, and legal names on EVERY "
+                     "registration — a mismatch strands royalties in the black box.",
+         "content_or_gap": dict(checklist["metadata_reminders"])},
+    ]
+    if lod_entries:
+        sections.append({
+            "key": "letter_of_direction", "title": "Letter of Direction",
+            "guidance": "Producers / session players owed a directed share are "
+                        "paid via a Letter of Direction — build it with the "
+                        "letter_of_direction doc_type; the directed percentage "
+                        "is ALWAYS a supplied input, never computed or suggested.",
+            "content_or_gap": {
+                "applies_because": lod_entries[0]["reason"],
+                "bodies": [b["name"] for b in (lod_entries[0]["bodies"] or [])],
+                "canonical_fields": [f["field"] for f in royalties_data.LOD_SPEC["fields"]],
+            },
+        })
+    sections.append({
+        "key": "reminders", "title": "Reminders",
+        "guidance": "Carry these into the document verbatim.",
+        "content_or_gap": {
+            "split_discipline": checklist["split_discipline"],
+            "no_tax_or_legal_advice": next(
+                r["statement"] for r in royalties_data.HONESTY_RULES
+                if r["id"] == "no_tax_or_legal_advice"),
+        },
+    })
+
+    unmapped = {k: v for k, v in inputs.items() if k != "situation"}
+    result = {
+        "status": "scaffold_ready",
+        "doc_type": "registration_checklist_doc",
+        "sections": sections,
+        "missing": list(checklist["needs"]),
+        "notes": list(checklist["notes"]),
+        "note": _NOT_SUBMIT_READY_NOTE,
+    }
+    if unmapped:
+        result["unmapped_inputs"] = unmapped
+    return result
+
+
+def _scaffold_letter_of_direction(inputs: dict) -> dict:
+    """LOD scaffold — every field supplied verbatim, [NEEDS:<field>], or
+    [ARTIST-SUPPLIED: ...]; percentage_directed NEVER computed or suggested."""
+    spec = royalties_data.LOD_SPEC
+    missing, artist_supplied_reminders, sections = [], [], []
+
+    for f in spec["fields"]:
+        field = f["field"]
+        if not _missing_input(inputs, field):
+            content = inputs[field]
+        elif field == "signatures_both_parties":
+            # A signature is a physical act of the parties — it can never be
+            # "supplied" through chat, so its absence is an artist-side
+            # reminder, not a data gap.
+            content = ("[ARTIST-SUPPLIED: signatures_both_parties — both "
+                       "parties must sign; an unsigned letter directs nothing]")
+            artist_supplied_reminders.append(content)
+        else:
+            content = _GAP.format(field)
+            missing.append(content)
+        sections.append({
+            "key": field,
+            "title": field.replace("_", " ").title(),
+            "guidance": f["description"],
+            "content_or_gap": content,
+        })
+
+    known = {f["field"] for f in spec["fields"]}
+    unmapped = {k: v for k, v in inputs.items() if k not in known}
+
+    result = {
+        "status": "scaffold_ready",
+        "doc_type": "letter_of_direction",
+        "sections": sections,
+        "missing": missing,
+        "artist_supplied_reminders": artist_supplied_reminders,
+        "reminders": [dict(r) for r in spec["reminders"]],
+        "note": _NOT_SUBMIT_READY_NOTE,
+    }
+    if unmapped:
+        result["unmapped_inputs"] = unmapped
+    return result
 
 
 def _ledger_account_connected(artist_id: str) -> bool:

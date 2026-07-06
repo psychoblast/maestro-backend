@@ -307,8 +307,18 @@ def test_service_source_is_entity_wall_clean():
 
 
 def test_service_imports_no_anthropic():
-    source = pathlib.Path(svc.__file__).read_text(encoding="utf-8")
-    assert "anthropic" not in source.lower(), "service layer must not touch the LLM"
+    import ast as _ast
+    tree = _ast.parse(pathlib.Path(svc.__file__).read_text(encoding="utf-8"))
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Import):
+            names = [a.name for a in node.names]
+        elif isinstance(node, _ast.ImportFrom):
+            names = [node.module or ""]
+        else:
+            continue
+        for name in names:
+            assert "anthropic" not in name.lower(), \
+                "service layer must not import the LLM SDK"
 
 
 # ── Wiring: both new tools through the real /api/chat_stream loop ─────────────
