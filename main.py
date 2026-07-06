@@ -6495,6 +6495,57 @@ LABEL_SERVICES_TOOLS = [
             "required": ["release_title"],
         },
     },
+    {
+        "name": "lookup_release_requirements",
+        "description": ("Look up the delivery conventions for ONE release topic before "
+                        "acting: identifiers (ISRC/UPC/ISWC new-vs-same rules + the "
+                        "duplicate doctrine), metadata (ordered release- and track-level "
+                        "fields), artwork (the current artwork spec), timeline (the "
+                        "work-backwards lead times + editorial windows), release_record "
+                        "(the permanent per-release record), or distributor_switch (the "
+                        "ordered switch mechanism). Every spec is a CURRENT CONVENTION — "
+                        "tell the artist to verify it with their distributor/platform "
+                        "live. THE HARD RULE OF THIS DOMAIN: no identifier (ISRC/UPC/"
+                        "ISWC), release date, or credit is EVER invented — each is the "
+                        "artist's supplied input verbatim, an explicit [NEEDS:<fact>] "
+                        "gap, or an [ARTIST-SUPPLIED:<confirm>] reminder; and a supplied "
+                        "artist name is passed through byte-exact, never re-cased."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["identifiers", "metadata", "artwork", "timeline",
+                             "release_record", "distributor_switch"],
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "build_release_checklist",
+        "description": ("Build an ordered, work-backwards release checklist from the "
+                        "timeline doctrine, AFTER you have gathered the release type, "
+                        "how many WEEKS until the release date, and whether this is the "
+                        "artist's FIRST release. Include ONLY what the artist actually "
+                        "told you — each unsupplied axis (release_type / "
+                        "weeks_to_release / first_release) comes back as an explicit "
+                        "[NEEDS:<axis>] gap, NEVER defaulted. When weeks_to_release is "
+                        "inside the four-week upload lead, the checklist attaches an "
+                        "honest timeline_already_inside_lead warning and NEVER silently "
+                        "re-plans or invents a compressed day-by-day schedule — surface "
+                        "the risk and let the artist decide. Cross-references (the "
+                        "ink-and-air split sheet + sync pack) are named, not resolved "
+                        "here."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "release_type": {"type": "string", "enum": ["single", "ep", "album"]},
+                "weeks_to_release": {"type": "integer"},
+                "first_release": {"type": "boolean"},
+            },
+        },
+    },
 ]
 
 
@@ -6563,6 +6614,34 @@ async def _execute_label_services_tool(name: str, tool_input: dict, artist_id: s
                 {"input": f"release_title={nm}", "result": "auth_expired"},
                 True,
             )
+
+    if name == "lookup_release_requirements":
+        # Deliberately NOT gated on LABEL_SERVICES_CONNECTED — pure corpus read,
+        # no distributor account needed (mirrors Cree's ungated lookup).
+        topic = (tool_input.get("topic") or "").strip()
+        res = await label_services_service.lookup_release_requirements(topic)
+        if res.get("status") == "ok":
+            result_str = f"{len(res['honesty_rules'])} honesty rule(s)"
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"topic={topic or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "build_release_checklist":
+        # Deliberately NOT gated — deterministic checklist over the corpus.
+        res = await label_services_service.build_release_checklist(
+            release_type=tool_input.get("release_type"),
+            weeks_to_release=tool_input.get("weeks_to_release"),
+            first_release=tool_input.get("first_release"),
+        )
+        rt = res["release_type"]
+        wk = res["weeks_to_release"]
+        summary = {
+            "input": f"type={rt} weeks={wk}",
+            "result": (f"{len(res['checklist'])} item(s), {len(res['missing'])} gap(s), "
+                       f"{len(res['warnings'])} warning(s)"),
+        }
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},
