@@ -1,30 +1,36 @@
 """
-PROOF tests — Ray B (venue-hawk) Anthropic tool_use loop.
+PROOF tests — Ray B (venue-hawk) Anthropic tool_use loop (U2 OUTREACH rework).
 
-Mirrors tests/test_wire_vault_keeper.py / tests/test_marcus_tool_use.py. Proves
-that, in /api/chat_stream:
+Mirrors tests/test_wire_brand_connect.py / test_wire_airwave.py. Proves that, in
+/api/chat_stream:
 
-  (a) Ray B emits search_venues → draft_show_offer → submit_booking_hold then a
-      final message; all three mock-first venue_hawk_service functions are invoked
-      with the correct args and the stream surfaces a populated `actions` event
-      (actions_taken), with VENUE_HAWK_TOOLS passed on every create() call;
-  (b) a NON-venue agent (producer-connect) never receives VENUE_HAWK_TOOLS — it takes the
+  (a) Ray B emits search_venues → submit_booking_hold → lookup_booking_doctrine →
+      send_booking_inquiry then a final message; all four mock-first
+      venue_hawk_service functions are invoked with the correct args and the stream
+      surfaces a populated `actions` event, with VENUE_HAWK_TOOLS passed on every
+      create() call. search_venues NEVER fabricates a venue (it filters the
+      artist-supplied list); submit_booking_hold records state and does not send;
+      send_booking_inquiry is the gated mock send with the model-written body;
+  (b) a NON-venue agent (music-edu) never receives VENUE_HAWK_TOOLS — it takes the
       unchanged streaming path and emits NO `actions` event;
   (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool loop
       with MARCUS_TOOLS, never VENUE_HAWK_TOOLS;
-  (d) the account-not-connected (missing-credential) path is handled gracefully
-      (no crash; the actions event carries venue_booking_not_connected=True);
-  (e) expired account auth also degrades to the not-connected path.
+  (d) the account-not-connected (missing-credential) path on send_booking_inquiry
+      is handled gracefully (no crash; actions carries venue_booking_not_connected);
+  (e) expired account auth also degrades to the not-connected path;
+  (f) this (newest) unit OWNS the exact venue-hawk tool roster; and
+  (g) the service tool layer contains NO LLM send seam (AST-enforced).
 
 Everything is in-process and deterministic. NO network / LLM / booking calls — the
 Anthropic client is faked and the venue_hawk_service boundary is exercised through
 recording wrappers over the REAL (pure, mock-first) functions.
 """
+import ast
 import importlib
 import json
+import pathlib
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -88,51 +94,72 @@ def _parse_sse(body: str) -> list:
     return events
 
 
-# ── (a) Ray B runs the tool loop and surfaces actions_taken ──────────────────
+# Artist-supplied venue list — the ONLY source of venue names Ray B ever sees.
+_ARTIST_VENUES = [
+    {"name": "The Corner Room", "market": "New York", "capacity_tier": "theatre", "genre": "indie"},
+    {"name": "Riverside Bar",   "market": "Austin",   "capacity_tier": "club",    "genre": "indie"},
+]
+
+
+# ── (a) Ray B runs the full tool loop and surfaces actions_taken ─────────────
 
 def test_venue_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    # A connected booking account so the hold succeeds (no network).
+    # A connected booking account so the inquiry send succeeds (no network).
     monkeypatch.setenv("VENUE_HAWK_ACCOUNT_CONNECTED", "true")
 
-    # Record calls into the REAL (pure) venue_hawk_service functions, delegating to
-    # the originals so we assert on real, deterministic output.
-    search_calls, draft_calls, hold_calls = [], [], []
-    real_search = m.venue_hawk_service.search_venues
-    real_draft  = m.venue_hawk_service.draft_show_offer
-    real_hold   = m.venue_hawk_service.submit_booking_hold
+    search_calls, hold_calls, doctrine_calls, send_calls = [], [], [], []
+    real_search   = m.venue_hawk_service.search_venues
+    real_hold     = m.venue_hawk_service.submit_booking_hold
+    real_doctrine = m.venue_hawk_service.lookup_booking_doctrine
+    real_send     = m.venue_hawk_service.send_booking_inquiry
 
-    async def rec_search(market="", capacity_tier=""):
-        search_calls.append({"market": market, "capacity_tier": capacity_tier})
-        return await real_search(market=market, capacity_tier=capacity_tier)
+    async def rec_search(market="", capacity_tier="", genre="", venue_list=None):
+        search_calls.append({"market": market, "capacity_tier": capacity_tier,
+                             "genre": genre, "venue_list": venue_list})
+        return await real_search(market=market, capacity_tier=capacity_tier,
+                                 genre=genre, venue_list=venue_list)
 
-    async def rec_draft(artist_id, venue_id="", show_date="", guarantee=0):
-        draft_calls.append({"artist_id": artist_id, "venue_id": venue_id,
-                            "show_date": show_date, "guarantee": guarantee})
-        return await real_draft(artist_id, venue_id=venue_id,
-                                show_date=show_date, guarantee=guarantee)
+    async def rec_hold(artist_id, venue="", venue_id="", show_dates=None, act="",
+                       deal_structure="", hold_type="first"):
+        hold_calls.append({"artist_id": artist_id, "venue": venue, "venue_id": venue_id,
+                           "show_dates": show_dates, "act": act,
+                           "deal_structure": deal_structure, "hold_type": hold_type})
+        return await real_hold(artist_id, venue=venue, venue_id=venue_id,
+                               show_dates=show_dates, act=act,
+                               deal_structure=deal_structure, hold_type=hold_type)
 
-    async def rec_hold(artist_id, venue_id, show_date, guarantee=0):
-        hold_calls.append({"artist_id": artist_id, "venue_id": venue_id,
-                           "show_date": show_date, "guarantee": guarantee})
-        return await real_hold(artist_id, venue_id, show_date, guarantee)
+    async def rec_doctrine(topic=""):
+        doctrine_calls.append({"topic": topic})
+        return await real_doctrine(topic)
 
-    monkeypatch.setattr(m.venue_hawk_service, "search_venues",       rec_search)
-    monkeypatch.setattr(m.venue_hawk_service, "draft_show_offer",    rec_draft)
-    monkeypatch.setattr(m.venue_hawk_service, "submit_booking_hold", rec_hold)
+    async def rec_send(artist_id, venue_id="", venue="", subject="", body=""):
+        send_calls.append({"artist_id": artist_id, "venue_id": venue_id,
+                           "venue": venue, "subject": subject, "body": body})
+        return await real_send(artist_id, venue_id=venue_id, venue=venue,
+                               subject=subject, body=body)
 
-    # Scripted Anthropic responses: search → draft → hold → final text.
+    monkeypatch.setattr(m.venue_hawk_service, "search_venues",          rec_search)
+    monkeypatch.setattr(m.venue_hawk_service, "submit_booking_hold",    rec_hold)
+    monkeypatch.setattr(m.venue_hawk_service, "lookup_booking_doctrine", rec_doctrine)
+    monkeypatch.setattr(m.venue_hawk_service, "send_booking_inquiry",   rec_send)
+
+    # Scripted responses: search → hold → doctrine → send → final text.
     responses = [
         _Resp([_Block("tool_use", name="search_venues",
-                      input={"market": "New York", "capacity_tier": "theatre"}, id="t1")], "tool_use"),
-        _Resp([_Block("tool_use", name="draft_show_offer",
-                      input={"venue_id": "ven-mercury-hall",
-                             "show_date": "2026-09-01", "guarantee": 5000}, id="t2")], "tool_use"),
+                      input={"market": "New York", "capacity_tier": "theatre",
+                             "venue_list": _ARTIST_VENUES}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="submit_booking_hold",
-                      input={"venue_id": "ven-mercury-hall",
-                             "show_date": "2026-09-01", "guarantee": 5000}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — I found the room, drafted the offer, and placed the hold.")],
+                      input={"venue": "The Corner Room", "show_dates": ["2026-09-01"],
+                             "act": "The Act", "deal_structure": "door split",
+                             "hold_type": "first"}, id="t2")], "tool_use"),
+        _Resp([_Block("tool_use", name="lookup_booking_doctrine",
+                      input={"topic": "hold_system"}, id="t3")], "tool_use"),
+        _Resp([_Block("tool_use", name="send_booking_inquiry",
+                      input={"venue": "The Corner Room", "subject": "Avails?",
+                             "body": "Hi — checking Sept avails for The Act."}, id="t4")], "tool_use"),
+        _Resp([_Block("text", text="Done — filtered the room, recorded the hold, and sent the inquiry.")],
               "end_turn"),
     ]
     create_calls = []
@@ -142,7 +169,7 @@ def test_venue_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pa
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-    # Guard: the streaming path must NOT be used by Ray B.
+
     def _no_stream(**kw):
         raise AssertionError("venue-hawk must not use messages.stream")
     monkeypatch.setattr(m.async_client.messages, "stream", _no_stream)
@@ -150,7 +177,7 @@ def test_venue_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pa
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "venue-hawk",
-        "message":   "find me a NY theatre and hold a date",
+        "message":   "find me a NY theatre from my list and start an inquiry",
         "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
@@ -159,44 +186,46 @@ def test_venue_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pa
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # All three internal functions invoked with correct args.
-    assert search_calls == [{"market": "New York", "capacity_tier": "theatre"}], search_calls
-    assert draft_calls == [{
-        "artist_id": "artist-9", "venue_id": "ven-mercury-hall",
-        "show_date": "2026-09-01", "guarantee": 5000,
-    }], draft_calls
+    # search_venues filtered the ARTIST-supplied list (never fabricated).
+    assert len(search_calls) == 1
+    assert search_calls[0]["market"] == "New York"
+    assert search_calls[0]["venue_list"] == _ARTIST_VENUES
+    # submit_booking_hold recorded state (not a send).
     assert hold_calls == [{
-        "artist_id": "artist-9", "venue_id": "ven-mercury-hall",
-        "show_date": "2026-09-01", "guarantee": 5000,
+        "artist_id": "artist-9", "venue": "The Corner Room", "venue_id": "",
+        "show_dates": ["2026-09-01"], "act": "The Act",
+        "deal_structure": "door split", "hold_type": "first",
     }], hold_calls
+    assert doctrine_calls == [{"topic": "hold_system"}], doctrine_calls
+    # send_booking_inquiry carried the MODEL-written body verbatim.
+    assert send_calls == [{
+        "artist_id": "artist-9", "venue_id": "", "venue": "The Corner Room",
+        "subject": "Avails?", "body": "Hi — checking Sept avails for The Act.",
+    }], send_calls
 
-    # actions event present, populated, before done.
     assert "actions" in types, types
     assert "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
     assert tools_used == [
-        "search_venues", "draft_show_offer", "submit_booking_hold",
+        "search_venues", "submit_booking_hold", "lookup_booking_doctrine",
+        "send_booking_inquiry",
     ], tools_used
     assert actions_evt["venue_booking_not_connected"] is False
 
-    # Real, deterministic results surfaced in the action summaries.
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
-    assert "venue(s) found" in by_tool["search_venues"]["result"]
-    # date present, venue known, positive guarantee → viable / send.
-    assert "viable=True" in by_tool["draft_show_offer"]["result"]
-    assert "send" in by_tool["draft_show_offer"]["result"]
-    assert by_tool["submit_booking_hold"]["result"] == "booking hold placed"
+    assert "artist-supplied venue(s) matched" in by_tool["search_venues"]["result"]
+    assert "hold request recorded" in by_tool["submit_booking_hold"]["result"]
+    assert "honesty rule(s)" in by_tool["lookup_booking_doctrine"]["result"]
+    assert by_tool["send_booking_inquiry"]["result"] == "booking inquiry sent"
 
     assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    # Four create() round-trips: search, draft, hold, final.
-    assert len(create_calls) == 4
-    # VENUE_HAWK_TOOLS passed on every venue create call (never other toolsets).
+    # Five create() round-trips: search, hold, doctrine, send, final.
+    assert len(create_calls) == 5
     assert all(kw.get("tools") == m.VENUE_HAWK_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
-    assert all(kw.get("tools") != m.VAULT_KEEPER_TOOLS for kw in create_calls)
-    assert all(kw.get("tools") != m.DESIGN_STUDIO_TOOLS for kw in create_calls)
+    assert all(kw.get("tools") != m.LIVE_WIRE_TOOLS for kw in create_calls)
 
 
 # ── (b) Non-venue agent never gets venue tools, takes the unchanged path ──────
@@ -226,9 +255,7 @@ def test_non_venue_agent_never_receives_venue_tools(monkeypatch, tmp_path):
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # Unchanged path: the tool-loop create() is never touched.
     assert create_calls == [], "non-venue agent must not invoke the tool_use create loop"
-    # No actions event for non-venue agents.
     assert "actions" not in types, types
     assert "done" in types
 
@@ -260,7 +287,6 @@ def test_marcus_still_uses_marcus_tools_not_venue(monkeypatch, tmp_path):
     assert resp.status_code == 200
 
     assert len(create_calls) == 1
-    # Marcus keeps its own toolset — the venue gate did not bleed into it.
     assert create_calls[0].get("tools") == m.MARCUS_TOOLS
     assert create_calls[0].get("tools") != m.VENUE_HAWK_TOOLS
 
@@ -270,13 +296,13 @@ def test_marcus_still_uses_marcus_tools_not_venue(monkeypatch, tmp_path):
 def test_venue_booking_not_connected_is_handled(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    # No booking account connected → submit raises VenueBookingNotConnected.
+    # No booking account connected → send_booking_inquiry raises VenueBookingNotConnected.
     monkeypatch.delenv("VENUE_HAWK_ACCOUNT_CONNECTED", raising=False)
 
     responses = [
-        _Resp([_Block("tool_use", name="submit_booking_hold",
-                      input={"venue_id": "ven-echo-club",
-                             "show_date": "2026-10-10", "guarantee": 2000}, id="t1")], "tool_use"),
+        _Resp([_Block("tool_use", name="send_booking_inquiry",
+                      input={"venue": "The Corner Room", "subject": "Avails?",
+                             "body": "Hi — checking dates."}, id="t1")], "tool_use"),
         _Resp([_Block("text", text="You need to connect a booking account first.")], "end_turn"),
     ]
     create_calls = []
@@ -290,7 +316,7 @@ def test_venue_booking_not_connected_is_handled(monkeypatch, tmp_path):
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "venue-hawk",
-        "message":   "hold the Echo Club",
+        "message":   "send the inquiry to the Corner Room",
         "artist_id": "artist-no-account",
         "history":   "[]",
         "tts":       False,
@@ -299,7 +325,6 @@ def test_venue_booking_not_connected_is_handled(monkeypatch, tmp_path):
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # Stream completes without crashing.
     assert "done" in types
     assert "error" not in types, types
     actions_evt = next(e for e in events if e["type"] == "actions")
@@ -315,9 +340,9 @@ def test_venue_booking_auth_expired_is_handled(monkeypatch, tmp_path):
     monkeypatch.setenv("VENUE_HAWK_ACCOUNT_CONNECTED", "expired")
 
     responses = [
-        _Resp([_Block("tool_use", name="submit_booking_hold",
-                      input={"venue_id": "ven-fillmore-west",
-                             "show_date": "2026-11-11", "guarantee": 4000}, id="t1")], "tool_use"),
+        _Resp([_Block("tool_use", name="send_booking_inquiry",
+                      input={"venue": "Riverside Bar", "subject": "Avails?",
+                             "body": "Hi — checking dates."}, id="t1")], "tool_use"),
         _Resp([_Block("text", text="Your booking-account auth expired.")], "end_turn"),
     ]
     create_calls = []
@@ -331,7 +356,7 @@ def test_venue_booking_auth_expired_is_handled(monkeypatch, tmp_path):
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "venue-hawk",
-        "message":   "hold the Fillmore",
+        "message":   "send the inquiry to Riverside",
         "artist_id": "artist-expired",
         "history":   "[]",
         "tts":       False,
@@ -341,3 +366,34 @@ def test_venue_booking_auth_expired_is_handled(monkeypatch, tmp_path):
     actions_evt = next(e for e in events if e["type"] == "actions")
     assert actions_evt["venue_booking_not_connected"] is True
     assert actions_evt["actions_taken"][0]["result"] == "venue_booking_auth_expired"
+
+
+# ── (f) newest unit OWNS the exact venue-hawk tool roster ────────────────────
+
+def test_venue_hawk_tool_roster_is_exact(monkeypatch, tmp_path):
+    m = _load_main(monkeypatch, tmp_path)
+    names = [t["name"] for t in m.VENUE_HAWK_TOOLS]
+    assert names == ["search_venues", "submit_booking_hold",
+                     "lookup_booking_doctrine", "send_booking_inquiry"], names
+    # the fabricated-directory draft_show_offer was removed this build.
+    assert "draft_show_offer" not in names
+
+
+# ── (g) the service tool layer carries NO LLM send seam (AST-enforced) ───────
+
+def test_service_layer_has_no_llm_send_seam():
+    import venue_hawk_service as vhs
+    source = pathlib.Path(vhs.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    # No import of an LLM SDK.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                assert "anthropic" not in a.name.lower(), a.name
+        if isinstance(node, ast.ImportFrom):
+            assert "anthropic" not in (node.module or "").lower(), node.module
+    # No `*.messages.create(...)` model send call anywhere.
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "create" and isinstance(node.func.value, ast.Attribute):
+                assert node.func.value.attr != "messages", "no messages.create in the tool layer"

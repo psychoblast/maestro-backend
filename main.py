@@ -3613,41 +3613,107 @@ VENUE_HAWK_MAX_TOOL_ITERS = 5
 VENUE_HAWK_TOOLS = [
     {
         "name": "search_venues",
-        "description": "Search the venue directory by the market/city a venue sits in or its capacity tier (club, theatre, amphitheatre)",
+        "description": ("Filter an ARTIST-SUPPLIED venue list by market/region, "
+                        "capacity tier, or genre fit. This tool NEVER invents venue "
+                        "or promoter names — it has no built-in directory. Pass the "
+                        "artist's own venue list in `venue_list`; with no list it "
+                        "returns a [NEEDS:venue_targets] gap you must surface to the "
+                        "artist (ask them for target venues or a connected source)."),
         "input_schema": {
             "type": "object",
             "properties": {
                 "market": {"type": "string"},
-                "capacity_tier": {
-                    "type": "string",
-                    "enum": ["club", "theatre", "amphitheatre"],
+                "capacity_tier": {"type": "string"},
+                "genre": {"type": "string"},
+                "venue_list": {
+                    "type": "array",
+                    "description": ("Artist-supplied venues. Each item is an object "
+                                    "with any of: name, market/region, capacity_tier, "
+                                    "genre. Never fabricate entries."),
+                    "items": {"type": "object"},
                 },
             },
         },
     },
     {
-        "name": "draft_show_offer",
-        "description": "Draft a concrete show offer by applying a venue's deal terms to a guarantee, estimating the artist's door potential and projected payout",
+        "name": "submit_booking_hold",
+        "description": ("Build and record a hold REQUEST (venue, date(s), act, "
+                        "deal-structure ask, hold_type/pencil order). This does NOT "
+                        "send anything and does NOT confirm a booking — it assembles "
+                        "the state and returns an aggregated `missing` list of any "
+                        "gaps. A hold is a request, not a confirmed booking."),
         "input_schema": {
             "type": "object",
             "properties": {
+                "venue": {"type": "string"},
                 "venue_id": {"type": "string"},
-                "show_date": {"type": "string"},
-                "guarantee": {"type": "number"},
+                "show_dates": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "One or more target dates for the hold.",
+                },
+                "act": {"type": "string"},
+                "deal_structure": {
+                    "type": "string",
+                    "description": ("The deal STRUCTURE being asked for (e.g. flat "
+                                    "guarantee, door split, versus deal) — the "
+                                    "structure, not an invented figure."),
+                },
+                "hold_type": {
+                    "type": "string",
+                    "enum": ["first", "second", "third"],
+                },
             },
         },
     },
     {
-        "name": "submit_booking_hold",
-        "description": "Submit a booking hold on a date at a venue through the artist's connected booking/ticketing account on their behalf",
+        "name": "lookup_booking_doctrine",
+        "description": ("Look up the doctrine for ONE booking topic before acting: "
+                        "'hold_system' (holds/pencils/challenge chain), "
+                        "'deal_mechanisms' (flat guarantee, door split, versus, "
+                        "bonus, percentage-after-split — structures only), "
+                        "'deal_memo' (the minimum deal-memo fields), 'rider' "
+                        "(hospitality vs technical), 'outreach' (routing, avails, "
+                        "cadence), 'agent_economics', or 'boundaries' (what belongs "
+                        "to tour-commander / puppet-master / airwave). THE HARD RULE "
+                        "OF THIS DOMAIN: NO guarantee, split percentage, commission, "
+                        "or currency figure is ever invented or quoted — mechanisms "
+                        "are encoded, numbers are negotiated and only ever the "
+                        "artist's own; venue names are never fabricated; a hold is "
+                        "never a confirmation; deal evaluation is STRUCTURAL."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "enum": ["hold_system", "deal_mechanisms", "deal_memo", "rider",
+                             "outreach", "agent_economics", "boundaries"],
+                },
+            },
+            "required": ["topic"],
+        },
+    },
+    {
+        "name": "send_booking_inquiry",
+        "description": ("Send a personalized booking inquiry on the artist's behalf. "
+                        "YOU write the inquiry subject and body in your turn and pass "
+                        "them in — this tool SENDS them, it never writes or edits the "
+                        "inquiry for you, and it never invents a venue or a figure "
+                        "(any guarantee must be one the artist supplied). Identify "
+                        "the venue with `venue_id` or `venue`. If the artist has not "
+                        "connected a booking account the send is blocked and you must "
+                        "tell them to connect one first. Keep it short and pertinent "
+                        "— the ask, the act, the routing window, the avails; no bio, "
+                        "no persuasive essay."),
         "input_schema": {
             "type": "object",
             "properties": {
                 "venue_id": {"type": "string"},
-                "show_date": {"type": "string"},
-                "guarantee": {"type": "number"},
+                "venue": {"type": "string"},
+                "subject": {"type": "string"},
+                "body": {"type": "string"},
             },
-            "required": ["venue_id", "show_date"],
+            "required": ["subject", "body"],
         },
     },
 ]
@@ -3670,53 +3736,75 @@ async def _execute_venue_hawk_tool(name: str, tool_input: dict, artist_id: str) 
     if name == "search_venues":
         market        = (tool_input.get("market") or "").strip()
         capacity_tier = (tool_input.get("capacity_tier") or "").strip()
-        res = await venue_hawk_service.search_venues(market=market, capacity_tier=capacity_tier)
-        summary = {
-            "input": f"market={market or 'any'} tier={capacity_tier or 'any'}",
-            "result": f"{res['count']} venue(s) found",
-        }
-        return res, summary, False
-
-    if name == "draft_show_offer":
-        venue_id  = (tool_input.get("venue_id") or "").strip()
-        show_date = (tool_input.get("show_date") or "").strip()
-        guarantee = tool_input.get("guarantee") or 0
-        res = await venue_hawk_service.draft_show_offer(
-            artist_id, venue_id=venue_id, show_date=show_date, guarantee=guarantee,
+        genre         = (tool_input.get("genre") or "").strip()
+        venue_list    = tool_input.get("venue_list")
+        res = await venue_hawk_service.search_venues(
+            market=market, capacity_tier=capacity_tier, genre=genre,
+            venue_list=venue_list,
         )
+        if res.get("status") == "needs_targets":
+            result_str = "no venue list supplied — [NEEDS:venue_targets]"
+        else:
+            result_str = f"{res['count']} artist-supplied venue(s) matched"
         summary = {
-            "input": f"venue_id={venue_id or 'unspecified'} show_date={show_date or 'unspecified'}",
-            "result": f"viable={res['viable']}, {res['recommendation']}",
+            "input": f"market={market or 'any'} tier={capacity_tier or 'any'} genre={genre or 'any'}",
+            "result": result_str,
         }
         return res, summary, False
 
     if name == "submit_booking_hold":
-        venue_id  = (tool_input.get("venue_id") or "").strip()
-        show_date = (tool_input.get("show_date") or "").strip()
-        guarantee = tool_input.get("guarantee") or 0
-        if not venue_id:
-            return (
-                {"error": "missing_venue_id"},
-                {"input": f"venue_id={venue_id or ''} show_date={show_date}",
-                 "result": "missing venue id"},
-                False,
-            )
+        venue      = (tool_input.get("venue") or "").strip()
+        venue_id   = (tool_input.get("venue_id") or "").strip()
+        show_dates = tool_input.get("show_dates")
+        act        = (tool_input.get("act") or "").strip()
+        deal       = (tool_input.get("deal_structure") or "").strip()
+        hold_type  = (tool_input.get("hold_type") or "first").strip()
+        res = await venue_hawk_service.submit_booking_hold(
+            artist_id, venue=venue, venue_id=venue_id, show_dates=show_dates,
+            act=act, deal_structure=deal, hold_type=hold_type,
+        )
+        if res.get("status") == "recorded":
+            result_str = f"hold request recorded ({hold_type})"
+        else:
+            result_str = f"incomplete — missing {', '.join(res.get('missing', [])) or 'fields'}"
+        summary = {
+            "input": f"venue={venue or venue_id or 'unspecified'} hold_type={hold_type}",
+            "result": result_str,
+        }
+        return res, summary, False
+
+    if name == "lookup_booking_doctrine":
+        # Deliberately NOT gated — pure corpus read, no account needed.
+        topic = (tool_input.get("topic") or "").strip()
+        res = await venue_hawk_service.lookup_booking_doctrine(topic)
+        if res.get("status") == "ok":
+            result_str = f"{len(res['honesty_rules'])} honesty rule(s)"
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"topic={topic or '(missing)'}", "result": result_str}
+        return res, summary, False
+
+    if name == "send_booking_inquiry":
+        # Marcus send seam: the MODEL wrote subject/body; the tool only sends.
+        venue_id = (tool_input.get("venue_id") or "").strip()
+        venue    = (tool_input.get("venue") or "").strip()
+        subject  = tool_input.get("subject") or ""
+        body     = tool_input.get("body") or ""
         try:
-            held = await venue_hawk_service.submit_booking_hold(
-                artist_id, venue_id, show_date, guarantee,
+            sent = await venue_hawk_service.send_booking_inquiry(
+                artist_id, venue_id=venue_id, venue=venue, subject=subject, body=body,
             )
-            if held.get("status") == "unknown_venue":
+            if sent.get("status") == "missing_venue":
                 return (
-                    {"error": "unknown_venue", "venue_id": held.get("venue_id")},
-                    {"input": f"venue_id={venue_id}", "result": "unknown venue"},
+                    {"error": "missing_venue"},
+                    {"input": f"venue_id={venue_id or ''} venue={venue or ''}",
+                     "result": "missing venue"},
                     False,
                 )
             return (
-                {"status": "held", "reference": held.get("reference"),
-                 "venue_id": held.get("venue_id"), "venue_name": held.get("venue_name"),
-                 "show_date": held.get("show_date"), "guarantee": held.get("guarantee")},
-                {"input": f"venue_id={venue_id} show_date={show_date}",
-                 "result": "booking hold placed"},
+                sent,
+                {"input": f"venue={venue or venue_id} subject={subject[:40]}",
+                 "result": "booking inquiry sent"},
                 False,
             )
         except venue_hawk_service.VenueBookingNotConnected:
@@ -3724,9 +3812,9 @@ async def _execute_venue_hawk_tool(name: str, tool_input: dict, artist_id: str) 
                 {
                     "venue_booking_not_connected": True,
                     "message": ("Artist has not connected a booking/ticketing account. Tell them "
-                                "to connect one before you can submit booking holds."),
+                                "to connect one before you can send booking inquiries."),
                 },
-                {"input": f"venue_id={venue_id}", "result": "venue_booking_not_connected"},
+                {"input": f"venue={venue or venue_id}", "result": "venue_booking_not_connected"},
                 True,
             )
         except venue_hawk_service.VenueBookingAuthExpired:
@@ -3734,9 +3822,9 @@ async def _execute_venue_hawk_tool(name: str, tool_input: dict, artist_id: str) 
                 {
                     "venue_booking_not_connected": True,
                     "message": ("Booking-account authorization expired. Tell the artist to "
-                                "re-connect their booking account before you can submit holds."),
+                                "re-connect their booking account before you can send inquiries."),
                 },
-                {"input": f"venue_id={venue_id}", "result": "venue_booking_auth_expired"},
+                {"input": f"venue={venue or venue_id}", "result": "venue_booking_auth_expired"},
                 True,
             )
 
@@ -7037,7 +7125,9 @@ async def _execute_live_coach_tool(name: str, tool_input: dict, artist_id: str) 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Knox (live-wire) tool_use: search_venues + assess_show_offer + submit_booking_hold
+# Knox (live-wire) tool_use: assess_show_offer
+# (search_venues + submit_booking_hold were DUPLICATES of Ray B's booking tools and
+#  were removed this build — Ray B / venue-hawk OWNS booking; see the step-0 report.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the live-wire agent ONLY (see the gate in
@@ -7050,17 +7140,6 @@ LIVE_WIRE_MAX_TOOL_ITERS = 5
 
 LIVE_WIRE_TOOLS = [
     {
-        "name": "search_venues",
-        "description": "Search the venue directory by city or capacity tier",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "city": {"type": "string", "enum": ['london', 'berlin', 'austin', 'toronto']},
-                "capacity_tier": {"type": "string"},
-            },
-        },
-    },
-    {
         "name": "assess_show_offer",
         "description": "Screen a show offer for unfavourable terms",
         "input_schema": {
@@ -7070,18 +7149,6 @@ LIVE_WIRE_TOOLS = [
                 "context": {"type": "string"},
             },
             "required": ["offer_text"],
-        },
-    },
-    {
-        "name": "submit_booking_hold",
-        "description": "Submit a date hold on the connected booking account",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "venue_name": {"type": "string"},
-                "hold_type": {"type": "string", "enum": ['first', 'second', 'challenge']},
-            },
-            "required": ["venue_name"],
         },
     },
 ]
@@ -7096,16 +7163,6 @@ async def _execute_live_wire_tool(name: str, tool_input: dict, artist_id: str) -
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_venues":
-        a = (tool_input.get("city") or "").strip()
-        b = (tool_input.get("capacity_tier") or "").strip()
-        res = await live_wire_service.search_venues(city=a, capacity_tier=b)
-        summary = {
-            "input": f"city={a or 'any'} capacity_tier={b or 'any'}",
-            "result": f"{res['count']} venue(s) found",
-        }
-        return res, summary, False
-
     if name == "assess_show_offer":
         txt = tool_input.get("offer_text") or ""
         ctx = (tool_input.get("context") or "").strip()
@@ -7115,43 +7172,6 @@ async def _execute_live_wire_tool(name: str, tool_input: dict, artist_id: str) -
             "result": f"{res['finding_count']} issue(s), {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "submit_booking_hold":
-        nm  = (tool_input.get("venue_name") or "").strip()
-        opt = (tool_input.get("hold_type") or "first").strip()
-        if not nm:
-            return (
-                {"error": "missing_venue_name"},
-                {"input": "venue_name=", "result": "missing venue_name"},
-                False,
-            )
-        try:
-            done = await live_wire_service.submit_booking_hold(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "venue_name": nm},
-                {"input": f"venue_name={nm} hold_type={opt}", "result": "hold submitted"},
-                False,
-            )
-        except live_wire_service.BookingAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a booking account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"venue_name={nm}", "result": "not_connected"},
-                True,
-            )
-        except live_wire_service.BookingAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Booking account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"venue_name={nm}", "result": "auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},

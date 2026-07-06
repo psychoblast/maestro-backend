@@ -1,36 +1,50 @@
 """
-PLMKR Venue-Hawk — booking-agent action service (mock-first).
+PLMKR Venue-Hawk — booking-agent action service (mock-first, OUTREACH pattern).
 
 Backs the Venue-Hawk (Ray B — Booking Agent) agent's tool_use loop in
 /api/chat_stream (see VENUE_HAWK_TOOLS in main.py). Ray B does not just advise on
-venues, show deals, and routing — these functions let the agent take real
-booking-agent actions: search the venue directory an artist can play (each carrying
-the market it sits in and its capacity tier), draft a concrete show offer by
-applying a venue's deal terms to a guarantee so the artist has a numbers-backed
-proposal to send a promoter, and submit a booking hold on a date at a venue through
-the artist's connected booking account so a date actually gets held on their behalf.
+venues, deals, and routing — these functions let the agent take real booking-agent
+actions, honestly:
+
+  - search_venues:          filter an ARTIST-SUPPLIED venue list on structured
+                            fields (market/region, capacity tier, genre fit). It
+                            NEVER invents venue names — with no real venue data it
+                            returns a [NEEDS:venue_targets] gap.
+  - submit_booking_hold:    build/record a hold-REQUEST state (venue, date(s), act,
+                            deal-structure ask, hold_type/pencil order) with an
+                            aggregated missing[]; it does NOT send and is NOT gated.
+                            A hold is not a confirmed booking.
+  - send_booking_inquiry:   the Marcus/Nia/Solo send seam — the MODEL writes the
+                            inquiry body in its turn and passes it in; this tool
+                            only SENDS (deterministic mock, ``BOOK-``+sha1) behind
+                            the VENUE_HAWK_ACCOUNT_CONNECTED gate. It never writes
+                            or edits prose and never invents a venue or a figure.
+  - lookup_booking_doctrine: a PURE read over booking_data.py — no gate, no I/O.
 
 MOCK-FIRST CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
-  - ZERO network calls. No live venue/promoter APIs, no ticketing rails, no LLM.
+  - ZERO network calls. No live venue/promoter APIs, no ticketing rails, no LLM
+    client and no model send call anywhere in this tool layer — the send seam is
+    a deterministic sha1 mock only.
   - NO secrets are read or embedded. The only "credential" surface is a
     connection check (``_venue_booking_connected``) driven by an env flag so
     tests can toggle the connected / not-connected / expired states
-    deterministically — mirroring vault_keeper_service._vault_account_connected
-    without touching a wire.
-  - Deterministic: no timestamps or random values leak into return payloads, so
-    tests can assert on exact structure.
+    deterministically — mirroring vault_keeper_service._vault_account_connected.
+  - Deterministic: no timestamps or random values leak into return payloads.
+  - NEVER fabricate a venue name, promoter, guarantee, split, or commission — the
+    booking_data.py HONESTY_RULES are the law of this module.
 """
 import hashlib
 import os
+
+import booking_data
 
 
 class VenueBookingNotConnected(Exception):
     """Raised when the artist has not connected a booking/ticketing account.
 
-    Mirrors vault_keeper_service.VaultAccountNotConnected: the tool loop catches
-    this and degrades gracefully into a structured 'connect your booking account
-    first' result instead of crashing the stream.
+    The tool loop catches this and degrades gracefully into a structured 'connect
+    your booking account first' result instead of crashing the stream.
     """
 
 
@@ -38,173 +52,189 @@ class VenueBookingAuthExpired(Exception):
     """Raised when a previously connected booking-account authorization expired."""
 
 
-# ── Venue directory (in-memory reference data) ─────────────────────────────────
-# A curated set of venues an artist can pursue. Each venue carries the market it
-# sits in, its capacity tier (club / theatre / amphitheatre), a hard capacity, an
-# average ticket price, and the artist's typical door split (percent of gross the
-# act keeps after the guarantee). The agent can surface the right rooms for a
-# routing plan and apply a venue's terms to a guarantee to draft a real offer. No
-# I/O.
-_VENUES = [
-    {
-        "id": "ven-echo-club",
-        "name": "The Echo Club",
-        "market": "Los Angeles",
-        "capacity_tier": "club",
-        "capacity": 500,
-        "avg_ticket": 25.0,
-        "door_split_pct": 70,
-    },
-    {
-        "id": "ven-canal-room",
-        "name": "Canal Room",
-        "market": "New York",
-        "capacity_tier": "club",
-        "capacity": 350,
-        "avg_ticket": 20.0,
-        "door_split_pct": 65,
-    },
-    {
-        "id": "ven-mercury-hall",
-        "name": "Mercury Hall",
-        "market": "New York",
-        "capacity_tier": "theatre",
-        "capacity": 1200,
-        "avg_ticket": 45.0,
-        "door_split_pct": 75,
-    },
-    {
-        "id": "ven-fillmore-west",
-        "name": "Fillmore West",
-        "market": "San Francisco",
-        "capacity_tier": "theatre",
-        "capacity": 1150,
-        "avg_ticket": 40.0,
-        "door_split_pct": 72,
-    },
-    {
-        "id": "ven-corner-hotel",
-        "name": "Corner Hotel",
-        "market": "Melbourne",
-        "capacity_tier": "club",
-        "capacity": 800,
-        "avg_ticket": 30.0,
-        "door_split_pct": 68,
-    },
-    {
-        "id": "ven-desert-amp",
-        "name": "Desert Amphitheatre",
-        "market": "Phoenix",
-        "capacity_tier": "amphitheatre",
-        "capacity": 5000,
-        "avg_ticket": 60.0,
-        "door_split_pct": 80,
-    },
-]
+# ── search_venues — honest, artist-supplied only (never fabricates venues) ─────
+
+def _venue_field(v: dict, *keys) -> str:
+    """Return the first present, stringified value among ``keys`` on venue ``v``."""
+    for k in keys:
+        val = v.get(k)
+        if val is not None:
+            return str(val)
+    return ""
 
 
-async def search_venues(market: str = "", capacity_tier: str = "") -> dict:
-    """Search venues by the market they sit in and/or their capacity tier.
+def _match_venue(v: dict, market: str, capacity_tier: str, genre: str) -> bool:
+    """Case-insensitive substring match on whichever structured fields exist.
 
-    Both filters are optional and matched case-insensitively as substrings.
-    ``market`` matches the venue's market/city (e.g. "New York"), and
-    ``capacity_tier`` matches the tier (e.g. "club", "theatre", "amphitheatre").
-    Returns {"venues": [...], "count": int}. Pure — no I/O.
+    A filter that is empty matches everything; a filter with a value only matches
+    when the venue carries the corresponding field and it contains the value.
     """
-    mk = (market or "").strip().lower()
-    ct = (capacity_tier or "").strip().lower()
-    matches = [
-        dict(v)
-        for v in _VENUES
-        if (not mk or mk in v["market"].lower())
-        and (not ct or ct in v["capacity_tier"].lower())
-    ]
-    return {"venues": matches, "count": len(matches)}
+    if market:
+        hay = " ".join((_venue_field(v, "market", "region", "city"),)).lower()
+        if market.lower() not in hay:
+            return False
+    if capacity_tier:
+        hay = _venue_field(v, "capacity_tier", "tier").lower()
+        if capacity_tier.lower() not in hay:
+            return False
+    if genre:
+        hay = _venue_field(v, "genre", "genres", "genre_fit").lower()
+        if genre.lower() not in hay:
+            return False
+    return True
 
 
-def _get_venue(venue_id: str) -> dict | None:
-    vid = (venue_id or "").strip()
-    for v in _VENUES:
-        if v["id"] == vid:
-            return v
-    return None
+async def search_venues(market: str = "", capacity_tier: str = "",
+                        genre: str = "", venue_list=None) -> dict:
+    """Filter an ARTIST-SUPPLIED venue list on structured fields — never invents.
 
-
-async def draft_show_offer(
-    artist_id: str,
-    venue_id: str = "",
-    show_date: str = "",
-    guarantee: float = 0,
-) -> dict:
-    """Draft a concrete show offer by applying a venue's terms to a guarantee.
-
-    Deterministic offer construction — never contacts a promoter or ticketing
-    API. Looks the venue up by id, checks a show date and a positive guarantee are
-    present, and estimates the artist's door potential (capacity × avg ticket ×
-    door split) on top of the guarantee. Returns a structured offer with line
-    items, projected payout, gaps, and a recommendation of
-    "send" / "revise" / "blocked".
+    ``venue_list`` is the artist's own list of venue dicts (each may carry name,
+    market/region, capacity_tier, genre). When it is present and non-empty the
+    function filters it by whichever of ``market`` / ``capacity_tier`` / ``genre``
+    were supplied and returns the matches tagged ``[ARTIST-SUPPLIED:venue_list]``.
+    When NO real venue data is supplied it returns a ``[NEEDS:venue_targets]`` gap
+    — it NEVER conjures a venue name from a built-in directory. Pure — no I/O.
     """
-    venue = _get_venue(venue_id)
+    mk = (market or "").strip()
+    ct = (capacity_tier or "").strip()
+    g  = (genre or "").strip()
+    criteria = {"market": mk, "capacity_tier": ct, "genre": g}
 
-    try:
-        gtee = round(float(guarantee or 0), 2)
-    except (TypeError, ValueError):
-        gtee = 0.0
+    supplied = [v for v in (venue_list or []) if isinstance(v, dict)]
+    if not supplied:
+        return {
+            "status": "needs_targets",
+            "source": "[NEEDS:venue_targets]",
+            "criteria": criteria,
+            "venues": [],
+            "count": 0,
+            "message": ("No venue directory is connected and no venue list was "
+                        "supplied. Venue and promoter names are never invented — "
+                        "supply a venue list or connect a real source."),
+        }
 
-    gaps = []
-    if not (show_date or "").strip():
-        gaps.append("missing_show_date")
-    if not (venue_id or "").strip():
-        gaps.append("missing_venue")
-    elif venue is None:
-        gaps.append("unknown_venue")
-    if gtee <= 0:
-        gaps.append("non_positive_guarantee")
-
-    line_items = []
-    door_potential = 0.0
-    projected_payout = 0.0
-    if venue is not None and gtee > 0:
-        door_potential = round(
-            venue["capacity"] * venue["avg_ticket"] * venue["door_split_pct"] / 100.0,
-            2,
-        )
-        line_items.append({"label": "guarantee", "amount": gtee})
-        line_items.append({"label": "door_potential", "amount": door_potential})
-        projected_payout = round(gtee + door_potential, 2)
-
-    if "unknown_venue" in gaps or "missing_venue" in gaps:
-        # Without a valid venue target the offer cannot be built at all.
-        recommendation = "blocked"
-    elif gaps or projected_payout <= 0:
-        recommendation = "revise"
-    else:
-        recommendation = "send"
-    viable = recommendation == "send"
-
+    matches = [dict(v) for v in supplied if _match_venue(v, mk, ct, g)]
     return {
-        "viable": viable,
-        "gaps": gaps,
-        "venue_id": venue["id"] if venue else (venue_id or "").strip(),
-        "venue_name": venue["name"] if venue else None,
-        "market": venue["market"] if venue else None,
-        "show_date": (show_date or "").strip(),
-        "guarantee": gtee,
-        "line_items": line_items,
-        "door_potential": door_potential,
-        "projected_payout": projected_payout,
-        "recommendation": recommendation,
+        "status": "artist_supplied",
+        "source": "[ARTIST-SUPPLIED:venue_list]",
+        "criteria": criteria,
+        "venues": matches,
+        "count": len(matches),
     }
 
+
+# ── submit_booking_hold — build/record hold-REQUEST state (no send, no gate) ────
+
+_KNOWN_HOLD_TYPES = booking_data.HOLD_SYSTEM["hold_order"]  # ("first","second","third")
+
+
+def _clean_dates(show_dates) -> list:
+    """Normalize show_dates (str or list) into a list of non-empty date strings."""
+    if isinstance(show_dates, str):
+        items = [show_dates]
+    elif isinstance(show_dates, (list, tuple)):
+        items = list(show_dates)
+    else:
+        items = []
+    return [str(d).strip() for d in items if str(d).strip()]
+
+
+async def submit_booking_hold(artist_id: str, venue: str = "", venue_id: str = "",
+                              show_dates=None, act: str = "",
+                              deal_structure: str = "", hold_type: str = "first") -> dict:
+    """Build and record a hold-REQUEST — does NOT send and is NOT gated.
+
+    Assembles the state a hold needs (venue, date(s), act, deal-structure ask,
+    hold_type/pencil order) and aggregates a ``missing[]`` list of the gaps rather
+    than fabricating any of them. ``hold_type`` follows HOLD_SYSTEM's pencil order
+    (first / second / third); an unrecognized value is flagged, never silently
+    accepted as standard. Deterministic; no network, no LLM. A hold is not a
+    confirmed booking — that caveat rides out in the result.
+    """
+    vn  = (venue or "").strip()
+    vid = (venue_id or "").strip()
+    dates = _clean_dates(show_dates)
+    ac  = (act or "").strip()
+    ds  = (deal_structure or "").strip()
+    ht  = (hold_type or "first").strip().lower() or "first"
+
+    missing = []
+    if not (vn or vid):
+        missing.append("venue")
+    if not dates:
+        missing.append("show_dates")
+    if not ac:
+        missing.append("act")
+    if not ds:
+        missing.append("deal_structure")
+
+    return {
+        "status": "recorded" if not missing else "incomplete",
+        "hold_request": {
+            "venue": vn,
+            "venue_id": vid,
+            "show_dates": dates,
+            "act": ac,
+            "deal_structure": ds,
+            "hold_type": ht,
+        },
+        "hold_type_recognized": ht in _KNOWN_HOLD_TYPES,
+        "missing": missing,
+        "note": ("A hold is a request, not a confirmed booking; hold and challenge "
+                 "windows vary by venue — verify live."),
+    }
+
+
+# ── lookup_booking_doctrine — pure corpus read over booking_data.py ────────────
+
+_BOOKING_TOPIC_SECTIONS = {
+    "hold_system":     booking_data.HOLD_SYSTEM,
+    "deal_mechanisms": booking_data.DEAL_MECHANISMS,
+    "deal_memo":       booking_data.DEAL_MEMO_SPEC,
+    "rider":           booking_data.RIDER_SPEC,
+    "outreach":        booking_data.OUTREACH_DOCTRINE,
+    "agent_economics": booking_data.AGENT_ECONOMICS,
+    "boundaries":      booking_data.OUT_OF_SCOPE,
+}
+
+BOOKING_DOCTRINE_TOPICS = ("hold_system", "deal_mechanisms", "deal_memo", "rider",
+                           "outreach", "agent_economics", "boundaries")
+
+
+async def lookup_booking_doctrine(topic: str = "") -> dict:
+    """Look up the doctrine for ONE booking topic — pure corpus read, no gate.
+
+    Returns the relevant booking_data.py section plus the FULL honesty-rule set
+    (venues/figures are never invented; deal evaluation is structural; a hold is
+    not a confirmation). An unknown topic returns a structured ``unknown_topic``
+    error listing the supported topics. No I/O, no LLM, nothing invented.
+    """
+    t = (topic or "").strip().lower()
+    honesty_rules = [dict(r) for r in booking_data.HONESTY_RULES]
+    if t in _BOOKING_TOPIC_SECTIONS:
+        return {
+            "status": "ok",
+            "topic": t,
+            "data": _BOOKING_TOPIC_SECTIONS[t],
+            "honesty_rules": honesty_rules,
+        }
+    return {
+        "status": "unknown_topic",
+        "topic": t or "(missing)",
+        "supported_topics": list(BOOKING_DOCTRINE_TOPICS),
+        "message": ("Unsupported topic. Supported: "
+                    + ", ".join(BOOKING_DOCTRINE_TOPICS) + "."),
+    }
+
+
+# ── send_booking_inquiry — the Marcus send seam (model writes body; tool sends) ─
 
 def _venue_booking_connected(artist_id: str) -> bool:
     """Mock connection check for the artist's booking/ticketing account.
 
-    In production this would look up a stored booking-account link for the artist.
-    Here it is driven purely by the ``VENUE_HAWK_ACCOUNT_CONNECTED`` env flag so
-    tests can toggle connected / expired / not-connected with ZERO network calls
-    and NO real secret. Values:
+    Driven purely by the ``VENUE_HAWK_ACCOUNT_CONNECTED`` env flag so tests can
+    toggle connected / expired / not-connected with ZERO network calls and NO real
+    secret. Values:
       - "expired"                     → raise VenueBookingAuthExpired
       - "1"/"true"/"yes"/"connected"  → connected
       - anything else / unset         → not connected
@@ -215,42 +245,47 @@ def _venue_booking_connected(artist_id: str) -> bool:
     return val in ("1", "true", "yes", "connected")
 
 
-async def submit_booking_hold(
-    artist_id: str,
-    venue_id: str,
-    show_date: str,
-    guarantee: float = 0,
-) -> dict:
-    """Submit a booking hold on a date at a venue via the artist's booking account.
+def _submit_booking_inquiry(artist_id: str, venue_key: str, subject: str, body: str) -> str:
+    """In-repo mock-send seam — deterministic ``BOOK-`` sha1 reference, ZERO network.
 
-    Raises VenueBookingNotConnected / VenueBookingAuthExpired when no booking
-    account is linked so the caller can surface a 'connect your booking account'
-    message instead of a hard failure. When the venue id is unknown, returns a
-    structured {"status": "unknown_venue"} result rather than raising. On success
-    returns a deterministic mock hold reference — NO network call is ever made and
-    no date is actually held.
+    This is the ONLY 'send' point and it is obviously a mock: no wire, no
+    messages.create. The reference is a stable sha1 of the identity + the model's
+    verbatim subject/body so a test can assert determinism.
+    """
+    digest = hashlib.sha1(
+        f"{artist_id}:{venue_key}:{subject}:{body}".encode("utf-8")
+    ).hexdigest()
+    return "BOOK-" + digest[:10].upper()
+
+
+async def send_booking_inquiry(artist_id: str, venue_id: str = "", venue: str = "",
+                               subject: str = "", body: str = "") -> dict:
+    """Send an artist's booking inquiry — the MODEL wrote the body; this tool sends.
+
+    The ``subject`` and ``body`` are written by the model in its turn and passed in
+    verbatim; this function NEVER generates or edits them and NEVER invents a venue
+    or a figure. It follows the account-gate seam: raises VenueBookingNotConnected
+    / VenueBookingAuthExpired when no booking account is linked, returns a
+    structured {"status": "missing_venue"} when no venue is identified, and on
+    success returns a deterministic mock send reference — NO network call is ever
+    made and no inquiry is actually delivered. The supplied subject/body ride back
+    out byte-exact so the caller can confirm what was sent.
     """
     if not _venue_booking_connected(artist_id):
         raise VenueBookingNotConnected(
             "artist has not connected a booking/ticketing account"
         )
-    venue = _get_venue(venue_id)
-    if venue is None:
-        return {"status": "unknown_venue", "venue_id": (venue_id or "").strip()}
-    sd = (show_date or "").strip()
-    try:
-        gtee = round(float(guarantee or 0), 2)
-    except (TypeError, ValueError):
-        gtee = 0.0
-    digest = hashlib.sha1(
-        f"{artist_id}:{venue['id']}:{sd}:{gtee}".encode("utf-8")
-    ).hexdigest()
-    reference = "HOLD-" + digest[:10].upper()
+    vid = (venue_id or "").strip()
+    vn  = (venue or "").strip()
+    venue_key = vid or vn
+    if not venue_key:
+        return {"status": "missing_venue", "venue_id": vid, "venue": vn}
+    reference = _submit_booking_inquiry(artist_id, venue_key, subject, body)
     return {
-        "status": "held",
+        "status": "sent",
         "reference": reference,
-        "venue_id": venue["id"],
-        "venue_name": venue["name"],
-        "show_date": sd,
-        "guarantee": gtee,
+        "venue_id": vid,
+        "venue": vn,
+        "subject": subject,   # verbatim — the tool never edits the model's inquiry
+        "body": body,         # verbatim — never generated or modified here
     }

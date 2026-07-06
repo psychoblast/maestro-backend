@@ -1,14 +1,19 @@
 """
 PROOF tests — Knox (live-wire) Anthropic tool_use loop.
 
-Mirrors tests/test_wire_lex_cipher.py / test_wire_ai_navigator.py. Proves that,
-in /api/chat_stream: (a) Knox emits search_venues -> assess_show_offer -> submit_booking_hold then a final message
-and surfaces a populated `actions` event with LIVE_WIRE_TOOLS on every create();
-(b) a non-target agent never receives LIVE_WIRE_TOOLS; (c) the gate is exclusive
-(Marcus still uses MARCUS_TOOLS); (d) the not-connected path is graceful; and
-(e) expired auth degrades the same way. Zero network / LLM — the Anthropic client
-is faked and the live_wire_service boundary is exercised through recording wrappers over
-the REAL (pure, mock-first) functions.
+NOTE (RAY-B build, July 2026): Knox's search_venues and submit_booking_hold were
+DUPLICATES of Ray B's booking tools and were REMOVED — Ray B / venue-hawk OWNS
+booking (see _audit/rayb_step0_collision_report.md). Knox keeps ONLY its own,
+non-duplicate assess_show_offer screen, which is ungated.
+
+Mirrors tests/test_wire_lex_cipher.py. Proves that, in /api/chat_stream:
+(a) Knox emits assess_show_offer then a final message and surfaces a populated
+`actions` event with LIVE_WIRE_TOOLS on every create();
+(b) a non-target agent never receives LIVE_WIRE_TOOLS;
+(c) the gate is exclusive (Marcus still uses MARCUS_TOOLS); and
+(d) the duplicate booking tools are gone from both the schema and the service.
+Zero network / LLM — the Anthropic client is faked and the live_wire_service
+boundary is exercised through recording wrappers over the REAL functions.
 """
 import importlib
 import json
@@ -72,38 +77,22 @@ def _parse_sse(body: str) -> list:
     return events
 
 
-def test_live_wire_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
+def test_live_wire_tool_loop_invokes_function_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("LIVE_WIRE_CONNECTED", "true")
 
-    f1_calls, f2_calls, f3_calls = [], [], []
-    real_f1 = m.live_wire_service.search_venues
-    real_f2 = m.live_wire_service.assess_show_offer
-    real_f3 = m.live_wire_service.submit_booking_hold
+    f_calls = []
+    real_assess = m.live_wire_service.assess_show_offer
 
-    async def rec_f1(city="", capacity_tier=""):
-        f1_calls.append({"city": city, "capacity_tier": capacity_tier})
-        return await real_f1(city=city, capacity_tier=capacity_tier)
+    async def rec_assess(artist_id, offer_text="", context=""):
+        f_calls.append({"artist_id": artist_id, "offer_text": offer_text, "context": context})
+        return await real_assess(artist_id, offer_text=offer_text, context=context)
 
-    async def rec_f2(artist_id, offer_text="", context=""):
-        f2_calls.append({"artist_id": artist_id, "offer_text": offer_text, "context": context})
-        return await real_f2(artist_id, offer_text=offer_text, context=context)
-
-    async def rec_f3(artist_id, venue_name, hold_type="first"):
-        f3_calls.append({"artist_id": artist_id, "venue_name": venue_name, "hold_type": hold_type})
-        return await real_f3(artist_id, venue_name, hold_type)
-
-    monkeypatch.setattr(m.live_wire_service, "search_venues", rec_f1)
-    monkeypatch.setattr(m.live_wire_service, "assess_show_offer", rec_f2)
-    monkeypatch.setattr(m.live_wire_service, "submit_booking_hold", rec_f3)
+    monkeypatch.setattr(m.live_wire_service, "assess_show_offer", rec_assess)
 
     responses = [
-        _Resp([_Block("tool_use", name="search_venues", input={"city": "london"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="assess_show_offer",
-                      input={"offer_text": "no guarantee", "context": "ctx"}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="submit_booking_hold",
-                      input={"venue_name": "Test Item", "hold_type": "first"}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — took the actions across all three tools.")], "end_turn"),
+                      input={"offer_text": "no guarantee", "context": "ctx"}, id="t1")], "tool_use"),
+        _Resp([_Block("text", text="Done — screened the offer.")], "end_turn"),
     ]
     create_calls = []
 
@@ -120,7 +109,7 @@ def test_live_wire_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tm
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "live-wire",
-        "message":   "take some actions for me",
+        "message":   "screen this offer for me",
         "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
@@ -129,25 +118,21 @@ def test_live_wire_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tm
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    assert f1_calls == [{"city": "london", "capacity_tier": ""}], f1_calls
-    assert f2_calls == [{"artist_id": "artist-9", "offer_text": "no guarantee", "context": "ctx"}], f2_calls
-    assert f3_calls == [{"artist_id": "artist-9", "venue_name": "Test Item", "hold_type": "first"}], f3_calls
+    assert f_calls == [{"artist_id": "artist-9", "offer_text": "no guarantee", "context": "ctx"}], f_calls
 
     assert "actions" in types, types
     assert "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == ["search_venues", "assess_show_offer", "submit_booking_hold"], tools_used
+    assert tools_used == ["assess_show_offer"], tools_used
     assert actions_evt["not_connected"] is False
 
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
-    assert "venue(s) found" in by_tool["search_venues"]["result"]
     assert "issue(s)" in by_tool["assess_show_offer"]["result"]
-    assert by_tool["submit_booking_hold"]["result"] == "hold submitted"
 
     assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    assert len(create_calls) == 4
+    assert len(create_calls) == 2
     assert all(kw.get("tools") == m.LIVE_WIRE_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
 
@@ -210,67 +195,13 @@ def test_live_wire_marcus_still_uses_marcus_tools(monkeypatch, tmp_path):
     assert create_calls[0].get("tools") != m.LIVE_WIRE_TOOLS
 
 
-def test_live_wire_not_connected_is_handled(monkeypatch, tmp_path):
+def test_live_wire_duplicate_booking_tools_removed(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.delenv("LIVE_WIRE_CONNECTED", raising=False)
-
-    responses = [
-        _Resp([_Block("tool_use", name="submit_booking_hold", input={"venue_name": "Blocked Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect an account first.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "live-wire",
-        "message":   "do the gated action",
-        "artist_id": "artist-none",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "not_connected"
-
-
-def test_live_wire_auth_expired_is_handled(monkeypatch, tmp_path):
-    m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("LIVE_WIRE_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="submit_booking_hold", input={"venue_name": "Old Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your account auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "live-wire",
-        "message":   "do the gated action on the old item",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "auth_expired"
+    # Schema: only assess_show_offer remains on Knox.
+    names = [t["name"] for t in m.LIVE_WIRE_TOOLS]
+    assert names == ["assess_show_offer"], names
+    # Service: the duplicated booking functions and their gate/exceptions are gone.
+    assert not hasattr(m.live_wire_service, "search_venues")
+    assert not hasattr(m.live_wire_service, "submit_booking_hold")
+    assert not hasattr(m.live_wire_service, "BookingAccountNotConnected")
+    assert not hasattr(m.live_wire_service, "BookingAccountAuthExpired")
