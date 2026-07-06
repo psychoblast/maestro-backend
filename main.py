@@ -4790,7 +4790,7 @@ async def _execute_sync_agent_tool(name: str, tool_input: dict, artist_id: str) 
 
 
 # ── Unit — Creative-Director (creative-director) tool_use: search_rollout_templates
-#    + assess_creative_concept + schedule_rollout ──────────────────────────────
+#    + assess_creative_concept + schedule_rollout + lookup_copy_conventions ─────
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
 # Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
@@ -4849,6 +4849,33 @@ CREATIVE_DIRECTOR_TOOLS = [
                 "kickoff": {"type": "string"},
             },
             "required": ["template_id", "release_title"],
+        },
+    },
+    {
+        "name": "lookup_copy_conventions",
+        "description": ("Look up the structural conventions for ONE copy document type before "
+                        "drafting it: the spec (word ranges / ordered sections / elements), the "
+                        "conventions or doctrine that govern it, and the honesty rules. "
+                        "doc_type is one of bio_short, bio_medium, bio_long, press_release, "
+                        "one_sheet, epk_outline, caption_set. Bio word ranges are in words; "
+                        "bio_long's upper bound is None — genuinely open-ended, never a guessed "
+                        "ceiling. THE HARD RULE OF THIS DOMAIN: no fact, stat, press quote, or "
+                        "comparison is EVER invented — every fact in any copy document is the "
+                        "artist's supplied input verbatim, an explicit [NEEDS:<fact>] gap, or an "
+                        "[ARTIST-SUPPLIED:<confirm>] reminder. Quotes appear only verbatim WITH "
+                        "their source; stats only as supplied; comparisons only if the artist "
+                        "supplied them. Every draft is for the artist's review — never "
+                        "publish-ready."),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "doc_type": {
+                    "type": "string",
+                    "enum": ["bio_short", "bio_medium", "bio_long", "press_release",
+                             "one_sheet", "epk_outline", "caption_set"],
+                },
+            },
+            "required": ["doc_type"],
         },
     },
 ]
@@ -4938,6 +4965,19 @@ async def _execute_creative_director_tool(name: str, tool_input: dict, artist_id
                 {"input": f"template={template_id}", "result": "creative_studio_auth_expired"},
                 True,
             )
+
+    if name == "lookup_copy_conventions":
+        # Deliberately NOT gated on CREATIVE_DIRECTOR_STUDIO_CONNECTED — pure
+        # corpus read, no studio account needed (mirrors Nadia's ungated lookup).
+        dt = (tool_input.get("doc_type") or "").strip()
+        res = await creative_director_service.lookup_copy_conventions(dt)
+        if res.get("status") == "ok":
+            result_str = (f"{len(res['conventions'])} convention(s), "
+                          f"{len(res['honesty_rules'])} honesty rule(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={dt or '(missing)'}", "result": result_str}
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},

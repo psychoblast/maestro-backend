@@ -10,6 +10,17 @@ concept is against a chosen template's aesthetic, timing, and asset requirements
 and schedule that rollout on the artist's behalf through their connected creative
 studio / content-calendar account.
 
+Unit 2: lookup_copy_conventions is a pure read over the copy_data corpus (Cree
+Unit 1) — the corpus is the single source of truth; no domain fact is invented
+here (and the corpus itself contains no artist facts at all — copy conventions
+are structural doctrine). Every doc type's result carries its spec, its
+conventions/doctrine, and the full honesty-rule set (all five rules apply to
+every copy document — this domain is made of facts, and no fact, stat, quote,
+or comparison is ever invented: HONESTY_RULES.facts_supplied_or_marked).
+bio_long's word range surfaces its open upper bound honestly — (500, None),
+never a guessed ceiling. An unknown doc_type returns a structured error
+listing the supported types.
+
 MOCK-FIRST CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live content calendars, no publishing tools, no LLM.
@@ -23,6 +34,8 @@ MOCK-FIRST CONTRACT (hard rules for this module):
 """
 import hashlib
 import os
+
+import copy_data
 
 
 class CreativeStudioNotConnected(Exception):
@@ -218,6 +231,79 @@ async def assess_creative_concept(
         "matched": matched,
         "missing": missing,
         "recommendation": recommendation,
+    }
+
+
+# ── Unit-2 plumbing (pure; corpus-driven) ─────────────────────────────────────
+
+async def lookup_copy_conventions(doc_type: str = "") -> dict:
+    """Look up the conventions for one copy document type — pure corpus read.
+
+    Returns the relevant spec (structure/word ranges/ordered sections), the
+    conventions or doctrine that govern it, and the FULL honesty-rule set —
+    all five rules apply to every copy document; this domain is made of facts
+    and no fact, stat, quote, or comparison is ever invented
+    (HONESTY_RULES.facts_supplied_or_marked). bio_long's word range carries
+    its open upper bound honestly — (500, None), never a guessed ceiling. An
+    unknown doc_type returns a structured ``unknown_doc_type`` error listing
+    the supported types. No I/O, no LLM, nothing invented here.
+    """
+    dt = (doc_type or "").strip().lower()
+    honesty_rules = [dict(r) for r in copy_data.HONESTY_RULES]
+
+    if dt in copy_data.BIO_SPECS:
+        return {
+            "status": "ok",
+            "doc_type": dt,
+            "spec": dict(copy_data.BIO_SPECS[dt]),
+            "conventions": [dict(c) for c in copy_data.BIO_CONVENTIONS.values()],
+            "honesty_rules": honesty_rules,
+        }
+    if dt == "press_release":
+        return {
+            "status": "ok",
+            "doc_type": dt,
+            "spec": {"sections": [dict(s) for s in
+                                  copy_data.PRESS_RELEASE_SPEC["sections"]]},
+            "conventions": [dict(c) for c in
+                            copy_data.PRESS_RELEASE_SPEC["conventions"]],
+            "honesty_rules": honesty_rules,
+        }
+    if dt == "one_sheet":
+        return {
+            "status": "ok",
+            "doc_type": dt,
+            "spec": {"elements": [dict(e) for e in
+                                  copy_data.ONE_SHEET_SPEC["elements"]]},
+            "conventions": [dict(d) for d in copy_data.ONE_SHEET_SPEC["doctrine"]],
+            "honesty_rules": honesty_rules,
+        }
+    if dt == "epk_outline":
+        return {
+            "status": "ok",
+            "doc_type": dt,
+            "spec": {"core_components": [dict(c) for c in
+                                         copy_data.EPK_OUTLINE_SPEC["core_components"]],
+                     "optional_components": [dict(c) for c in
+                                             copy_data.EPK_OUTLINE_SPEC["optional_components"]]},
+            "conventions": [dict(d) for d in copy_data.EPK_OUTLINE_SPEC["doctrine"]],
+            "honesty_rules": honesty_rules,
+        }
+    if dt == "caption_set":
+        return {
+            "status": "ok",
+            "doc_type": dt,
+            "spec": {"elements": [dict(e) for e in
+                                  copy_data.CAPTION_SET_SPEC["elements"]]},
+            "conventions": [dict(r) for r in copy_data.CAPTION_SET_SPEC["rules"]],
+            "honesty_rules": honesty_rules,
+        }
+    return {
+        "status": "unknown_doc_type",
+        "doc_type": dt or "(missing)",
+        "supported_doc_types": list(copy_data.COPY_DOC_TYPES),
+        "message": ("Unsupported doc_type. Supported: "
+                    + ", ".join(copy_data.COPY_DOC_TYPES) + "."),
     }
 
 
