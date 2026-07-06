@@ -417,22 +417,18 @@ async def buffer_callback(code: str, state: str):
         raise HTTPException(status_code=503, detail="Buffer OAuth not configured")
     artist_id = state
     try:
-        # PERF-MAY14: blocking httpx.post() inside async def — blocks the event loop
-        # during the OAuth token exchange (~200–500ms). Fix: replace with
-        # `async with httpx.AsyncClient() as c: resp = await c.post(...)`.
-        # Low impact at current traffic; defer until Buffer OAuth is actively used.
-        import httpx
-        resp = httpx.post(
-            _BUFFER_TOKEN_URL,
-            data={
-                "client_id":     _BUFFER_CLIENT_ID,
-                "client_secret": _BUFFER_CLIENT_SECRET,
-                "redirect_uri":  _BUFFER_REDIRECT_URI,
-                "code":          code,
-                "grant_type":    "authorization_code",
-            },
-            timeout=15,
-        )
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(
+                _BUFFER_TOKEN_URL,
+                data={
+                    "client_id":     _BUFFER_CLIENT_ID,
+                    "client_secret": _BUFFER_CLIENT_SECRET,
+                    "redirect_uri":  _BUFFER_REDIRECT_URI,
+                    "code":          code,
+                    "grant_type":    "authorization_code",
+                },
+                timeout=15,
+            )
         tokens = resp.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Buffer token exchange failed: {e}")
