@@ -3272,152 +3272,149 @@ async def _execute_signal_blaster_tool(name: str, tool_input: dict, artist_id: s
     )
 
 
-# ── Unit — Grid-Prophet (grid-prophet) tool_use: search_growth_channels +
-# draft_content_plan + schedule_post ─────────────────────────────────────────
-# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
-# Victor / Nadia / Zara pattern exactly: these tools are passed to the Anthropic
-# API for the grid-prophet agent ONLY (see the gate in chat_stream). Every other
-# agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, and Zara —
-# takes its own unchanged path and never receives GRID_PROPHET_TOOLS. Handlers map
-# straight onto the mock-first grid_prophet_service functions; they make ZERO
-# network calls and read no secrets.
+# ── Unit — Grid-Prophet (Kai) tool_use ────────────────────────────────────────
+# DOC-WRITER Option B (digital-marketing engine). These tools are passed to the
+# Anthropic API for the grid-prophet agent ONLY (see the gate in chat_stream).
+# Every other agent takes its own unchanged path and never receives
+# GRID_PROPHET_TOOLS. Handlers map straight onto the digital-marketing
+# grid_prophet_service functions; they make ZERO network calls, read no
+# secrets, and are UNGATED (both are pure corpus-read / data-scaffold tools).
+# The old mock+gate growth-channel/content-plan/schedule-post tools and their
+# connected-account gate are RETIRED — Kai's real value is prep documents
+# (campaign plans, ad-test briefs) built from Kai's own digital-marketing
+# knowledge base, not a mock social-scheduling API.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 GRID_PROPHET_MAX_TOOL_ITERS = 5
 
 GRID_PROPHET_TOOLS = [
     {
-        "name": "search_growth_channels",
-        "description": "Search growth channels by the platform they live on or their reach tier (A=major, B=mid, C=niche)",
+        "name": "lookup_digital_marketing_doctrine",
+        "description": (
+            "Look up digital-marketing doctrine from Kai's corpus — filter by channel-"
+            "sequence key, organic-proof key, platform-selection key, budget-mechanics "
+            "key, measurement key, and/or first-72-hours (momentum) key. Call with no "
+            "filters to browse the available keys."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "platform": {
+                "sequence_key": {
                     "type": "string",
-                    "enum": ["tiktok", "instagram", "youtube", "spotify", "twitter", "discord"],
+                    "enum": list(grid_prophet_service.digital_marketing_data.CHANNEL_SEQUENCE),
                 },
-                "tier": {
+                "proof_key": {
                     "type": "string",
-                    "enum": ["A", "B", "C"],
+                    "enum": list(grid_prophet_service.digital_marketing_data.ORGANIC_PROOF_FIRST),
+                },
+                "platform_key": {
+                    "type": "string",
+                    "enum": list(grid_prophet_service.digital_marketing_data.PLATFORM_SELECTION),
+                },
+                "budget_key": {
+                    "type": "string",
+                    "enum": list(grid_prophet_service.digital_marketing_data.BUDGET_MECHANICS),
+                },
+                "measurement_key": {
+                    "type": "string",
+                    "enum": list(grid_prophet_service.digital_marketing_data.MEASUREMENT),
+                },
+                "momentum_key": {
+                    "type": "string",
+                    "enum": list(grid_prophet_service.digital_marketing_data.FIRST_72_HOURS),
                 },
             },
         },
     },
     {
-        "name": "draft_content_plan",
-        "description": "Draft a structured content plan from a hook and target platform (with an optional posting cadence)",
+        "name": "build_marketing_doc_scaffold",
+        "description": (
+            "Assemble COMPACT ingredients for a digital-marketing document — a "
+            "campaign_plan or an ad_test_brief. Returns checklists, doctrine, field "
+            "lists, questions, and gap markers; you write the prose in your turn. "
+            "Budget/spend is ALWAYS artist-supplied and out of scope — this tool never "
+            "computes or echoes a spend figure."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "hook": {"type": "string"},
-                "platform": {"type": "string"},
-                "cadence": {"type": "string"},
+                "doc_type": {
+                    "type": "string",
+                    "enum": list(grid_prophet_service.DOC_TYPES),
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": (
+                        "Artist-supplied fields: channels_in_place (campaign_plan) — a "
+                        "list of which of the four sequencing stages "
+                        "(streaming_platform_optimization, organic_short_form_content, "
+                        "email, paid_promotion) are already dialed in. Any budget/spend "
+                        "figure supplied here is never echoed back as a number by this "
+                        "tool — budget specifics stay artist-supplied and out of scope. "
+                        "Anything unsupplied becomes a gap marker."
+                    ),
+                },
             },
-            "required": ["hook"],
-        },
-    },
-    {
-        "name": "schedule_post",
-        "description": "Schedule a post to a growth channel through the artist's connected social account on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "channel_id": {"type": "string"},
-                "caption": {"type": "string"},
-                "body": {"type": "string"},
-            },
-            "required": ["channel_id", "caption"],
+            "required": ["doc_type"],
         },
     },
 ]
 
 
 async def _execute_grid_prophet_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
-    """Execute one Kai tool call against the mock-first grid_prophet_service.
+    """Execute one Kai tool call against the digital-marketing grid_prophet_service.
 
     Returns (result_for_model, action_summary, social_account_not_connected).
       - result_for_model: dict fed back as the tool_result content (JSON-encoded).
       - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - social_account_not_connected: True when a post was blocked on a
-        missing/expired social account.
+      - social_account_not_connected: retained for the shared generator's 3-tuple
+        contract; ALWAYS False now — Kai's tools are pure corpus-read / data-
+        scaffold tools with no connected account and no gate (the old
+        connected-account gate and its schedule-post action are retired).
     Never raises — every failure is converted into a structured tool_result so the
     loop can continue and Kai can explain the outcome to the artist. Mirrors
-    _execute_signal_blaster_tool.
+    _execute_tour_commander_tool.
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_growth_channels":
-        platform = (tool_input.get("platform") or "").strip()
-        tier     = (tool_input.get("tier") or "").strip()
-        res = await grid_prophet_service.search_growth_channels(platform=platform, tier=tier)
-        summary = {
-            "input": f"platform={platform or 'any'} tier={tier or 'any'}",
-            "result": f"{res['count']} channel(s) found",
-        }
-        return res, summary, False
-
-    if name == "draft_content_plan":
-        hook     = (tool_input.get("hook") or "").strip()
-        platform = (tool_input.get("platform") or "").strip()
-        cadence  = (tool_input.get("cadence") or "").strip()
-        res = await grid_prophet_service.draft_content_plan(
-            artist_id, hook=hook, platform=platform, cadence=cadence,
+    if name == "lookup_digital_marketing_doctrine":
+        sequence_key    = (tool_input.get("sequence_key") or "").strip()
+        proof_key       = (tool_input.get("proof_key") or "").strip()
+        platform_key    = (tool_input.get("platform_key") or "").strip()
+        budget_key      = (tool_input.get("budget_key") or "").strip()
+        measurement_key = (tool_input.get("measurement_key") or "").strip()
+        momentum_key    = (tool_input.get("momentum_key") or "").strip()
+        res = await grid_prophet_service.lookup_digital_marketing_doctrine(
+            sequence_key=sequence_key, proof_key=proof_key, platform_key=platform_key,
+            budget_key=budget_key, measurement_key=measurement_key, momentum_key=momentum_key,
         )
-        summary = {
-            "input": f"hook={hook[:40] or 'unspecified'} platform={platform[:40] or 'unspecified'}",
-            "result": f"drafted={res['drafted']}, {res['recommendation']}",
-        }
+        filters = ",".join(f for f in (sequence_key, proof_key, platform_key,
+                                       budget_key, measurement_key, momentum_key) if f) or "none"
+        if res.get("mode") == "index":
+            result_str = "index browsed"
+        else:
+            hit = (len(res.get("sequence", [])) + len(res.get("proof", []))
+                   + len(res.get("platform", [])) + len(res.get("budget", []))
+                   + len(res.get("measurement", [])) + len(res.get("momentum", [])))
+            miss = len(res.get("not_found", []))
+            result_str = f"{hit} match(es), {miss} not found"
+        summary = {"input": f"filters={filters}", "result": result_str}
         return res, summary, False
 
-    if name == "schedule_post":
-        channel_id = (tool_input.get("channel_id") or "").strip()
-        caption    = (tool_input.get("caption") or "").strip()
-        body       = (tool_input.get("body") or "").strip()
-        if not channel_id:
-            return (
-                {"error": "missing_channel_id"},
-                {"input": f"channel_id={channel_id or ''} caption={caption[:40]}",
-                 "result": "missing channel id"},
-                False,
-            )
-        try:
-            posted = await grid_prophet_service.schedule_post(
-                artist_id, channel_id, caption, body,
-            )
-            if posted.get("status") == "unknown_channel":
-                return (
-                    {"error": "unknown_channel", "channel_id": posted.get("channel_id")},
-                    {"input": f"channel_id={channel_id}", "result": "unknown channel"},
-                    False,
-                )
-            return (
-                {"status": "scheduled", "reference": posted.get("reference"),
-                 "channel_id": posted.get("channel_id"), "channel_name": posted.get("channel_name"),
-                 "to": posted.get("to"), "caption": posted.get("caption")},
-                {"input": f"channel_id={channel_id} caption={caption[:40]}",
-                 "result": "post scheduled"},
-                False,
-            )
-        except grid_prophet_service.SocialAccountNotConnected:
-            return (
-                {
-                    "social_account_not_connected": True,
-                    "message": ("Artist has not connected a social account. Tell them to "
-                                "connect one before you can schedule posts."),
-                },
-                {"input": f"channel_id={channel_id}", "result": "social_account_not_connected"},
-                True,
-            )
-        except grid_prophet_service.SocialAccountAuthExpired:
-            return (
-                {
-                    "social_account_not_connected": True,
-                    "message": ("Social-account authorization expired. Tell the artist to "
-                                "re-connect their account before you can schedule posts."),
-                },
-                {"input": f"channel_id={channel_id}", "result": "social_account_auth_expired"},
-                True,
-            )
+    if name == "build_marketing_doc_scaffold":
+        doc_type   = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await grid_prophet_service.build_marketing_doc_scaffold(
+            doc_type=doc_type, inputs=raw_inputs,
+        )
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={doc_type or '(missing)'}", "result": result_str}
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -10365,16 +10362,18 @@ async def chat_stream(req: ChatStreamRequest):
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
     async def generate_grid_prophet():
-        # Grid-Prophet-only path (Kai): the SAME Anthropic tool_use loop as Marcus,
-        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, and Zara, but pointed at
-        # GRID_PROPHET_TOOLS / _execute_grid_prophet_tool instead. Runs the
-        # non-streaming messages.create with tools, executes each emitted tool_use
-        # against grid_prophet_service, feeds tool_result back, and repeats (capped
-        # at GRID_PROPHET_MAX_TOOL_ITERS) until Kai returns a final text answer. The
+        # Grid-Prophet-only path (Kai): the SAME Anthropic tool_use loop as Marcus
+        # and Miles (DOC-WRITER Option B), but pointed at GRID_PROPHET_TOOLS /
+        # _execute_grid_prophet_tool instead. Runs the non-streaming
+        # messages.create with tools, executes each emitted tool_use against
+        # grid_prophet_service, feeds tool_result back, and repeats (capped at
+        # GRID_PROPHET_MAX_TOOL_ITERS) until Kai returns a final text answer. The
         # final text is then streamed out sentence-by-sentence through the SAME TTS
-        # pipeline the default path uses, so the call UI behaves identically aside from
-        # the `actions` event. Every other agent (including Marcus, Lex, Jade, Ray,
-        # Cleo, Finn, Victor, Nadia, and Zara) never reaches here.
+        # pipeline the default path uses, so the call UI behaves identically aside
+        # from the `actions` event. The old social-account gate is retired — Kai's
+        # tools are pure corpus-read / data-scaffold tools, so
+        # `social_account_not_connected` is always False now (kept only for the
+        # shared generator's 3-tuple contract). Every other agent never reaches here.
         full_text                    = ""
         actions_taken                = []
         social_account_not_connected = False
