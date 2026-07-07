@@ -8211,7 +8211,7 @@ async def _execute_pr_agent_tool(name: str, tool_input: dict, artist_id: str) ->
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Avery (booking-agent) tool_use: list_booking_contacts + log_booking_inquiry
-#            + send_booking_inquiry
+#            + queue_booking_inquiry
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) pattern, but wired to the REAL booking_service
 # functions (DB-backed, zero network). Passed to the Anthropic API for the
@@ -8219,6 +8219,13 @@ async def _execute_pr_agent_tool(name: str, tool_input: dict, artist_id: str) ->
 # own unchanged path and never receives BOOKING_AGENT_TOOLS. The send action is
 # gated on a Gmail-connection check (env-driven, mock — mirrors lex) so a
 # missing/expired credential degrades gracefully instead of hitting a wire.
+#
+# [FIX-COLLISION] Renamed from send_booking_inquiry (collided with Ray B's
+# venue-hawk tool of the same name — a different schema/persistence entirely).
+# Ray B keeps send_booking_inquiry; this tool never actually sends over a wire
+# either (mock-first, same as before) — it only ever writes a "queued"-status
+# DB row pending real Gmail-send infrastructure — so queue_booking_inquiry is
+# the honest name for what it already did.
 
 BOOKING_AGENT_MAX_TOOL_ITERS = 5
 
@@ -8258,7 +8265,7 @@ BOOKING_AGENT_TOOLS = [
         },
     },
     {
-        "name": "send_booking_inquiry",
+        "name": "queue_booking_inquiry",
         "description": "Queue a booking inquiry to a promoter/venue via the artist's connected Gmail account",
         "input_schema": {
             "type": "object",
@@ -8309,7 +8316,7 @@ async def _execute_booking_agent_tool(name: str, tool_input: dict, artist_id: st
             False,
         )
 
-    if name == "send_booking_inquiry":
+    if name == "queue_booking_inquiry":
         contact_id = (tool_input.get("contact_id") or "").strip()
         subject    = (tool_input.get("subject") or "Booking Inquiry").strip()
         if not contact_id:
