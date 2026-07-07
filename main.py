@@ -4114,146 +4114,146 @@ async def _execute_global_scout_tool(name: str, tool_input: dict, artist_id: str
 
 
 # ── Tour-Commander (Miles) tool_use ────────────────────────────────────────────
-# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
-# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B pattern exactly: these tools
-# are passed to the Anthropic API for the tour-commander agent ONLY (see the gate in
-# chat_stream). Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn,
-# Victor, Nadia, Zara, Kai, Luna, Diego, and Ray B — takes its own unchanged path
-# and never receives TOUR_COMMANDER_TOOLS. Handlers map straight onto the mock-first
-# tour_commander_service functions; they make ZERO network calls and read no secrets.
+# DOC-WRITER Option B (tour-operations engine). These tools are passed to the
+# Anthropic API for the tour-commander agent ONLY (see the gate in chat_stream).
+# Every other agent takes its own unchanged path and never receives
+# TOUR_COMMANDER_TOOLS. Handlers map straight onto the tour-operations
+# tour_commander_service functions; they make ZERO network calls, read no
+# secrets, and are UNGATED (both are pure corpus-read / data-scaffold tools).
+# The old mock+gate crewing/routing/budget tools and their connected-account
+# gate are RETIRED — Miles's real value is prep documents (advance packs, day
+# sheets, settlement-prep sheets) built from Miles's own tour-ops knowledge
+# base, not a mock crewing/production API.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 TOUR_COMMANDER_MAX_TOOL_ITERS = 5
 
 TOUR_COMMANDER_TOOLS = [
     {
-        "name": "search_routing_legs",
-        "description": "Search the routing directory by the region a tour leg covers or its leg type (headline, support, festival)",
+        "name": "lookup_tour_ops_doctrine",
+        "description": (
+            "Look up tour-operations doctrine from Miles's corpus — filter by advancing "
+            "key, day-sheet field, settlement-prep key, routing key, festival key, and/or "
+            "settlement-vocabulary term. Call with no filters to browse the available keys."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "region": {"type": "string"},
-                "leg_type": {
+                "advancing_key": {
                     "type": "string",
-                    "enum": ["headline", "support", "festival"],
+                    "enum": list(tour_commander_service.tour_ops_data.ADVANCING_DOCTRINE),
+                },
+                "day_sheet_field": {
+                    "type": "string",
+                    "enum": [rec["field"] for rec in tour_commander_service.tour_ops_data.DAY_SHEET_SPEC],
+                },
+                "settlement_key": {
+                    "type": "string",
+                    "enum": list(tour_commander_service.tour_ops_data.SETTLEMENT_PREP_DOCTRINE),
+                },
+                "routing_key": {
+                    "type": "string",
+                    "enum": list(tour_commander_service.tour_ops_data.ROUTING_AND_PREP),
+                },
+                "festival_key": {
+                    "type": "string",
+                    "enum": list(tour_commander_service.tour_ops_data.FESTIVAL_VARIANT),
+                },
+                "vocabulary_term": {
+                    "type": "string",
+                    "enum": list(tour_commander_service.tour_ops_data.SETTLEMENT_VOCABULARY),
                 },
             },
         },
     },
     {
-        "name": "draft_tour_budget",
-        "description": "Draft a concrete tour budget by applying a leg's per-show operating cost to a run of shows and a nightly guarantee, projecting gross, cost, and net",
+        "name": "build_tour_doc_scaffold",
+        "description": (
+            "Assemble COMPACT ingredients for a tour-ops document — an advance_pack, a "
+            "day_sheet, or a settlement_prep_sheet. Returns checklists, doctrine, field "
+            "lists, questions, and gap markers; you write the prose in your turn. Sensitive "
+            "day-sheet fields (hotel info, door codes, flight details) are excluded from "
+            "the default output unless explicitly requested. Settlement prep never "
+            "contains a computed total — questions and restated inputs only."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "leg_id": {"type": "string"},
-                "num_shows": {"type": "integer"},
-                "nightly_guarantee": {"type": "number"},
+                "doc_type": {
+                    "type": "string",
+                    "enum": list(tour_commander_service.DOC_TYPES),
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": (
+                        "Artist-supplied fields: deal_memo (advance_pack); variant, "
+                        "include_sensitive, and per-field values like doors/curfew/"
+                        "artist_hotel_info (day_sheet); deal_terms (settlement_prep_sheet). "
+                        "Anything unsupplied becomes a gap marker."
+                    ),
+                },
             },
-        },
-    },
-    {
-        "name": "book_crew_call",
-        "description": "Confirm a crew call on a date for a tour leg through the artist's connected tour-ops/crewing account on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "leg_id": {"type": "string"},
-                "call_date": {"type": "string"},
-                "crew_size": {"type": "integer"},
-            },
-            "required": ["leg_id", "call_date"],
+            "required": ["doc_type"],
         },
     },
 ]
 
 
 async def _execute_tour_commander_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
-    """Execute one Miles tool call against the mock-first tour_commander_service.
+    """Execute one Miles tool call against the tour-operations tour_commander_service.
 
     Returns (result_for_model, action_summary, tour_ops_not_connected).
       - result_for_model: dict fed back as the tool_result content (JSON-encoded).
       - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - tour_ops_not_connected: True when a crew call was blocked on a
-        missing/expired tour-ops account.
+      - tour_ops_not_connected: retained for the shared generator's 3-tuple
+        contract; ALWAYS False now — Miles's tools are pure corpus-read / data-
+        scaffold tools with no connected account and no gate (the old
+        connected-account gate and its crewing action are retired).
     Never raises — every failure is converted into a structured tool_result so the
     loop can continue and Miles can explain the outcome to the artist. Mirrors
-    _execute_venue_hawk_tool / _execute_design_studio_tool.
+    _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_routing_legs":
-        region   = (tool_input.get("region") or "").strip()
-        leg_type = (tool_input.get("leg_type") or "").strip()
-        res = await tour_commander_service.search_routing_legs(region=region, leg_type=leg_type)
-        summary = {
-            "input": f"region={region or 'any'} type={leg_type or 'any'}",
-            "result": f"{res['count']} leg(s) found",
-        }
-        return res, summary, False
-
-    if name == "draft_tour_budget":
-        leg_id            = (tool_input.get("leg_id") or "").strip()
-        num_shows         = tool_input.get("num_shows") or 0
-        nightly_guarantee = tool_input.get("nightly_guarantee") or 0
-        res = await tour_commander_service.draft_tour_budget(
-            artist_id, leg_id=leg_id, num_shows=num_shows, nightly_guarantee=nightly_guarantee,
+    if name == "lookup_tour_ops_doctrine":
+        advancing_key   = (tool_input.get("advancing_key") or "").strip()
+        day_sheet_field = (tool_input.get("day_sheet_field") or "").strip()
+        settlement_key  = (tool_input.get("settlement_key") or "").strip()
+        routing_key     = (tool_input.get("routing_key") or "").strip()
+        festival_key    = (tool_input.get("festival_key") or "").strip()
+        vocabulary_term = (tool_input.get("vocabulary_term") or "").strip()
+        res = await tour_commander_service.lookup_tour_ops_doctrine(
+            advancing_key=advancing_key, day_sheet_field=day_sheet_field,
+            settlement_key=settlement_key, routing_key=routing_key,
+            festival_key=festival_key, vocabulary_term=vocabulary_term,
         )
-        summary = {
-            "input": f"leg_id={leg_id or 'unspecified'} num_shows={num_shows or 'unspecified'}",
-            "result": f"viable={res['viable']}, {res['recommendation']}",
-        }
+        filters = ",".join(f for f in (advancing_key, day_sheet_field, settlement_key,
+                                       routing_key, festival_key, vocabulary_term) if f) or "none"
+        if res.get("mode") == "index":
+            result_str = "index browsed"
+        else:
+            hit = (len(res.get("advancing", [])) + len(res.get("day_sheet", []))
+                   + len(res.get("settlement", [])) + len(res.get("routing", []))
+                   + len(res.get("festival", [])) + len(res.get("vocabulary", [])))
+            miss = len(res.get("not_found", []))
+            result_str = f"{hit} match(es), {miss} not found"
+        summary = {"input": f"filters={filters}", "result": result_str}
         return res, summary, False
 
-    if name == "book_crew_call":
-        leg_id    = (tool_input.get("leg_id") or "").strip()
-        call_date = (tool_input.get("call_date") or "").strip()
-        crew_size = tool_input.get("crew_size") or 0
-        if not leg_id:
-            return (
-                {"error": "missing_leg_id"},
-                {"input": f"leg_id={leg_id or ''} call_date={call_date}",
-                 "result": "missing leg id"},
-                False,
-            )
-        try:
-            call = await tour_commander_service.book_crew_call(
-                artist_id, leg_id, call_date, crew_size,
-            )
-            if call.get("status") == "unknown_leg":
-                return (
-                    {"error": "unknown_leg", "leg_id": call.get("leg_id")},
-                    {"input": f"leg_id={leg_id}", "result": "unknown leg"},
-                    False,
-                )
-            return (
-                {"status": "confirmed", "reference": call.get("reference"),
-                 "leg_id": call.get("leg_id"), "leg_name": call.get("leg_name"),
-                 "call_date": call.get("call_date"), "crew_size": call.get("crew_size")},
-                {"input": f"leg_id={leg_id} call_date={call_date}",
-                 "result": "crew call confirmed"},
-                False,
-            )
-        except tour_commander_service.TourOpsNotConnected:
-            return (
-                {
-                    "tour_ops_not_connected": True,
-                    "message": ("Artist has not connected a tour-ops/crewing account. Tell them "
-                                "to connect one before you can confirm crew calls."),
-                },
-                {"input": f"leg_id={leg_id}", "result": "tour_ops_not_connected"},
-                True,
-            )
-        except tour_commander_service.TourOpsAuthExpired:
-            return (
-                {
-                    "tour_ops_not_connected": True,
-                    "message": ("Tour-ops-account authorization expired. Tell the artist to "
-                                "re-connect their tour-ops account before you can confirm crew calls."),
-                },
-                {"input": f"leg_id={leg_id}", "result": "tour_ops_auth_expired"},
-                True,
-            )
+    if name == "build_tour_doc_scaffold":
+        doc_type   = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await tour_commander_service.build_tour_doc_scaffold(
+            doc_type=doc_type, inputs=raw_inputs,
+        )
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={doc_type or '(missing)'}", "result": result_str}
+        return res, summary, False
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -11076,16 +11076,18 @@ async def chat_stream(req: ChatStreamRequest):
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
     async def generate_tour_commander():
-        # Tour-Commander-only path (Miles): the SAME Anthropic tool_use loop as Marcus,
-        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, and Ray B,
-        # but pointed at TOUR_COMMANDER_TOOLS / _execute_tour_commander_tool instead. Runs
-        # the non-streaming messages.create with tools, executes each emitted tool_use
-        # against tour_commander_service, feeds tool_result back, and repeats (capped at
-        # TOUR_COMMANDER_MAX_TOOL_ITERS) until Miles returns a final text answer. The final
-        # text is then streamed out sentence-by-sentence through the SAME TTS pipeline
-        # the default path uses, so the call UI behaves identically aside from the
-        # `actions` event. Every other agent (including Marcus, Lex, Jade, Ray, Cleo,
-        # Finn, Victor, Nadia, Zara, Kai, Luna, Diego, and Ray B) never reaches here.
+        # Tour-Commander-only path (Miles): the SAME Anthropic tool_use loop as Marcus
+        # and Lex (DOC-WRITER Option B), but pointed at TOUR_COMMANDER_TOOLS /
+        # _execute_tour_commander_tool instead. Runs the non-streaming
+        # messages.create with tools, executes each emitted tool_use against
+        # tour_commander_service, feeds tool_result back, and repeats (capped at
+        # TOUR_COMMANDER_MAX_TOOL_ITERS) until Miles returns a final text answer. The
+        # final text is then streamed out sentence-by-sentence through the SAME TTS
+        # pipeline the default path uses, so the call UI behaves identically aside
+        # from the `actions` event. The old tour-ops-account gate is retired — Miles's
+        # tools are pure corpus-read / data-scaffold tools, so
+        # `tour_ops_not_connected` is always False now (kept only for the shared
+        # generator's 3-tuple contract). Every other agent never reaches here.
         full_text                = ""
         actions_taken            = []
         tour_ops_not_connected   = False

@@ -1,268 +1,452 @@
 """
-PLMKR Tour-Commander — tour-manager action service (mock-first).
+PLMKR Tour-Commander (Miles) — tour-operations DOC-WRITER service (mock-first,
+Option B).
 
 Backs the Tour-Commander (Miles — Tour Manager) agent's tool_use loop in
-/api/chat_stream (see TOUR_COMMANDER_TOOLS in main.py). Miles does not just advise
-on routing, production, and crew — these functions let the agent take real
-tour-manager actions: search the routing directory for the tour legs an artist can
-run (each carrying the region it covers, its leg type, and its per-show operating
-cost), draft a concrete tour budget by applying a leg's per-show cost to a run of
-shows and a nightly guarantee so the artist has a numbers-backed P&L to sign off,
-and confirm a crew call on a date for a leg through the artist's connected
-tour-ops account so a production hold actually gets placed on their behalf.
+/api/chat_stream (see TOUR_COMMANDER_TOOLS in main.py). Miles does not just
+advise on advancing, day sheets, and settlement — these functions let the agent
+take one real action: assemble organized preparation material from Miles's real
+tour-operations knowledge base — a structured lookup over the tour-ops corpus,
+and compact doc-scaffold ingredients the agent turns into prose in its own turn.
+
+DOC-WRITER OPTION B (Cree / Nadia / Reed / Lex precedent):
+  build_tour_doc_scaffold returns COMPACT ingredients only — matched doctrine,
+  checklists, field lists, questions, aggregated gaps. The AGENT writes the
+  prose in its turn. There is ZERO model-call in this module (no Anthropic SDK
+  import, no create-message call) — AST-enforced by tests.
 
 MOCK-FIRST CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
-  - ZERO network calls. No live routing/production APIs, no crewing rails, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_tour_ops_connected``) driven by an env flag so tests can
-    toggle the connected / not-connected / expired states deterministically —
-    mirroring venue_hawk_service._venue_booking_connected without touching a wire.
-  - Deterministic: no timestamps or random values leak into return payloads, so
-    tests can assert on exact structure.
+  - ZERO network calls. No live routing/production/crewing APIs, no LLM.
+  - NO secrets are read or embedded, and there is NO connection gate: both
+    tools are pure corpus-read / data-scaffold tools that need no connected
+    account (the old tour-ops-account gate and its crewing-confirmation action
+    are RETIRED; crewing/production booking is not Miles's domain here, and
+    confirming a hold requires no account check to PREP the paperwork for one).
+  - Deterministic: no timestamps or random values leak into return payloads,
+    so tests can assert on exact structure.
+
+HARD RULES honored here (mirroring tour_ops_data.py's doctrine):
+  - documents_not_figures: Miles never states a dollar figure, guarantee
+    amount, or fee amount. No arithmetic is ever performed in this module —
+    deal terms and deal-memo content are restated VERBATIM from artist-
+    supplied inputs, never computed or summed.
+  - PRIVACY (day_sheet): fields flagged ``sensitive: True`` in
+    tour_ops_data.DAY_SHEET_SPEC (hotel info, door codes, flight details) are
+    EXCLUDED from the default/printable output. Only an explicit
+    ``include_sensitive`` request on the ``principal`` variant surfaces them;
+    every other variant (including the default) always excludes them.
+  - BOUNDARIES: booking and deal terms belong to venue-hawk (Miles starts work
+    only after the deal memo exists and never renegotiates it); the actual
+    settlement accounting/ledger reconciliation belongs to ledger-lock (Miles
+    PREPS ONLY — never a computed total, ever).
+  - NEVER fabricate: every artist-fact slot is the supplied input VERBATIM, a
+    [NEEDS:<x>] gap, or an [ARTIST-SUPPLIED:<x>] marker — never invented.
+    Corpus content (doctrine, checklists, fields) is pulled verbatim from
+    tour_ops_data.
 """
-import hashlib
-import os
+import tour_ops_data
 
 
-class TourOpsNotConnected(Exception):
-    """Raised when the artist has not connected a tour-ops/crewing account.
+# ── Framing + gap markers (data, not logic) ───────────────────────────────────
+_GAP = "[NEEDS:{}]"
+_ARTIST_SUPPLIED = "[ARTIST-SUPPLIED:{}]"
 
-    Mirrors venue_hawk_service.VenueBookingNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your tour-ops account first'
-    result instead of crashing the stream.
-    """
+# The three scaffolds this DOC-WRITER produces.
+DOC_TYPES = ("advance_pack", "day_sheet", "settlement_prep_sheet")
 
+# Standing framing surfaced on every scaffold header — pulled verbatim from the
+# corpus so no output can be read as a figure, a negotiation, or an accounting.
+_PREP_NOT_NEGOTIATION  = tour_ops_data.MILES_DOCTRINE["prep_not_negotiation"]
+_PREP_NOT_ACCOUNTING   = tour_ops_data.MILES_DOCTRINE["prep_not_accounting"]
+_DOCUMENTS_NOT_FIGURES = tour_ops_data.MILES_DOCTRINE["documents_not_figures"]
 
-class TourOpsAuthExpired(Exception):
-    """Raised when a previously connected tour-ops-account authorization expired."""
+# The advance-package bundle, restructured from ADVANCING_DOCTRINE's
+# ``advance_package_contents`` description into a checklist. Not new content —
+# a restructuring of the corpus's own prose, exactly like Lex's glossary/
+# red-flag section builders restructure legal_data into list form.
+_ADVANCE_PACKAGE_CHECKLIST = [
+    "tech rider", "stage plot", "input list", "hospitality rider",
+    "pass sheet", "settlement documents",
+]
 
-
-# ── Routing directory (in-memory reference data) ───────────────────────────────
-# A curated set of tour legs an artist can run. Each leg carries the region it
-# covers, its leg type (headline / support / festival), the number of markets on
-# the run, a per-show operating cost (crew + transport + production, all-in), and a
-# typical nightly guarantee for the leg's tier. The agent can surface the right
-# legs for a routing plan and apply a leg's per-show cost to a run to draft a real
-# budget. No I/O.
-_LEGS = [
-    {
-        "id": "leg-us-west-club",
-        "name": "US West Coast Club Run",
-        "region": "US West",
-        "leg_type": "headline",
-        "markets": 8,
-        "per_show_cost": 4200.0,
-        "nightly_guarantee": 6000.0,
-    },
-    {
-        "id": "leg-us-east-theatre",
-        "name": "US East Coast Theatre Run",
-        "region": "US East",
-        "leg_type": "headline",
-        "markets": 10,
-        "per_show_cost": 6800.0,
-        "nightly_guarantee": 11000.0,
-    },
-    {
-        "id": "leg-eu-support",
-        "name": "EU Arena Support Leg",
-        "region": "Europe",
-        "leg_type": "support",
-        "markets": 14,
-        "per_show_cost": 3500.0,
-        "nightly_guarantee": 2500.0,
-    },
-    {
-        "id": "leg-uk-club",
-        "name": "UK Club Run",
-        "region": "UK",
-        "leg_type": "headline",
-        "markets": 6,
-        "per_show_cost": 3800.0,
-        "nightly_guarantee": 5200.0,
-    },
-    {
-        "id": "leg-au-festival",
-        "name": "Australia Festival Run",
-        "region": "Australia",
-        "leg_type": "festival",
-        "markets": 4,
-        "per_show_cost": 5200.0,
-        "nightly_guarantee": 18000.0,
-    },
-    {
-        "id": "leg-jp-support",
-        "name": "Japan Support Leg",
-        "region": "Asia",
-        "leg_type": "support",
-        "markets": 5,
-        "per_show_cost": 4600.0,
-        "nightly_guarantee": 3000.0,
-    },
+# Walk-the-numbers questions for settlement prep — QUESTIONS only, never a
+# computed figure. Derived from SETTLEMENT_PREP_DOCTRINE's own topics.
+_SETTLEMENT_WALK_THE_NUMBERS_QUESTIONS = [
+    "What is the confirmed deposit per the agency report?",
+    "Has the W9 (or local equivalent tax form) and banking/wire information "
+    "been sent to the promoter ahead of show day?",
+    "Is the pre-settlement review scheduled for the afternoon of show day, "
+    "well before doors?",
+    "Are sellable capacity and legal capacity both confirmed for tonight's numbers?",
+    "Are any VIP packages being settled separately from general ticket sales?",
+    "Does a regional withholding mechanism apply to tonight's settlement?",
+    "If a discrepancy surfaces, is there an immediate remedy available — or "
+    "does this stay unsettled tonight and hand off to ledger-lock?",
 ]
 
 
-async def search_routing_legs(region: str = "", leg_type: str = "") -> dict:
-    """Search the routing directory by region and/or leg type.
-
-    Both filters are optional and matched case-insensitively as substrings.
-    ``region`` matches the leg's region (e.g. "US West", "Europe") and
-    ``leg_type`` matches the type (e.g. "headline", "support", "festival").
-    Returns {"legs": [...], "count": int}. Pure — no I/O.
-    """
-    rg = (region or "").strip().lower()
-    lt = (leg_type or "").strip().lower()
-    matches = [
-        dict(leg)
-        for leg in _LEGS
-        if (not rg or rg in leg["region"].lower())
-        and (not lt or lt in leg["leg_type"].lower())
-    ]
-    return {"legs": matches, "count": len(matches)}
+def _heading(text: str) -> str:
+    """Every section heading routes through here for uniform styling."""
+    return text
 
 
-def _get_leg(leg_id: str) -> dict | None:
-    lid = (leg_id or "").strip()
-    for leg in _LEGS:
-        if leg["id"] == lid:
-            return leg
-    return None
+def _missing(value) -> bool:
+    """A supplied input is missing when absent, None, or empty/whitespace text."""
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
 
 
-async def draft_tour_budget(
-    artist_id: str,
-    leg_id: str = "",
-    num_shows: int = 0,
-    nightly_guarantee: float = 0,
+def _norm(value) -> str:
+    return (value or "").strip() if isinstance(value, str) else ""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# lookup_tour_ops_doctrine — structured lookup/filter over the tour_ops_data
+# corpus. Pure corpus read; NOT gated. No booking/settlement judgment is made
+# about the artist's own tour — this returns the standing doctrine the agent
+# applies.
+# ═══════════════════════════════════════════════════════════════════════════════
+async def lookup_tour_ops_doctrine(
+    advancing_key: str = "",
+    day_sheet_field: str = "",
+    settlement_key: str = "",
+    routing_key: str = "",
+    festival_key: str = "",
+    vocabulary_term: str = "",
 ) -> dict:
-    """Draft a concrete tour budget by applying a leg's per-show cost to a run.
+    """Filter the tour-ops corpus by any of advancing key / day-sheet field /
+    settlement-prep key / routing key / festival key / settlement-vocabulary term.
 
-    Deterministic P&L construction — never contacts a production or crewing API.
-    Looks the leg up by id, checks a positive show count and (falling back to the
-    leg's typical guarantee when none is supplied) a nightly guarantee are present,
-    then projects gross (shows × guarantee), operating cost (shows × per-show
-    cost), and net. Returns a structured budget with line items, projected net, any
-    gaps, and a recommendation of "run" / "revise" / "blocked".
+    With NO filter, returns a compact index of the available keys per block so
+    the agent can browse. With filters, returns the matched full records; any
+    filter that matches nothing is recorded in ``not_found`` (value stays None,
+    never guessed). Standing framing (Miles's own doctrine + the boundaries to
+    venue-hawk / ledger-lock) rides through on every response. Pure — no I/O,
+    no gate.
     """
-    leg = _get_leg(leg_id)
+    ak  = _norm(advancing_key)
+    dsf = _norm(day_sheet_field)
+    sk  = _norm(settlement_key)
+    rk  = _norm(routing_key)
+    fk  = _norm(festival_key)
+    vt  = _norm(vocabulary_term)
+    any_filter = bool(ak or dsf or sk or rk or fk or vt)
 
-    try:
-        shows = int(num_shows or 0)
-    except (TypeError, ValueError):
-        shows = 0
+    result = {
+        "status": "ok",
+        "miles_doctrine": dict(tour_ops_data.MILES_DOCTRINE),
+        "boundaries": [dict(b) for b in tour_ops_data.BOUNDARIES.values()],
+    }
 
-    # Fall back to the leg's typical nightly guarantee when the caller omits one.
-    supplied_guarantee = nightly_guarantee not in (None, "", 0, 0.0)
-    if supplied_guarantee:
-        try:
-            gtee = round(float(nightly_guarantee or 0), 2)
-        except (TypeError, ValueError):
-            gtee = 0.0
-    elif leg is not None:
-        gtee = round(float(leg["nightly_guarantee"]), 2)
-    else:
-        gtee = 0.0
+    if not any_filter:
+        # Browse mode — index of keys only, kept compact.
+        result["mode"] = "index"
+        result["advancing_keys"] = list(tour_ops_data.ADVANCING_DOCTRINE)
+        result["day_sheet_fields"] = [rec["field"] for rec in tour_ops_data.DAY_SHEET_SPEC]
+        result["settlement_keys"] = list(tour_ops_data.SETTLEMENT_PREP_DOCTRINE)
+        result["routing_keys"] = list(tour_ops_data.ROUTING_AND_PREP)
+        result["festival_keys"] = list(tour_ops_data.FESTIVAL_VARIANT)
+        result["vocabulary_terms"] = list(tour_ops_data.SETTLEMENT_VOCABULARY)
+        result["day_sheet_variant_keys"] = list(tour_ops_data.DAY_SHEET_VARIANTS)
+        return result
 
-    gaps = []
-    if not (leg_id or "").strip():
-        gaps.append("missing_leg")
-    elif leg is None:
-        gaps.append("unknown_leg")
-    if shows <= 0:
-        gaps.append("non_positive_shows")
-    if gtee <= 0:
-        gaps.append("non_positive_guarantee")
+    result["mode"] = "filtered"
+    not_found = []
 
-    line_items = []
-    gross = 0.0
-    operating_cost = 0.0
-    projected_net = 0.0
-    if leg is not None and shows > 0 and gtee > 0:
-        gross = round(shows * gtee, 2)
-        operating_cost = round(shows * leg["per_show_cost"], 2)
-        projected_net = round(gross - operating_cost, 2)
-        line_items.append({"label": "gross_guarantees", "amount": gross})
-        line_items.append({"label": "operating_cost", "amount": -operating_cost})
+    result["advancing"] = []
+    if ak:
+        rec = tour_ops_data.ADVANCING_DOCTRINE.get(ak)
+        if rec:
+            result["advancing"].append(dict(rec))
+        else:
+            not_found.append({"filter": "advancing_key", "value": ak, "match": None})
 
-    if "unknown_leg" in gaps or "missing_leg" in gaps:
-        # Without a valid leg target the budget cannot be built at all.
-        recommendation = "blocked"
-    elif gaps or projected_net <= 0:
-        recommendation = "revise"
-    else:
-        recommendation = "run"
-    viable = recommendation == "run"
+    result["day_sheet"] = []
+    if dsf:
+        rec = next((r for r in tour_ops_data.DAY_SHEET_SPEC if r["field"] == dsf), None)
+        if rec:
+            result["day_sheet"].append(dict(rec))
+        else:
+            not_found.append({"filter": "day_sheet_field", "value": dsf, "match": None})
 
+    result["settlement"] = []
+    if sk:
+        rec = tour_ops_data.SETTLEMENT_PREP_DOCTRINE.get(sk)
+        if rec:
+            result["settlement"].append(dict(rec))
+        else:
+            not_found.append({"filter": "settlement_key", "value": sk, "match": None})
+
+    result["routing"] = []
+    if rk:
+        rec = tour_ops_data.ROUTING_AND_PREP.get(rk)
+        if rec:
+            result["routing"].append(dict(rec))
+        else:
+            not_found.append({"filter": "routing_key", "value": rk, "match": None})
+
+    result["festival"] = []
+    if fk:
+        rec = tour_ops_data.FESTIVAL_VARIANT.get(fk)
+        if rec:
+            result["festival"].append(dict(rec))
+        else:
+            not_found.append({"filter": "festival_key", "value": fk, "match": None})
+
+    result["vocabulary"] = []
+    if vt:
+        rec = tour_ops_data.SETTLEMENT_VOCABULARY.get(vt)
+        if rec:
+            result["vocabulary"].append(dict(rec))
+        else:
+            not_found.append({"filter": "vocabulary_term", "value": vt, "match": None})
+
+    result["not_found"] = not_found
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# build_tour_doc_scaffold — OPTION B: compact ingredients only, agent writes
+# prose. NOT gated. Documents, never figures; prep, never negotiation or
+# accounting.
+# ═══════════════════════════════════════════════════════════════════════════════
+async def build_tour_doc_scaffold(doc_type: str = "", inputs: dict = None) -> dict:
+    """Build compact ingredients for one tour-ops document; Miles writes the prose.
+
+    Three doc types — ``advance_pack``, ``day_sheet``, ``settlement_prep_sheet``.
+    Every scaffold header carries Miles's standing doctrine (prep not
+    negotiation, prep not accounting, documents not figures). No corpus content
+    is a judgment about the artist's specific tour — the checklists, field
+    lists, and questions are the standing operations toolkit the agent applies.
+    Every artist-fact slot is verbatim, a [NEEDS:<x>] gap, or an
+    [ARTIST-SUPPLIED:<x>] marker; all such markers aggregate into ``missing``.
+    Unknown doc_type -> structured error listing the supported types.
+    """
+    dt = _norm(doc_type).lower()
+    inputs = dict(inputs) if isinstance(inputs, dict) else {}
+    if dt == "advance_pack":
+        return _scaffold_advance_pack(inputs)
+    if dt == "day_sheet":
+        return _scaffold_day_sheet(inputs)
+    if dt == "settlement_prep_sheet":
+        return _scaffold_settlement_prep_sheet(inputs)
     return {
-        "viable": viable,
-        "gaps": gaps,
-        "leg_id": leg["id"] if leg else (leg_id or "").strip(),
-        "leg_name": leg["name"] if leg else None,
-        "region": leg["region"] if leg else None,
-        "num_shows": shows,
-        "nightly_guarantee": gtee,
-        "line_items": line_items,
-        "gross_guarantees": gross,
-        "operating_cost": operating_cost,
-        "projected_net": projected_net,
-        "recommendation": recommendation,
+        "status": "unknown_doc_type",
+        "doc_type": dt or "(missing)",
+        "supported_doc_types": list(DOC_TYPES),
+        "message": ("Unsupported doc_type. Supported: " + ", ".join(DOC_TYPES) + "."),
     }
 
 
-def _tour_ops_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's tour-ops/crewing account.
-
-    In production this would look up a stored tour-ops-account link for the artist.
-    Here it is driven purely by the ``TOUR_COMMANDER_ACCOUNT_CONNECTED`` env flag so
-    tests can toggle connected / expired / not-connected with ZERO network calls and
-    NO real secret. Values:
-      - "expired"                     → raise TourOpsAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("TOUR_COMMANDER_ACCOUNT_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise TourOpsAuthExpired("tour-ops-account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def book_crew_call(
-    artist_id: str,
-    leg_id: str,
-    call_date: str,
-    crew_size: int = 0,
-) -> dict:
-    """Confirm a crew call on a date for a leg via the artist's tour-ops account.
-
-    Raises TourOpsNotConnected / TourOpsAuthExpired when no tour-ops account is
-    linked so the caller can surface a 'connect your tour-ops account' message
-    instead of a hard failure. When the leg id is unknown, returns a structured
-    {"status": "unknown_leg"} result rather than raising. On success returns a
-    deterministic mock crew-call reference — NO network call is ever made and no
-    crew is actually booked.
-    """
-    if not _tour_ops_connected(artist_id):
-        raise TourOpsNotConnected(
-            "artist has not connected a tour-ops/crewing account"
-        )
-    leg = _get_leg(leg_id)
-    if leg is None:
-        return {"status": "unknown_leg", "leg_id": (leg_id or "").strip()}
-    cd = (call_date or "").strip()
-    try:
-        size = int(crew_size or 0)
-    except (TypeError, ValueError):
-        size = 0
-    digest = hashlib.sha1(
-        f"{artist_id}:{leg['id']}:{cd}:{size}".encode("utf-8")
-    ).hexdigest()
-    reference = "CREW-" + digest[:10].upper()
+def _header(title: str) -> dict:
+    """Scaffold header — carries Miles's standing doctrine verbatim from the
+    corpus on every doc type."""
     return {
-        "status": "confirmed",
-        "reference": reference,
-        "leg_id": leg["id"],
-        "leg_name": leg["name"],
-        "call_date": cd,
-        "crew_size": size,
+        "title": _heading(title),
+        "prep_not_negotiation": _PREP_NOT_NEGOTIATION,
+        "prep_not_accounting": _PREP_NOT_ACCOUNTING,
+        "documents_not_figures": _DOCUMENTS_NOT_FIGURES,
+    }
+
+
+def _scaffold_advance_pack(inputs: dict) -> dict:
+    """Ingredients for an advance package: venue-vs-production-advance
+    distinction, the package checklist, venue-provides fields, the union-house
+    labor-rule risk note, and parking doctrine. The deal memo is
+    ARTIST-SUPPLIED — Miles consumes it and never invents its terms (booking
+    and deal terms are venue-hawk's domain, per BOUNDARIES)."""
+    missing: list = []
+    notes: list = []
+    sections: list = []
+
+    venue_rec      = tour_ops_data.ADVANCING_DOCTRINE["venue_advance"]
+    production_rec = tour_ops_data.ADVANCING_DOCTRINE["production_advance"]
+    sections.append({
+        "key": "venue_vs_production_advance",
+        "heading": _heading("Venue advance vs production advance"),
+        "venue_advance": venue_rec["description"],
+        "production_advance": production_rec["description"],
+    })
+
+    sections.append({
+        "key": "advance_package_checklist",
+        "heading": _heading("Advance package checklist"),
+        "items": list(_ADVANCE_PACKAGE_CHECKLIST),
+        "source": tour_ops_data.ADVANCING_DOCTRINE["advance_package_contents"]["description"],
+    })
+
+    sections.append({
+        "key": "venue_provides",
+        "heading": _heading("What the venue provides"),
+        "fields": list(venue_rec["venue_provides"]),
+    })
+
+    sections.append({
+        "key": "union_house_risk",
+        "heading": _heading("Union-house labor-rule risk"),
+        "note": venue_rec["union_house_risk"],
+    })
+
+    parking_rec = tour_ops_data.ADVANCING_DOCTRINE["parking_and_load_out"]
+    sections.append({
+        "key": "parking_doctrine",
+        "heading": _heading("Parking and load-out doctrine"),
+        "doctrine": parking_rec["parking_doctrine"],
+        "description": parking_rec["description"],
+    })
+
+    # Deal memo — artist-supplied, consumed verbatim, never invented.
+    deal_memo = inputs.get("deal_memo")
+    if _missing(deal_memo):
+        marker = _ARTIST_SUPPLIED.format("deal_memo")
+        missing.append(marker)
+        notes.append({
+            "section": "deal_memo",
+            "marker": marker,
+            "note": ("the deal memo is supplied by the artist/team — Miles consumes its "
+                     "terms and never invents them; booking and deal terms are "
+                     "venue-hawk's domain"),
+        })
+    else:
+        sections.append({
+            "key": "deal_memo",
+            "heading": _heading("Deal memo (artist-supplied, consumed verbatim)"),
+            "content": deal_memo,  # verbatim
+        })
+
+    notes.append({
+        "section": "boundaries",
+        "note": tour_ops_data.BOUNDARIES["booking_and_deal_terms"]["miles_role"],
+    })
+
+    return _finish(_header("Advance pack"), "advance_pack", sections, missing, notes)
+
+
+def _scaffold_day_sheet(inputs: dict) -> dict:
+    """Build a day sheet from DAY_SHEET_SPEC + DAY_SHEET_VARIANTS.
+
+    HARD PRIVACY RULE: fields flagged ``sensitive: True`` are EXCLUDED from the
+    printable/default output list entirely (not just their values — the field
+    itself is omitted) unless the caller explicitly passes
+    ``inputs["include_sensitive"] = True`` AND the variant is ``principal``
+    (never a distributed/printable variant). Field VALUES are artist-supplied
+    per field ([ARTIST-SUPPLIED:<field>] when not given in ``inputs``)."""
+    missing: list = []
+    notes: list = []
+    sections: list = []
+
+    variant = _norm(inputs.get("variant")).lower() or "printable"
+    # The default/printable output ALWAYS excludes sensitive fields, regardless
+    # of include_sensitive — only an explicit request on the principal variant
+    # can surface them.
+    include_sensitive = bool(inputs.get("include_sensitive")) and variant == "principal"
+
+    fields_out = []
+    excluded_sensitive_fields = []
+    for rec in tour_ops_data.DAY_SHEET_SPEC:
+        field = rec["field"]
+        sensitive = rec["sensitive"]
+        if sensitive and not include_sensitive:
+            excluded_sensitive_fields.append(field)
+            continue  # omitted entirely from the output field list
+        value = inputs.get(field)
+        if _missing(value):
+            marker = _ARTIST_SUPPLIED.format(field)
+            missing.append(marker)
+            fields_out.append({"field": field, "description": rec["description"],
+                                "sensitive": sensitive, "value": marker})
+        else:
+            fields_out.append({"field": field, "description": rec["description"],
+                                "sensitive": sensitive, "value": value})  # verbatim
+
+    sections.append({
+        "key": "day_sheet_fields",
+        "heading": _heading(f"Day sheet fields — {variant} variant"),
+        "variant": variant,
+        "fields": fields_out,
+        "sensitive_fields_excluded": excluded_sensitive_fields,
+    })
+
+    notes.append({
+        "section": "day_sheet_fields",
+        "note": ("sensitive fields (artist hotel info, door codes, flight details) are "
+                 "excluded from the printable/default output; only an explicit "
+                 "include_sensitive request on the principal variant surfaces them"),
+    })
+
+    sections.append({
+        "key": "day_sheet_variants_doctrine",
+        "heading": _heading("Principal vs crew day-sheet doctrine"),
+        "doctrine": tour_ops_data.DAY_SHEET_VARIANTS["principal_vs_crew"],
+    })
+
+    return _finish(_header("Day sheet"), "day_sheet", sections, missing, notes)
+
+
+def _scaffold_settlement_prep_sheet(inputs: dict) -> dict:
+    """Ingredients for a settlement-prep sheet: deal terms RESTATED VERBATIM
+    from artist-supplied inputs (never invented) + a prep checklist pulled from
+    SETTLEMENT_PREP_DOCTRINE + walk-the-numbers QUESTIONS.
+
+    CRITICAL INVARIANT: this function never computes or outputs any total/sum/
+    arithmetic result — no computed totals, ever, only restated inputs +
+    checklist + questions."""
+    missing: list = []
+    notes: list = []
+    sections: list = []
+
+    # Deal terms — artist-supplied, restated verbatim, never computed.
+    deal_terms = inputs.get("deal_terms")
+    if _missing(deal_terms):
+        marker = _ARTIST_SUPPLIED.format("deal_terms")
+        missing.append(marker)
+        notes.append({
+            "section": "deal_terms_restated",
+            "marker": marker,
+            "note": "deal terms not supplied — restated verbatim only when supplied, never invented",
+        })
+    else:
+        sections.append({
+            "key": "deal_terms_restated",
+            "heading": _heading("Deal terms — restated verbatim"),
+            "content": deal_terms,  # verbatim — never a computed total
+        })
+
+    sections.append({
+        "key": "settlement_prep_checklist",
+        "heading": _heading("Settlement prep checklist"),
+        "items": [
+            {"key": k, "topic": r["topic"], "description": r["description"]}
+            for k, r in tour_ops_data.SETTLEMENT_PREP_DOCTRINE.items()
+        ],
+    })
+
+    sections.append({
+        "key": "walk_the_numbers_questions",
+        "heading": _heading("Walk-the-numbers — questions, never a computed total"),
+        "questions": list(_SETTLEMENT_WALK_THE_NUMBERS_QUESTIONS),
+    })
+
+    notes.append({
+        "section": "ledger_lock_boundary",
+        "note": tour_ops_data.BOUNDARIES["royalty_and_accounting"]["miles_role"],
+    })
+
+    return _finish(_header("Settlement prep sheet"), "settlement_prep_sheet",
+                   sections, missing, notes)
+
+
+def _finish(header: dict, doc_type: str, sections: list, missing: list, notes: list) -> dict:
+    """Assemble the scaffold, deduping the aggregated gap markers."""
+    return {
+        "status": "scaffold_ready",
+        "doc_type": doc_type,
+        "header": header,
+        "sections": sections,
+        "missing": list(dict.fromkeys(missing)),
+        "notes": notes,
     }

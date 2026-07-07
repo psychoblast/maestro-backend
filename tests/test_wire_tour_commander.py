@@ -1,54 +1,52 @@
 """
-PROOF tests — Miles (tour-commander) Anthropic tool_use loop.
+PROOF tests — Miles (tour-commander) Anthropic tool_use loop, DOC-WRITER Option B.
 
-Mirrors tests/test_wire_venue_hawk.py / tests/test_marcus_tool_use.py. Proves
-that, in /api/chat_stream:
+Proves that, in /api/chat_stream:
 
-  (a) Miles emits search_routing_legs → draft_tour_budget → book_crew_call then a
-      final message; all three mock-first tour_commander_service functions are
-      invoked with the correct args and the stream surfaces a populated `actions`
-      event (actions_taken), with TOUR_COMMANDER_TOOLS passed on every create() call;
-  (b) a NON-tour agent (producer-connect) never receives TOUR_COMMANDER_TOOLS — it takes the
+  (a) Miles emits lookup_tour_ops_doctrine → build_tour_doc_scaffold then a
+      final message; both tour-ops tour_commander_service functions are
+      invoked with the correct args and the stream surfaces a populated
+      `actions` event, with TOUR_COMMANDER_TOOLS passed on every create() call
+      and tour_ops_not_connected ALWAYS False (the old tour-ops-account gate
+      is retired);
+  (b) a NON-tour agent never receives TOUR_COMMANDER_TOOLS — it takes the
       unchanged streaming path and emits NO `actions` event;
-  (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool loop
-      with MARCUS_TOOLS, never TOUR_COMMANDER_TOOLS;
-  (d) the account-not-connected (missing-credential) path is handled gracefully
-      (no crash; the actions event carries tour_ops_not_connected=True);
-  (e) expired account auth also degrades to the not-connected path.
+  (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool
+      loop with MARCUS_TOOLS, never TOUR_COMMANDER_TOOLS;
+  (d) the scaffold tool_result fed back to the model carries Miles's standing
+      doctrine (documents-not-figures / prep-not-negotiation) and never a
+      computed total.
 
-Everything is in-process and deterministic. NO network / LLM / tour-ops calls — the
+Everything is in-process and deterministic. NO network / LLM calls — the
 Anthropic client is faked and the tour_commander_service boundary is exercised
-through recording wrappers over the REAL (pure, mock-first) functions.
+through recording wrappers over the REAL (pure) functions. This file NEVER
+asserts generated prose; the final assistant text is scripted.
 """
 import importlib
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
+import tour_ops_data as td
 
-# ── Fake Anthropic SDK shapes ────────────────────────────────────────────────
 
 class _Block:
-    """Stand-in for an Anthropic content block (text or tool_use)."""
     def __init__(self, type, text=None, name=None, input=None, id=None):
-        self.type  = type
-        self.text  = text
-        self.name  = name
+        self.type = type
+        self.text = text
+        self.name = name
         self.input = input
-        self.id    = id
+        self.id = id
 
 
 class _Resp:
-    """Stand-in for a messages.create(...) response."""
     def __init__(self, content, stop_reason):
-        self.content     = content
+        self.content = content
         self.stop_reason = stop_reason
 
 
 class _FakeStream:
-    """Stand-in for async_client.messages.stream(...) — used by the non-tour path."""
     def __init__(self, text):
         self._text = text
 
@@ -93,64 +91,59 @@ def _parse_sse(body: str) -> list:
 def test_tour_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    # A connected tour-ops account so the crew call succeeds (no network).
-    monkeypatch.setenv("TOUR_COMMANDER_ACCOUNT_CONNECTED", "true")
+    lookup_calls, build_calls = [], []
+    real_lookup = m.tour_commander_service.lookup_tour_ops_doctrine
+    real_build  = m.tour_commander_service.build_tour_doc_scaffold
 
-    # Record calls into the REAL (pure) tour_commander_service functions, delegating
-    # to the originals so we assert on real, deterministic output.
-    search_calls, draft_calls, crew_calls = [], [], []
-    real_search = m.tour_commander_service.search_routing_legs
-    real_draft  = m.tour_commander_service.draft_tour_budget
-    real_crew   = m.tour_commander_service.book_crew_call
+    async def rec_lookup(advancing_key="", day_sheet_field="", settlement_key="",
+                          routing_key="", festival_key="", vocabulary_term=""):
+        lookup_calls.append({
+            "advancing_key": advancing_key, "day_sheet_field": day_sheet_field,
+            "settlement_key": settlement_key, "routing_key": routing_key,
+            "festival_key": festival_key, "vocabulary_term": vocabulary_term,
+        })
+        return await real_lookup(advancing_key=advancing_key, day_sheet_field=day_sheet_field,
+                                 settlement_key=settlement_key, routing_key=routing_key,
+                                 festival_key=festival_key, vocabulary_term=vocabulary_term)
 
-    async def rec_search(region="", leg_type=""):
-        search_calls.append({"region": region, "leg_type": leg_type})
-        return await real_search(region=region, leg_type=leg_type)
+    async def rec_build(doc_type="", inputs=None):
+        build_calls.append({"doc_type": doc_type, "inputs": inputs})
+        return await real_build(doc_type=doc_type, inputs=inputs)
 
-    async def rec_draft(artist_id, leg_id="", num_shows=0, nightly_guarantee=0):
-        draft_calls.append({"artist_id": artist_id, "leg_id": leg_id,
-                            "num_shows": num_shows, "nightly_guarantee": nightly_guarantee})
-        return await real_draft(artist_id, leg_id=leg_id,
-                                num_shows=num_shows, nightly_guarantee=nightly_guarantee)
+    monkeypatch.setattr(m.tour_commander_service, "lookup_tour_ops_doctrine", rec_lookup)
+    monkeypatch.setattr(m.tour_commander_service, "build_tour_doc_scaffold", rec_build)
 
-    async def rec_crew(artist_id, leg_id, call_date, crew_size=0):
-        crew_calls.append({"artist_id": artist_id, "leg_id": leg_id,
-                           "call_date": call_date, "crew_size": crew_size})
-        return await real_crew(artist_id, leg_id, call_date, crew_size)
-
-    monkeypatch.setattr(m.tour_commander_service, "search_routing_legs", rec_search)
-    monkeypatch.setattr(m.tour_commander_service, "draft_tour_budget",   rec_draft)
-    monkeypatch.setattr(m.tour_commander_service, "book_crew_call",      rec_crew)
-
-    # Scripted Anthropic responses: search → draft → crew call → final text.
+    scaffold_input = {"deal_memo": "One night headline, per contract."}
     responses = [
-        _Resp([_Block("tool_use", name="search_routing_legs",
-                      input={"region": "US East", "leg_type": "headline"}, id="t1")], "tool_use"),
-        _Resp([_Block("tool_use", name="draft_tour_budget",
-                      input={"leg_id": "leg-us-east-theatre",
-                             "num_shows": 10, "nightly_guarantee": 11000}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="book_crew_call",
-                      input={"leg_id": "leg-us-east-theatre",
-                             "call_date": "2026-09-01", "crew_size": 8}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — I mapped the leg, drafted the budget, and confirmed the crew call.")],
-              "end_turn"),
+        _Resp([_Block("tool_use", name="lookup_tour_ops_doctrine",
+                      input={"advancing_key": "venue_advance"}, id="t1")], "tool_use"),
+        _Resp([_Block("tool_use", name="build_tour_doc_scaffold",
+                      input={"doc_type": "advance_pack", "inputs": scaffold_input},
+                      id="t2")], "tool_use"),
+        _Resp([_Block("text", text="Here is your advance pack prep.")], "end_turn"),
     ]
     create_calls = []
+    tool_result_payloads = []
 
     async def fake_create(**kwargs):
         create_calls.append(kwargs)
+        for msg in kwargs.get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for blk in msg["content"]:
+                    if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                        tool_result_payloads.append(blk["content"])
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-    # Guard: the streaming path must NOT be used by Miles.
+
     def _no_stream(**kw):
-        raise AssertionError("tour-commander must not use messages.stream")
+        raise AssertionError("Miles must not use messages.stream")
     monkeypatch.setattr(m.async_client.messages, "stream", _no_stream)
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "tour-commander",
-        "message":   "map a US East headline run and lock the crew",
+        "message":   "prep an advance pack for the headline date",
         "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
@@ -159,43 +152,36 @@ def test_tour_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_pat
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # All three internal functions invoked with correct args.
-    assert search_calls == [{"region": "US East", "leg_type": "headline"}], search_calls
-    assert draft_calls == [{
-        "artist_id": "artist-9", "leg_id": "leg-us-east-theatre",
-        "num_shows": 10, "nightly_guarantee": 11000,
-    }], draft_calls
-    assert crew_calls == [{
-        "artist_id": "artist-9", "leg_id": "leg-us-east-theatre",
-        "call_date": "2026-09-01", "crew_size": 8,
-    }], crew_calls
+    assert lookup_calls == [{
+        "advancing_key": "venue_advance", "day_sheet_field": "", "settlement_key": "",
+        "routing_key": "", "festival_key": "", "vocabulary_term": "",
+    }], lookup_calls
+    assert build_calls == [{"doc_type": "advance_pack", "inputs": scaffold_input}], build_calls
 
-    # actions event present, populated, before done.
-    assert "actions" in types, types
-    assert "done" in types
+    assert "actions" in types and "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == [
-        "search_routing_legs", "draft_tour_budget", "book_crew_call",
-    ], tools_used
+    assert tools_used == ["lookup_tour_ops_doctrine", "build_tour_doc_scaffold"], tools_used
     assert actions_evt["tour_ops_not_connected"] is False
 
-    # Real, deterministic results surfaced in the action summaries.
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
-    assert "leg(s) found" in by_tool["search_routing_legs"]["result"]
-    # known leg, positive shows, positive guarantee, guarantee > per-show cost → viable / run.
-    assert "viable=True" in by_tool["draft_tour_budget"]["result"]
-    assert "run" in by_tool["draft_tour_budget"]["result"]
-    assert by_tool["book_crew_call"]["result"] == "crew call confirmed"
+    assert "match(es)" in by_tool["lookup_tour_ops_doctrine"]["result"]
+    assert "scaffold_ready" in by_tool["build_tour_doc_scaffold"]["result"]
 
-    assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    # Four create() round-trips: search, draft, crew, final.
-    assert len(create_calls) == 4
-    # TOUR_COMMANDER_TOOLS passed on every tour create call (never other toolsets).
+    # Three create() round-trips; TOUR tools on every one (never MARCUS_TOOLS).
+    assert len(create_calls) == 3
     assert all(kw.get("tools") == m.TOUR_COMMANDER_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
-    assert all(kw.get("tools") != m.VENUE_HAWK_TOOLS for kw in create_calls)
+
+    # (d) Miles's standing doctrine survives into the tool_result fed back to
+    # the model, and no computed total ever leaks through. (json.dumps escapes
+    # non-ASCII em-dashes, so compare on the DECODED payload, not the raw string.)
+    scaffold_payload = next(p for p in tool_result_payloads if "scaffold_ready" in p)
+    decoded = json.loads(scaffold_payload)
+    assert decoded["header"]["documents_not_figures"] == td.MILES_DOCTRINE["documents_not_figures"]
+    for banned_key in ('"total"', '"gross"', '"net"', '"sum"'):
+        assert banned_key not in scaffold_payload.lower()
 
 
 # ── (b) Non-tour agent never gets tour tools, takes the unchanged path ────────
@@ -215,7 +201,7 @@ def test_non_tour_agent_never_receives_tour_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "music-edu",   # NOT tour-commander, NOT any tool-loop agent
+        "agent_id":  "music-edu",
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",
@@ -225,9 +211,7 @@ def test_non_tour_agent_never_receives_tour_tools(monkeypatch, tmp_path):
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # Unchanged path: the tool-loop create() is never touched.
     assert create_calls == [], "non-tour agent must not invoke the tool_use create loop"
-    # No actions event for non-tour agents.
     assert "actions" not in types, types
     assert "done" in types
 
@@ -257,31 +241,36 @@ def test_marcus_still_uses_marcus_tools_not_tour(monkeypatch, tmp_path):
         "tts":       False,
     })
     assert resp.status_code == 200
-
     assert len(create_calls) == 1
-    # Marcus keeps its own toolset — the tour gate did not bleed into it.
     assert create_calls[0].get("tools") == m.MARCUS_TOOLS
     assert create_calls[0].get("tools") != m.TOUR_COMMANDER_TOOLS
 
 
-# ── (d) tour_ops_not_connected (missing credential) handled gracefully ────────
+# ── (d) day_sheet privacy rule survives the loop, end to end ──────────────────
 
-def test_tour_ops_not_connected_is_handled(monkeypatch, tmp_path):
+def test_day_sheet_privacy_rule_survives_the_loop(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    # No tour-ops account connected → book_crew_call raises TourOpsNotConnected.
-    monkeypatch.delenv("TOUR_COMMANDER_ACCOUNT_CONNECTED", raising=False)
-
+    day_sheet_inputs = {
+        "doors": "7:00 PM", "curfew": "11:00 PM",
+        "artist_hotel_info": "Hotel Regal, room 204",
+    }
     responses = [
-        _Resp([_Block("tool_use", name="book_crew_call",
-                      input={"leg_id": "leg-uk-club",
-                             "call_date": "2026-10-10", "crew_size": 6}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect a tour-ops account first.")], "end_turn"),
+        _Resp([_Block("tool_use", name="build_tour_doc_scaffold",
+                      input={"doc_type": "day_sheet", "inputs": day_sheet_inputs},
+                      id="t1")], "tool_use"),
+        _Resp([_Block("text", text="Here is today's day sheet.")], "end_turn"),
     ]
     create_calls = []
+    tool_result_payloads = []
 
     async def fake_create(**kwargs):
         create_calls.append(kwargs)
+        for msg in kwargs.get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for blk in msg["content"]:
+                    if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                        tool_result_payloads.append(blk["content"])
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
@@ -289,54 +278,13 @@ def test_tour_ops_not_connected_is_handled(monkeypatch, tmp_path):
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "tour-commander",
-        "message":   "lock the UK crew",
-        "artist_id": "artist-no-account",
+        "message":   "give me today's day sheet",
+        "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
     })
     assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    # Stream completes without crashing.
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["tour_ops_not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "tour_ops_not_connected"
-
-
-# ── (e) expired auth also degrades to the not-connected path ─────────────────
-
-def test_tour_ops_auth_expired_is_handled(monkeypatch, tmp_path):
-    m = _load_main(monkeypatch, tmp_path)
-
-    monkeypatch.setenv("TOUR_COMMANDER_ACCOUNT_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="book_crew_call",
-                      input={"leg_id": "leg-eu-support",
-                             "call_date": "2026-11-11", "crew_size": 10}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your tour-ops-account auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "tour-commander",
-        "message":   "lock the EU crew",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["tour_ops_not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "tour_ops_auth_expired"
+    scaffold_payload = next(p for p in tool_result_payloads if "scaffold_ready" in p)
+    assert "Hotel Regal" not in scaffold_payload  # the sensitive VALUE never rode through
+    fields_section = json.loads(scaffold_payload)["sections"][0]
+    assert "artist_hotel_info" not in [f["field"] for f in fields_section["fields"]]
