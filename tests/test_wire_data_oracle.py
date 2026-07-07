@@ -1,55 +1,53 @@
 """
-PROOF tests — Data (data-oracle) Anthropic tool_use loop.
+PROOF tests — Data (data-oracle) Anthropic tool_use loop, DOC-WRITER Option B.
 
-Mirrors tests/test_wire_creative_director.py / tests/test_marcus_tool_use.py.
 Proves that, in /api/chat_stream:
 
-  (a) Data emits search_streaming_datasets → analyze_streaming_metric →
-      schedule_data_export then a final message; all three mock-first
-      data_oracle_service functions are invoked with the correct args and the
-      stream surfaces a populated `actions` event (actions_taken), with
-      DATA_ORACLE_TOOLS passed on every create() call;
-  (b) a NON-data-oracle agent (producer-connect) never receives DATA_ORACLE_TOOLS — it
-      takes the unchanged streaming path and emits NO `actions` event;
-  (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool loop
-      with MARCUS_TOOLS, never DATA_ORACLE_TOOLS;
-  (d) the warehouse-not-connected (missing-credential) path is handled gracefully
-      (no crash; the actions event carries data_warehouse_not_connected=True);
-  (e) expired warehouse auth also degrades to the not-connected path.
+  (a) Data emits lookup_analytics_doctrine → build_analytics_doc_scaffold then a
+      final message; both analytics data_oracle_service functions are invoked
+      with the correct args and the stream surfaces a populated `actions`
+      event, with DATA_ORACLE_TOOLS passed on every create() call and
+      data_warehouse_not_connected ALWAYS False (the old data-warehouse gate
+      is retired);
+  (b) a NON-data agent never receives DATA_ORACLE_TOOLS — it takes the
+      unchanged streaming path and emits NO `actions` event;
+  (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool
+      loop with MARCUS_TOOLS, never DATA_ORACLE_TOOLS;
+  (d) a scaffold's standing doctrine (no_dollar_figures / never_fabricate_numbers)
+      survives into the tool_result payload fed back to the model, and no
+      computed numeric total ever leaks through (JSON-decode-then-assert,
+      since raw string comparison breaks on non-ASCII escaping).
 
 Everything is in-process and deterministic. NO network / LLM calls — the
 Anthropic client is faked and the data_oracle_service boundary is exercised
-through recording wrappers over the REAL (pure, mock-first) functions.
+through recording wrappers over the REAL functions. This file NEVER asserts
+generated prose; the final assistant text is scripted.
 """
 import importlib
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
+import analytics_data as ad
 
-# ── Fake Anthropic SDK shapes ────────────────────────────────────────────────
 
 class _Block:
-    """Stand-in for an Anthropic content block (text or tool_use)."""
     def __init__(self, type, text=None, name=None, input=None, id=None):
-        self.type  = type
-        self.text  = text
-        self.name  = name
+        self.type = type
+        self.text = text
+        self.name = name
         self.input = input
-        self.id    = id
+        self.id = id
 
 
 class _Resp:
-    """Stand-in for a messages.create(...) response."""
     def __init__(self, content, stop_reason):
-        self.content     = content
+        self.content = content
         self.stop_reason = stop_reason
 
 
 class _FakeStream:
-    """Stand-in for async_client.messages.stream(...) — used by the non-Data path."""
     def __init__(self, text):
         self._text = text
 
@@ -89,72 +87,64 @@ def _parse_sse(body: str) -> list:
     return events
 
 
-# ── (a) Data runs the tool loop and surfaces actions_taken ───────────────────
+# ── (a) Data runs the tool loop and surfaces actions_taken ────────────────────
 
-def test_data_oracle_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
+def test_data_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    # A connected warehouse so the export succeeds (no network).
-    monkeypatch.setenv("DATA_ORACLE_WAREHOUSE_CONNECTED", "true")
+    lookup_calls, build_calls = [], []
+    real_lookup = m.data_oracle_service.lookup_analytics_doctrine
+    real_build  = m.data_oracle_service.build_analytics_doc_scaffold
 
-    # Record calls into the REAL (pure) data_oracle_service functions, delegating
-    # to the originals so we assert on real, deterministic output.
-    search_calls, analyze_calls, export_calls = [], [], []
-    real_search  = m.data_oracle_service.search_streaming_datasets
-    real_analyze = m.data_oracle_service.analyze_streaming_metric
-    real_export  = m.data_oracle_service.schedule_data_export
+    async def rec_lookup(metric_key="", band_key="", source_key="",
+                          diagnosis_key="", quality_key="", stakeholder_key=""):
+        lookup_calls.append({
+            "metric_key": metric_key, "band_key": band_key, "source_key": source_key,
+            "diagnosis_key": diagnosis_key, "quality_key": quality_key,
+            "stakeholder_key": stakeholder_key,
+        })
+        return await real_lookup(metric_key=metric_key, band_key=band_key,
+                                 source_key=source_key, diagnosis_key=diagnosis_key,
+                                 quality_key=quality_key, stakeholder_key=stakeholder_key)
 
-    async def rec_search(platform="", metric=""):
-        search_calls.append({"platform": platform, "metric": metric})
-        return await real_search(platform=platform, metric=metric)
+    async def rec_build(doc_type="", inputs=None):
+        build_calls.append({"doc_type": doc_type, "inputs": inputs})
+        return await real_build(doc_type=doc_type, inputs=inputs)
 
-    async def rec_analyze(artist_id, dataset_id="", current_value=0, prior_value=0, window_days=0):
-        analyze_calls.append({"artist_id": artist_id, "dataset_id": dataset_id,
-                              "current_value": current_value, "prior_value": prior_value,
-                              "window_days": window_days})
-        return await real_analyze(artist_id, dataset_id=dataset_id,
-                                  current_value=current_value, prior_value=prior_value,
-                                  window_days=window_days)
+    monkeypatch.setattr(m.data_oracle_service, "lookup_analytics_doctrine", rec_lookup)
+    monkeypatch.setattr(m.data_oracle_service, "build_analytics_doc_scaffold", rec_build)
 
-    async def rec_export(artist_id, dataset_id, destination="", cadence=""):
-        export_calls.append({"artist_id": artist_id, "dataset_id": dataset_id,
-                             "destination": destination, "cadence": cadence})
-        return await real_export(artist_id, dataset_id, destination, cadence)
-
-    monkeypatch.setattr(m.data_oracle_service, "search_streaming_datasets", rec_search)
-    monkeypatch.setattr(m.data_oracle_service, "analyze_streaming_metric",  rec_analyze)
-    monkeypatch.setattr(m.data_oracle_service, "schedule_data_export",      rec_export)
-
-    # Scripted Anthropic responses: search → analyze → export → final text.
+    scaffold_input = {"stream": 12000, "saves": 400}
     responses = [
-        _Resp([_Block("tool_use", name="search_streaming_datasets",
-                      input={"platform": "spotify", "metric": "streams"}, id="t1")], "tool_use"),
-        _Resp([_Block("tool_use", name="analyze_streaming_metric",
-                      input={"dataset_id": "ds-spotify-streams-daily",
-                             "current_value": 12000, "prior_value": 10000,
-                             "window_days": 7}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="schedule_data_export",
-                      input={"dataset_id": "ds-spotify-streams-daily",
-                             "destination": "email", "cadence": "weekly"}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — I found the dataset, analyzed the trend, and scheduled the export.")],
-              "end_turn"),
+        _Resp([_Block("tool_use", name="lookup_analytics_doctrine",
+                      input={"metric_key": "save_rate"}, id="t1")], "tool_use"),
+        _Resp([_Block("tool_use", name="build_analytics_doc_scaffold",
+                      input={"doc_type": "metrics_readout", "inputs": scaffold_input},
+                      id="t2")], "tool_use"),
+        _Resp([_Block("text", text="Here is your metrics readout.")], "end_turn"),
     ]
     create_calls = []
+    tool_result_payloads = []
 
     async def fake_create(**kwargs):
         create_calls.append(kwargs)
+        for msg in kwargs.get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for blk in msg["content"]:
+                    if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                        tool_result_payloads.append(blk["content"])
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-    # Guard: the streaming path must NOT be used by Data.
+
     def _no_stream(**kw):
-        raise AssertionError("data-oracle must not use messages.stream")
+        raise AssertionError("Data must not use messages.stream")
     monkeypatch.setattr(m.async_client.messages, "stream", _no_stream)
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "data-oracle",
-        "message":   "analyze my spotify streams and set up a weekly export",
+        "message":   "give me a metrics readout on my streams and saves",
         "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
@@ -163,48 +153,42 @@ def test_data_oracle_tool_loop_invokes_functions_and_emits_actions(monkeypatch, 
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # All three internal functions invoked with correct args.
-    assert search_calls == [{"platform": "spotify", "metric": "streams"}], search_calls
-    assert analyze_calls == [{
-        "artist_id": "artist-9", "dataset_id": "ds-spotify-streams-daily",
-        "current_value": 12000, "prior_value": 10000, "window_days": 7,
-    }], analyze_calls
-    assert export_calls == [{
-        "artist_id": "artist-9", "dataset_id": "ds-spotify-streams-daily",
-        "destination": "email", "cadence": "weekly",
-    }], export_calls
+    assert lookup_calls == [{
+        "metric_key": "save_rate", "band_key": "", "source_key": "",
+        "diagnosis_key": "", "quality_key": "", "stakeholder_key": "",
+    }], lookup_calls
+    assert build_calls == [{"doc_type": "metrics_readout", "inputs": scaffold_input}], build_calls
 
-    # actions event present, populated, before done.
-    assert "actions" in types, types
-    assert "done" in types
+    assert "actions" in types and "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == [
-        "search_streaming_datasets", "analyze_streaming_metric", "schedule_data_export",
-    ], tools_used
+    assert tools_used == ["lookup_analytics_doctrine", "build_analytics_doc_scaffold"], tools_used
     assert actions_evt["data_warehouse_not_connected"] is False
 
-    # Real, deterministic results surfaced in the action summaries.
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
-    assert "dataset(s) found" in by_tool["search_streaming_datasets"]["result"]
-    # 12000 vs 10000 = +20% → trend up, recommend scale.
-    assert "trend=up" in by_tool["analyze_streaming_metric"]["result"]
-    assert "scale" in by_tool["analyze_streaming_metric"]["result"]
-    assert by_tool["schedule_data_export"]["result"] == "export scheduled"
+    assert "match(es)" in by_tool["lookup_analytics_doctrine"]["result"]
+    assert "scaffold_ready" in by_tool["build_analytics_doc_scaffold"]["result"]
 
-    assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    # Four create() round-trips: search, analyze, export, final.
-    assert len(create_calls) == 4
-    # DATA_ORACLE_TOOLS passed on every Data create call (never other toolsets).
+    # Three create() round-trips; DATA tools on every one (never MARCUS_TOOLS).
+    assert len(create_calls) == 3
     assert all(kw.get("tools") == m.DATA_ORACLE_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
-    assert all(kw.get("tools") != m.CREATIVE_DIRECTOR_TOOLS for kw in create_calls)
+
+    # (d) Data's standing doctrine survives into the tool_result fed back to the
+    # model, and no computed total ever leaks through. (json.dumps escapes
+    # non-ASCII characters, so compare on the DECODED payload, not the raw string.)
+    scaffold_payload = next(p for p in tool_result_payloads if "scaffold_ready" in p)
+    decoded = json.loads(scaffold_payload)
+    assert decoded["header"]["no_dollar_figures"] == ad.DATA_DOCTRINE["no_dollar_figures"]
+    assert decoded["header"]["never_fabricate_numbers"] == ad.DATA_DOCTRINE["never_fabricate_numbers"]
+    for banned_key in ('"growth_pct"', '"score"', '"percentage"', '"total"', '"sum"'):
+        assert banned_key not in scaffold_payload.lower()
 
 
-# ── (b) Non-Data agent never gets Data tools, takes the unchanged path ────────
+# ── (b) Non-data agent never gets data tools, takes the unchanged path ────────
 
-def test_non_data_oracle_agent_never_receives_data_tools(monkeypatch, tmp_path):
+def test_non_data_agent_never_receives_data_tools(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
     create_calls = []
@@ -219,7 +203,7 @@ def test_non_data_oracle_agent_never_receives_data_tools(monkeypatch, tmp_path):
 
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
-        "agent_id":  "music-edu",   # NOT data-oracle, NOT any tool-loop agent
+        "agent_id":  "music-edu",
         "message":   "give me a general check-in",
         "artist_id": "artist-9",
         "history":   "[]",
@@ -229,16 +213,14 @@ def test_non_data_oracle_agent_never_receives_data_tools(monkeypatch, tmp_path):
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    # Unchanged path: the tool-loop create() is never touched.
-    assert create_calls == [], "non-Data agent must not invoke the tool_use create loop"
-    # No actions event for non-Data agents.
+    assert create_calls == [], "non-data agent must not invoke the tool_use create loop"
     assert "actions" not in types, types
     assert "done" in types
 
 
-# ── (c) Gate is exclusive: Marcus still uses MARCUS_TOOLS, not Data tools ──────
+# ── (c) Gate is exclusive: Marcus still uses MARCUS_TOOLS, not data tools ─────
 
-def test_marcus_still_uses_marcus_tools_not_data_oracle(monkeypatch, tmp_path):
+def test_marcus_still_uses_marcus_tools_not_data(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
     create_calls = []
@@ -261,31 +243,36 @@ def test_marcus_still_uses_marcus_tools_not_data_oracle(monkeypatch, tmp_path):
         "tts":       False,
     })
     assert resp.status_code == 200
-
     assert len(create_calls) == 1
-    # Marcus keeps its own toolset — the Data gate did not bleed into it.
     assert create_calls[0].get("tools") == m.MARCUS_TOOLS
     assert create_calls[0].get("tools") != m.DATA_ORACLE_TOOLS
 
 
-# ── (d) data_warehouse_not_connected (missing credential) handled gracefully ──
+# ── (d) stakeholder stat sheet doctrine survives the loop, end to end ─────────
 
-def test_data_warehouse_not_connected_is_handled(monkeypatch, tmp_path):
+def test_stakeholder_stat_sheet_doctrine_survives_the_loop(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    # No warehouse connected → export raises DataWarehouseNotConnected.
-    monkeypatch.delenv("DATA_ORACLE_WAREHOUSE_CONNECTED", raising=False)
-
+    stat_sheet_inputs = {
+        "stakeholder": "venues_and_agents",
+        "listeners_in_their_city": "1,200 monthly listeners in Chicago",
+    }
     responses = [
-        _Resp([_Block("tool_use", name="schedule_data_export",
-                      input={"dataset_id": "ds-youtube-watchtime-daily",
-                             "destination": "dashboard"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect a data warehouse first.")], "end_turn"),
+        _Resp([_Block("tool_use", name="build_analytics_doc_scaffold",
+                      input={"doc_type": "stakeholder_stat_sheet", "inputs": stat_sheet_inputs},
+                      id="t1")], "tool_use"),
+        _Resp([_Block("text", text="Here is your stakeholder stat sheet.")], "end_turn"),
     ]
     create_calls = []
+    tool_result_payloads = []
 
     async def fake_create(**kwargs):
         create_calls.append(kwargs)
+        for msg in kwargs.get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for blk in msg["content"]:
+                    if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                        tool_result_payloads.append(blk["content"])
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
@@ -293,54 +280,16 @@ def test_data_warehouse_not_connected_is_handled(monkeypatch, tmp_path):
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "data-oracle",
-        "message":   "schedule my youtube export",
-        "artist_id": "artist-no-warehouse",
+        "message":   "give me a stat sheet for the venue I'm pitching",
+        "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
     })
     assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    # Stream completes without crashing.
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["data_warehouse_not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "data_warehouse_not_connected"
-
-
-# ── (e) expired auth also degrades to the not-connected path ─────────────────
-
-def test_data_warehouse_auth_expired_is_handled(monkeypatch, tmp_path):
-    m = _load_main(monkeypatch, tmp_path)
-
-    monkeypatch.setenv("DATA_ORACLE_WAREHOUSE_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="schedule_data_export",
-                      input={"dataset_id": "ds-tiktok-sound-views-daily",
-                             "destination": "warehouse"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your data-warehouse auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "data-oracle",
-        "message":   "schedule my tiktok export",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["data_warehouse_not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "data_warehouse_auth_expired"
+    scaffold_payload = next(p for p in tool_result_payloads if "scaffold_ready" in p)
+    decoded = json.loads(scaffold_payload)
+    assert decoded["header"]["insights_not_actions"] == ad.DATA_DOCTRINE["insights_not_actions"]
+    wants_section = next(s for s in decoded["sections"] if s["key"] == "stakeholder_wants")
+    by_want = {w["want"]: w["value"] for w in wants_section["wants"]}
+    assert by_want["listeners_in_their_city"] == stat_sheet_inputs["listeners_in_their_city"]
+    assert "[ARTIST-SUPPLIED:draw_evidence]" in decoded["missing"]

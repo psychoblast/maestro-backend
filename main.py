@@ -5508,151 +5508,153 @@ async def _execute_creative_director_tool(name: str, tool_input: dict, artist_id
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ── Unit — Data-Oracle (data-oracle) tool_use: search_streaming_datasets
-#    + analyze_streaming_metric + schedule_data_export ──────────────────────────
+# ── Unit — Data-Oracle (data-oracle) tool_use: lookup_analytics_doctrine
+#    + build_analytics_doc_scaffold (DOC-WRITER Option B) ───────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
-# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
-# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max /
-# Aria / Sync / Nova / Cree pattern exactly: these tools are passed to the
+# DOC-WRITER Option B (analytics engine). These tools are passed to the
 # Anthropic API for the data-oracle agent ONLY (see the gate in chat_stream).
 # Every other agent takes its own unchanged path and never receives
-# DATA_ORACLE_TOOLS. Handlers map straight onto the mock-first data_oracle_service
-# functions; they make ZERO network calls and read no secrets.
+# DATA_ORACLE_TOOLS. Handlers map straight onto the analytics
+# data_oracle_service functions; they make ZERO network calls, read no
+# secrets, and are UNGATED (both are pure corpus-read / data-scaffold tools).
+# The old mock+gate dataset-search/metric-analysis/export-scheduling tools and
+# their connected-warehouse gate are RETIRED — Data's real value is
+# organizing an artist's own supplied numbers against Data's analytics
+# doctrine (metrics readouts, stakeholder stat sheets), not a mock
+# warehouse-export API.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 DATA_ORACLE_MAX_TOOL_ITERS = 5
 
 DATA_ORACLE_TOOLS = [
     {
-        "name": "search_streaming_datasets",
-        "description": "Search available streaming / audience analytics datasets across the DSPs by platform or metric",
+        "name": "lookup_analytics_doctrine",
+        "description": (
+            "Look up analytics doctrine from Data's corpus — filter by metric key, "
+            "interpretation-band key, source key, diagnosis-pair key, quality-vs-vanity "
+            "key, and/or stakeholder key. Call with no filters to browse the available keys."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "platform": {
+                "metric_key": {
                     "type": "string",
-                    "enum": ["spotify", "apple_music", "youtube", "tiktok"],
+                    "enum": list(data_oracle_service.analytics_data.METRIC_DEFINITIONS),
                 },
-                "metric": {
+                "band_key": {
                     "type": "string",
-                    "enum": ["streams", "listeners", "saves", "discovery", "watch_time", "video_views"],
+                    "enum": list(data_oracle_service.analytics_data.INTERPRETATION_BANDS),
+                },
+                "source_key": {
+                    "type": "string",
+                    "enum": list(data_oracle_service.analytics_data.SOURCE_BREAKDOWN),
+                },
+                "diagnosis_key": {
+                    "type": "string",
+                    "enum": list(data_oracle_service.analytics_data.DIAGNOSIS_PAIRS),
+                },
+                "quality_key": {
+                    "type": "string",
+                    "enum": list(data_oracle_service.analytics_data.QUALITY_VS_VANITY),
+                },
+                "stakeholder_key": {
+                    "type": "string",
+                    "enum": list(data_oracle_service.analytics_data.STAKEHOLDER_FRAMING),
                 },
             },
         },
     },
     {
-        "name": "analyze_streaming_metric",
-        "description": "Analyze how a specific streaming metric is trending against its prior window for a chosen dataset",
+        "name": "build_analytics_doc_scaffold",
+        "description": (
+            "Assemble COMPACT ingredients for an analytics document — a "
+            "metrics_readout or a stakeholder_stat_sheet. Returns supplied-metric "
+            "fields, applicable diagnosis-pair keys, interpretation bands, dig-in "
+            "questions, and gap markers; you write the prose in your turn. Never "
+            "computes a percentage, ratio, or score — arithmetic is always the "
+            "agent's own turn, never this tool."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "dataset_id": {"type": "string"},
-                "current_value": {"type": "number"},
-                "prior_value": {"type": "number"},
-                "window_days": {"type": "number"},
+                "doc_type": {
+                    "type": "string",
+                    "enum": list(data_oracle_service.DOC_TYPES),
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": (
+                        "Artist-supplied fields: metric fields like stream, "
+                        "monthly_listeners, saves, followers, save_rate, "
+                        "streams_per_listener_ratio (metrics_readout); stakeholder "
+                        "(one of venues_and_agents/labels_and_ar) plus that "
+                        "stakeholder's want fields (stakeholder_stat_sheet). "
+                        "Anything unsupplied becomes a gap marker."
+                    ),
+                },
             },
-            "required": ["dataset_id"],
-        },
-    },
-    {
-        "name": "schedule_data_export",
-        "description": "Schedule a recurring data export / analytics digest for the artist against a chosen dataset, on the artist's behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "dataset_id": {"type": "string"},
-                "destination": {"type": "string"},
-                "cadence": {"type": "string"},
-            },
-            "required": ["dataset_id"],
+            "required": ["doc_type"],
         },
     },
 ]
 
 
 async def _execute_data_oracle_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
-    """Execute one Data tool call against the mock-first data_oracle_service.
+    """Execute one Data tool call against the analytics data_oracle_service.
 
     Returns (result_for_model, action_summary, data_warehouse_not_connected).
       - result_for_model: dict fed back as the tool_result content (JSON-encoded).
       - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - data_warehouse_not_connected: True when an export was blocked on a
-        missing/expired data warehouse.
+      - data_warehouse_not_connected: retained for the shared generator's
+        3-tuple contract; ALWAYS False now — Data's tools are pure
+        corpus-read / data-scaffold tools with no connected account and no
+        gate (the old connected-warehouse gate and its export action are
+        retired).
     Never raises — every failure is converted into a structured tool_result so the
     loop can continue and Data can explain the outcome to the artist. Mirrors
-    _execute_creative_director_tool.
+    _execute_tour_commander_tool.
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_streaming_datasets":
-        platform = (tool_input.get("platform") or "").strip()
-        metric   = (tool_input.get("metric") or "").strip()
-        res = await data_oracle_service.search_streaming_datasets(
-            platform=platform, metric=metric,
+    if name == "lookup_analytics_doctrine":
+        metric_key      = (tool_input.get("metric_key") or "").strip()
+        band_key        = (tool_input.get("band_key") or "").strip()
+        source_key      = (tool_input.get("source_key") or "").strip()
+        diagnosis_key   = (tool_input.get("diagnosis_key") or "").strip()
+        quality_key     = (tool_input.get("quality_key") or "").strip()
+        stakeholder_key = (tool_input.get("stakeholder_key") or "").strip()
+        res = await data_oracle_service.lookup_analytics_doctrine(
+            metric_key=metric_key, band_key=band_key, source_key=source_key,
+            diagnosis_key=diagnosis_key, quality_key=quality_key,
+            stakeholder_key=stakeholder_key,
         )
-        summary = {
-            "input": f"platform={platform or 'any'} metric={metric or 'any'}",
-            "result": f"{res['count']} dataset(s) found",
-        }
+        filters = ",".join(f for f in (metric_key, band_key, source_key, diagnosis_key,
+                                       quality_key, stakeholder_key) if f) or "none"
+        if res.get("mode") == "index":
+            result_str = "index browsed"
+        else:
+            hit = (len(res.get("metrics", [])) + len(res.get("bands", []))
+                   + len(res.get("sources", [])) + len(res.get("diagnosis", []))
+                   + len(res.get("quality", [])) + len(res.get("stakeholders", [])))
+            miss = len(res.get("not_found", []))
+            result_str = f"{hit} match(es), {miss} not found"
+        summary = {"input": f"filters={filters}", "result": result_str}
         return res, summary, False
 
-    if name == "analyze_streaming_metric":
-        dataset_id    = (tool_input.get("dataset_id") or "").strip()
-        current_value = tool_input.get("current_value") or 0
-        prior_value   = tool_input.get("prior_value") or 0
-        window_days   = tool_input.get("window_days") or 0
-        res = await data_oracle_service.analyze_streaming_metric(
-            artist_id, dataset_id=dataset_id, current_value=current_value,
-            prior_value=prior_value, window_days=window_days,
+    if name == "build_analytics_doc_scaffold":
+        doc_type   = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await data_oracle_service.build_analytics_doc_scaffold(
+            doc_type=doc_type, inputs=raw_inputs,
         )
-        summary = {
-            "input": f"dataset={dataset_id or 'unspecified'}",
-            "result": f"trend={res['trend']}, {res['recommendation']}",
-        }
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={doc_type or '(missing)'}", "result": result_str}
         return res, summary, False
-
-    if name == "schedule_data_export":
-        dataset_id  = (tool_input.get("dataset_id") or "").strip()
-        destination = tool_input.get("destination") or ""
-        cadence     = tool_input.get("cadence") or ""
-        if not dataset_id:
-            return (
-                {"error": "missing_dataset_id"},
-                {"input": f"dataset={dataset_id or ''}", "result": "missing dataset id"},
-                False,
-            )
-        try:
-            export = await data_oracle_service.schedule_data_export(
-                artist_id, dataset_id, destination, cadence,
-            )
-            return (
-                {"status": "scheduled", "reference": export.get("reference"),
-                 "dataset_id": export.get("dataset_id"), "destination": export.get("destination"),
-                 "cadence": export.get("cadence")},
-                {"input": f"dataset={dataset_id} destination={export.get('destination')}",
-                 "result": "export scheduled"},
-                False,
-            )
-        except data_oracle_service.DataWarehouseNotConnected:
-            return (
-                {
-                    "data_warehouse_not_connected": True,
-                    "message": ("Artist has not connected a data warehouse / dashboard. Tell "
-                                "them to connect one before you can schedule exports."),
-                },
-                {"input": f"dataset={dataset_id}", "result": "data_warehouse_not_connected"},
-                True,
-            )
-        except data_oracle_service.DataWarehouseAuthExpired:
-            return (
-                {
-                    "data_warehouse_not_connected": True,
-                    "message": ("Data-warehouse authorization expired. Tell the artist to "
-                                "re-connect it before you can schedule exports."),
-                },
-                {"input": f"dataset={dataset_id}", "result": "data_warehouse_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -12473,15 +12475,17 @@ async def chat_stream(req: ChatStreamRequest):
 
     async def generate_data_oracle():
         # Data-Oracle-only path (Data): the SAME Anthropic tool_use loop as Marcus,
-        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
-        # Miles, Solo, Nia, Max, Aria, Sync, Nova, and Cree, but pointed at
-        # DATA_ORACLE_TOOLS / _execute_data_oracle_tool instead. Runs the
-        # non-streaming messages.create with tools, executes each emitted tool_use
-        # against data_oracle_service, feeds tool_result back, and repeats (capped at
+        # Lex, and Miles (DOC-WRITER Option B), but pointed at DATA_ORACLE_TOOLS /
+        # _execute_data_oracle_tool instead. Runs the non-streaming
+        # messages.create with tools, executes each emitted tool_use against
+        # data_oracle_service, feeds tool_result back, and repeats (capped at
         # DATA_ORACLE_MAX_TOOL_ITERS) until Data returns a final text answer. The
         # final text is then streamed out sentence-by-sentence through the SAME TTS
         # pipeline the default path uses, so the call UI behaves identically aside
-        # from the `actions` event. Every other agent never reaches here.
+        # from the `actions` event. The old data-warehouse gate is retired — Data's
+        # tools are pure corpus-read / data-scaffold tools, so
+        # `data_warehouse_not_connected` is always False now (kept only for the
+        # shared generator's 3-tuple contract). Every other agent never reaches here.
         full_text                    = ""
         actions_taken                = []
         data_warehouse_not_connected = False
