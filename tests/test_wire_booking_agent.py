@@ -2,9 +2,15 @@
 PROOF tests — Avery (booking-agent) tool_use loop, wired to REAL booking_service.
 
 Mirrors tests/test_wire_pr_agent.py. Proves list_booking_contacts ->
-log_booking_inquiry -> send_booking_inquiry, exclusive gating, and graceful
+log_booking_inquiry -> queue_booking_inquiry, exclusive gating, and graceful
 handling of an unconnected / expired Gmail account. Zero network / LLM — the
 Anthropic client is faked; booking_service runs against the per-test temp DB.
+
+[FIX-COLLISION] queue_booking_inquiry was previously named
+send_booking_inquiry, which collided with Ray B's (venue-hawk's) tool of the
+same name — a completely different schema/persistence. Ray B kept the name;
+this tool (which never actually sent over a wire either) was renamed to the
+honest queue_booking_inquiry.
 """
 import importlib
 import json
@@ -92,7 +98,7 @@ def test_booking_agent_tool_loop_invokes_real_functions_and_emits_actions(monkey
                       input={"genre": "indie", "tier": "A"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="log_booking_inquiry",
                       input={"contact_id": "b-1", "subject": "Spring tour?", "body": "Hi"}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="send_booking_inquiry",
+        _Resp([_Block("tool_use", name="queue_booking_inquiry",
                       input={"contact_id": "b-1", "subject": "Spring tour?"}, id="t3")], "tool_use"),
         _Resp([_Block("text", text="Done — searched venues, logged and queued the inquiry.")], "end_turn"),
     ]
@@ -128,13 +134,13 @@ def test_booking_agent_tool_loop_invokes_real_functions_and_emits_actions(monkey
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == ["list_booking_contacts", "log_booking_inquiry", "send_booking_inquiry"], tools_used
+    assert tools_used == ["list_booking_contacts", "log_booking_inquiry", "queue_booking_inquiry"], tools_used
     assert actions_evt["not_connected"] is False
 
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
     assert "contact(s) found" in by_tool["list_booking_contacts"]["result"]
     assert by_tool["log_booking_inquiry"]["result"] == "inquiry logged"
-    assert by_tool["send_booking_inquiry"]["result"] == "inquiry queued"
+    assert by_tool["queue_booking_inquiry"]["result"] == "inquiry queued"
 
     assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
     assert len(create_calls) == 4
@@ -202,7 +208,7 @@ def test_booking_agent_gmail_not_connected_is_handled(monkeypatch, tmp_path):
     monkeypatch.delenv("BOOKING_GMAIL_CONNECTED", raising=False)
 
     responses = [
-        _Resp([_Block("tool_use", name="send_booking_inquiry",
+        _Resp([_Block("tool_use", name="queue_booking_inquiry",
                       input={"contact_id": "b-9"}, id="t1")], "tool_use"),
         _Resp([_Block("text", text="Connect Gmail first.")], "end_turn"),
     ]
@@ -236,7 +242,7 @@ def test_booking_agent_gmail_auth_expired_is_handled(monkeypatch, tmp_path):
     monkeypatch.setenv("BOOKING_GMAIL_CONNECTED", "expired")
 
     responses = [
-        _Resp([_Block("tool_use", name="send_booking_inquiry",
+        _Resp([_Block("tool_use", name="queue_booking_inquiry",
                       input={"contact_id": "b-9"}, id="t1")], "tool_use"),
         _Resp([_Block("text", text="Gmail auth expired.")], "end_turn"),
     ]
