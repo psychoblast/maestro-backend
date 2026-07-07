@@ -248,8 +248,9 @@ TIMELINE_DOCTRINE = {
         "split_sheet_signed_before_upload": "sign the split sheet BEFORE upload "
             "— the ink-and-air split sheet tools handle this; the composition "
             "splits are settled there, not here.",
-        "stems_archived_for_sync": "archive stems for future sync — the "
-            "ink-and-air sync pack handles this.",
+        "stems_archived_for_sync": "archive stems for future sync — "
+            "ink-and-air's build_publishing_doc_scaffold tool (doc_type "
+            "'sync_pack') handles this.",
     },
 }
 
