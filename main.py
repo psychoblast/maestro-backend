@@ -4942,150 +4942,152 @@ async def _execute_airwave_tool(name: str, tool_input: dict, artist_id: str) -> 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Unit — Fan-Builder (fan-builder) tool_use: search_fan_segments +
-#        build_engagement_campaign + schedule_fan_broadcast
+# Unit — Fan-Builder (fan-builder) tool_use: lookup_engagement_doctrine +
+#        build_engagement_doc_scaffold
 # ═══════════════════════════════════════════════════════════════════════════════
-# Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
-# Victor / Nadia / Zara / Kai / Luna / Diego / Ray B / Miles / Solo / Nia / Max
-# pattern exactly: these tools are passed to the Anthropic API for the fan-builder
-# agent ONLY (see the gate in chat_stream). Every other agent — including Marcus,
-# Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B, Miles,
-# Solo, Nia, and Max — takes its own unchanged path and never receives
-# FAN_BUILDER_TOOLS. Handlers map straight onto the mock-first fan_builder_service
-# functions; they make ZERO network calls and read no secrets.
+# DOC-WRITER Option B (fan-engagement engine). These tools are passed to the
+# Anthropic API for the fan-builder agent ONLY (see the gate in chat_stream).
+# Every other agent — including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor,
+# Nadia, Zara, Kai, Luna, Diego, Ray B, Miles, Solo, Nia, and Max — takes its
+# own unchanged path and never receives FAN_BUILDER_TOOLS. Handlers map
+# straight onto the fan-engagement fan_builder_service functions; they make
+# ZERO network calls, read no secrets, and are UNGATED (both are pure
+# corpus-read / data-scaffold tools). The old mock+gate segment-search/
+# campaign-build/broadcast-schedule tools and their connected-account gate
+# are RETIRED — Aria's real value is prep documents (engagement plans,
+# superfan program outlines) built from Aria's own fan-engagement knowledge
+# base, not a mock fan-CRM/broadcast API. Aria never claims to have sent
+# anything — that infrastructure does not exist yet.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 FAN_BUILDER_MAX_TOOL_ITERS = 5
 
 FAN_BUILDER_TOOLS = [
     {
-        "name": "search_fan_segments",
-        "description": "Search fan-engagement segments by segment type or tier",
+        "name": "lookup_engagement_doctrine",
+        "description": (
+            "Look up fan-engagement doctrine from Aria's corpus — filter by funnel "
+            "key, true-fans-principle key, superfan-signal key, owned-channel key, "
+            "cadence key, and/or time-waste key. Call with no filters to browse the "
+            "available keys."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "segment_type": {
+                "funnel_key": {
                     "type": "string",
-                    "enum": ["superfans", "engaged", "casual", "lapsed", "new"],
+                    "enum": list(fan_builder_service.engagement_data.FAN_FUNNEL),
                 },
-                "tier": {
+                "principle_key": {
                     "type": "string",
-                    "enum": ["core", "growth", "winback"],
+                    "enum": list(fan_builder_service.engagement_data.THOUSAND_TRUE_FANS),
+                },
+                "signal_key": {
+                    "type": "string",
+                    "enum": list(fan_builder_service.engagement_data.SUPERFAN_IDENTIFICATION),
+                },
+                "channel_key": {
+                    "type": "string",
+                    "enum": list(fan_builder_service.engagement_data.OWNED_CHANNELS),
+                },
+                "cadence_key": {
+                    "type": "string",
+                    "enum": list(fan_builder_service.engagement_data.CADENCE_SPEC),
+                },
+                "waste_key": {
+                    "type": "string",
+                    "enum": list(fan_builder_service.engagement_data.WHAT_WASTES_TIME),
                 },
             },
         },
     },
     {
-        "name": "build_engagement_campaign",
-        "description": "Build a concrete multi-channel fan-engagement campaign by applying a segment's channel mix to a target reach",
+        "name": "build_engagement_doc_scaffold",
+        "description": (
+            "Assemble COMPACT ingredients for a fan-engagement document — an "
+            "engagement_plan or a superfan_program_outline. Returns checklists, "
+            "doctrine, questions, tier structure, and gap markers; you write the "
+            "prose in your turn. Never claims a message was sent — Aria drafts "
+            "copy and cadence only."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "segment_id": {"type": "string"},
-                "campaign_name": {"type": "string"},
-                "target_reach": {"type": "integer"},
+                "doc_type": {
+                    "type": "string",
+                    "enum": list(fan_builder_service.DOC_TYPES),
+                },
+                "inputs": {
+                    "type": "object",
+                    "description": (
+                        "Artist-supplied fields: current_weekly_focus (engagement_plan, "
+                        "optional restatement of current practice); offerings — a dict of "
+                        "perk_type -> value like early_listens/decision_votes/beta_merch "
+                        "(superfan_program_outline). Anything unsupplied becomes a gap marker."
+                    ),
+                },
             },
-            "required": ["segment_id"],
-        },
-    },
-    {
-        "name": "schedule_fan_broadcast",
-        "description": "Schedule a broadcast message to a segment of fans out of the artist's connected fan-club / CRM account on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "channel": {"type": "string"},
-                "message": {"type": "string"},
-                "segment": {"type": "string"},
-            },
-            "required": ["channel", "message"],
+            "required": ["doc_type"],
         },
     },
 ]
 
 
 async def _execute_fan_builder_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
-    """Execute one Aria tool call against the mock-first fan_builder_service.
+    """Execute one Aria tool call against the fan-engagement fan_builder_service.
 
     Returns (result_for_model, action_summary, fan_platform_not_connected).
       - result_for_model: dict fed back as the tool_result content (JSON-encoded).
       - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - fan_platform_not_connected: True when a broadcast was blocked on a
-        missing/expired fan-club / CRM platform.
+      - fan_platform_not_connected: retained for the shared generator's 3-tuple
+        contract; ALWAYS False now — Aria's tools are pure corpus-read / data-
+        scaffold tools with no connected account and no gate (the old
+        connected-account gate and its broadcast action are retired).
     Never raises — every failure is converted into a structured tool_result so the
     loop can continue and Aria can explain the outcome to the artist. Mirrors
-    _execute_vault_keeper_tool.
+    _execute_tour_commander_tool.
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_fan_segments":
-        segment_type = (tool_input.get("segment_type") or "").strip()
-        tier         = (tool_input.get("tier") or "").strip()
-        res = await fan_builder_service.search_fan_segments(
-            segment_type=segment_type, tier=tier,
+    if name == "lookup_engagement_doctrine":
+        funnel_key    = (tool_input.get("funnel_key") or "").strip()
+        principle_key = (tool_input.get("principle_key") or "").strip()
+        signal_key    = (tool_input.get("signal_key") or "").strip()
+        channel_key   = (tool_input.get("channel_key") or "").strip()
+        cadence_key   = (tool_input.get("cadence_key") or "").strip()
+        waste_key     = (tool_input.get("waste_key") or "").strip()
+        res = await fan_builder_service.lookup_engagement_doctrine(
+            funnel_key=funnel_key, principle_key=principle_key,
+            signal_key=signal_key, channel_key=channel_key,
+            cadence_key=cadence_key, waste_key=waste_key,
         )
-        summary = {
-            "input": f"type={segment_type or 'any'} tier={tier or 'any'}",
-            "result": f"{res['count']} segment(s) found",
-        }
+        filters = ",".join(f for f in (funnel_key, principle_key, signal_key,
+                                       channel_key, cadence_key, waste_key) if f) or "none"
+        if res.get("mode") == "index":
+            result_str = "index browsed"
+        else:
+            hit = (len(res.get("funnel", [])) + len(res.get("principles", []))
+                   + len(res.get("signals", [])) + len(res.get("channels", []))
+                   + len(res.get("cadence", [])) + len(res.get("waste", [])))
+            miss = len(res.get("not_found", []))
+            result_str = f"{hit} match(es), {miss} not found"
+        summary = {"input": f"filters={filters}", "result": result_str}
         return res, summary, False
 
-    if name == "build_engagement_campaign":
-        segment_id    = (tool_input.get("segment_id") or "").strip()
-        campaign_name = (tool_input.get("campaign_name") or "").strip()
-        target_reach  = tool_input.get("target_reach") or 0
-        res = await fan_builder_service.build_engagement_campaign(
-            artist_id, segment_id=segment_id, campaign_name=campaign_name,
-            target_reach=target_reach,
+    if name == "build_engagement_doc_scaffold":
+        doc_type   = (tool_input.get("doc_type") or "").strip()
+        raw_inputs = tool_input.get("inputs")
+        raw_inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+        res = await fan_builder_service.build_engagement_doc_scaffold(
+            doc_type=doc_type, inputs=raw_inputs,
         )
-        summary = {
-            "input": f"campaign={campaign_name or 'unspecified'} segment={segment_id or 'unspecified'}",
-            "result": f"viable={res['viable']}, {res['recommendation']}",
-        }
+        if res.get("status") == "scaffold_ready":
+            result_str = (f"scaffold_ready, {len(res['sections'])} section(s), "
+                          f"{len(res['missing'])} gap(s)")
+        else:
+            result_str = res.get("status", "error")
+        summary = {"input": f"doc_type={doc_type or '(missing)'}", "result": result_str}
         return res, summary, False
-
-    if name == "schedule_fan_broadcast":
-        channel = (tool_input.get("channel") or "").strip()
-        message = tool_input.get("message") or ""
-        segment = (tool_input.get("segment") or "").strip()
-        if not channel:
-            return (
-                {"error": "missing_channel"},
-                {"input": f"channel={channel or ''} segment={segment or ''}",
-                 "result": "missing channel"},
-                False,
-            )
-        try:
-            bcast = await fan_builder_service.schedule_fan_broadcast(
-                artist_id, channel, message, segment,
-            )
-            return (
-                {"status": "scheduled", "reference": bcast.get("reference"),
-                 "channel": bcast.get("channel"), "segment": bcast.get("segment")},
-                {"input": f"channel={channel[:40]} segment={segment or 'all'}",
-                 "result": "broadcast scheduled"},
-                False,
-            )
-        except fan_builder_service.FanPlatformNotConnected:
-            return (
-                {
-                    "fan_platform_not_connected": True,
-                    "message": ("Artist has not connected a fan-club / CRM platform. Tell them "
-                                "to connect one before you can schedule fan broadcasts."),
-                },
-                {"input": f"channel={channel}", "result": "fan_platform_not_connected"},
-                True,
-            )
-        except fan_builder_service.FanPlatformAuthExpired:
-            return (
-                {
-                    "fan_platform_not_connected": True,
-                    "message": ("Fan-platform authorization expired. Tell the artist to "
-                                "re-connect it before you can schedule fan broadcasts."),
-                },
-                {"input": f"channel={channel}", "result": "fan_platform_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -11775,17 +11777,20 @@ async def chat_stream(req: ChatStreamRequest):
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
     async def generate_fan_builder():
-        # Fan-Builder-only path (Aria): the SAME Anthropic tool_use loop as Marcus,
-        # Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara, Kai, Luna, Diego, Ray B,
-        # Miles, Solo, Nia, and Max, but pointed at FAN_BUILDER_TOOLS /
+        # Fan-Builder-only path (Aria): the SAME Anthropic tool_use loop as Marcus
+        # and Miles (DOC-WRITER Option B), but pointed at FAN_BUILDER_TOOLS /
         # _execute_fan_builder_tool instead. Runs the non-streaming messages.create
         # with tools, executes each emitted tool_use against fan_builder_service,
         # feeds tool_result back, and repeats (capped at FAN_BUILDER_MAX_TOOL_ITERS)
         # until Aria returns a final text answer. The final text is then streamed out
         # sentence-by-sentence through the SAME TTS pipeline the default path uses, so
-        # the call UI behaves identically aside from the `actions` event. Every other
-        # agent (including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor, Nadia, Zara,
-        # Kai, Luna, Diego, Ray B, Miles, Solo, Nia, and Max) never reaches here.
+        # the call UI behaves identically aside from the `actions` event. The old
+        # fan-platform/CRM connection gate is retired — Aria's tools are pure
+        # corpus-read / data-scaffold tools, so `fan_platform_not_connected` is
+        # always False now (kept only for the shared generator's 3-tuple contract).
+        # Every other agent (including Marcus, Lex, Jade, Ray, Cleo, Finn, Victor,
+        # Nadia, Zara, Kai, Luna, Diego, Ray B, Miles, Solo, Nia, and Max) never
+        # reaches here.
         full_text                   = ""
         actions_taken               = []
         fan_platform_not_connected  = False
