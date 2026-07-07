@@ -7319,121 +7319,102 @@ async def _execute_live_wire_tool(name: str, tool_input: dict, artist_id: str) -
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Mo (mobile-monetize) tool_use: search_monetization_programs + analyze_monetization + enable_monetization
+# Mo (mobile-monetize) tool_use: lookup_monetization_doctrine + build_monetization_doc_scaffold
 # ═══════════════════════════════════════════════════════════════════════════════
-# Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
-# passed to the Anthropic API for the mobile-monetize agent ONLY (see the gate in
-# chat_stream). Every other agent takes its own unchanged path and never receives
-# MOBILE_MONETIZE_TOOLS. Handlers map straight onto the mock-first mobile_monetize_service functions;
-# they make ZERO network calls and read no secrets.
+# DOC-WRITER Option B (Miles / Data / Lex precedent): these tools are passed to
+# the Anthropic API for the mobile-monetize agent ONLY (see the gate in
+# chat_stream). Every other agent takes its own unchanged path and never
+# receives MOBILE_MONETIZE_TOOLS. Handlers map straight onto the pure,
+# UNGATED mobile_monetize_service functions; they make ZERO network calls,
+# ZERO model calls, and read no secrets. The old mock+gate surface
+# (search_monetization_programs / analyze_monetization / enable_monetization,
+# the platform-monetization-account connection gate, and its
+# not-connected/auth-expired exceptions) is RETIRED — flipping a live
+# monetization switch is not Mo's domain; organizing the artist's own stated
+# revenue picture against Mo's doctrine is.
 
 # Cap on tool_use round-trips per turn — backstop against a runaway tool loop.
 MOBILE_MONETIZE_MAX_TOOL_ITERS = 5
 
 MOBILE_MONETIZE_TOOLS = [
     {
-        "name": "search_monetization_programs",
-        "description": "Search platform monetization programs by platform or tier",
+        "name": "lookup_monetization_doctrine",
+        "description": ("Look up Mo's revenue-diversification doctrine. With no filter, "
+                        "returns an index of the available keys per block so you can browse. "
+                        "With a filter, returns the matched full record(s). Mo's standing "
+                        "doctrine, integrity rules, and boundaries always ride along. THE HARD "
+                        "RULE OF THIS DOMAIN: no income projection or dollar figure of any kind "
+                        "is ever invented — every 'how much' question gets mechanism + "
+                        "'it varies', never a number."),
         "input_schema": {
             "type": "object",
             "properties": {
-                "platform": {"type": "string", "enum": ['tiktok', 'youtube', 'instagram', 'snapchat']},
-                "tier": {"type": "string"},
+                "stream_key": {"type": "string", "enum": list(mobile_monetize_service.monetization_data.REVENUE_STREAM_TAXONOMY)},
+                "diversification_key": {"type": "string", "enum": list(mobile_monetize_service.monetization_data.DIVERSIFICATION)},
+                "sequencing_key": {"type": "string", "enum": list(mobile_monetize_service.monetization_data.SEQUENCING)},
+                "admin_key": {"type": "string", "enum": list(mobile_monetize_service.monetization_data.ADMIN)},
             },
         },
     },
     {
-        "name": "analyze_monetization",
-        "description": "Screen channel metrics for monetization blockers",
+        "name": "build_monetization_doc_scaffold",
+        "description": ("Build compact ingredients for ONE monetization document; YOU write "
+                        "the prose in your turn. doc_type is 'revenue_map' (organizes the "
+                        "artist's current streams against the full taxonomy, plus addressable "
+                        "next streams) or 'diversification_plan' (surfaces 2-3 next-stream "
+                        "candidates with their prerequisites and owning department). Pass "
+                        "inputs as a free-form object: 'active_streams' (list of the artist's "
+                        "current revenue-stream taxonomy keys, verbatim) and 'audience_stage' "
+                        "('pre_audience' or 'has_audience', artist-supplied — never guessed). "
+                        "NEVER a computed income figure of any kind, ever."),
         "input_schema": {
             "type": "object",
             "properties": {
-                "metrics_text": {"type": "string"},
-                "context": {"type": "string"},
+                "doc_type": {"type": "string", "enum": list(mobile_monetize_service.DOC_TYPES)},
+                "inputs": {"type": "object"},
             },
-            "required": ["metrics_text"],
-        },
-    },
-    {
-        "name": "enable_monetization",
-        "description": "Enable monetization on the connected platform account",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "platform": {"type": "string"},
-                "program": {"type": "string", "enum": ['ads', 'tips', 'subscriptions']},
-            },
-            "required": ["platform"],
+            "required": ["doc_type"],
         },
     },
 ]
 
 
 async def _execute_mobile_monetize_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
-    """Execute one Mo tool call against the mock-first mobile_monetize_service.
+    """Execute one Mo tool call against the pure, ungated mobile_monetize_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). ``not_connected``
+    is ALWAYS False now — the old platform-monetization-account gate is
+    retired; the field is kept only for the shared generator's 3-tuple
+    contract. Never raises — every failure is converted into a structured
+    tool_result so the loop can continue. Mirrors _execute_tour_commander_tool.
     """
     tool_input = dict(tool_input or {})
 
-    if name == "search_monetization_programs":
-        a = (tool_input.get("platform") or "").strip()
-        b = (tool_input.get("tier") or "").strip()
-        res = await mobile_monetize_service.search_monetization_programs(platform=a, tier=b)
+    if name == "lookup_monetization_doctrine":
+        res = await mobile_monetize_service.lookup_monetization_doctrine(
+            stream_key=(tool_input.get("stream_key") or "").strip(),
+            diversification_key=(tool_input.get("diversification_key") or "").strip(),
+            sequencing_key=(tool_input.get("sequencing_key") or "").strip(),
+            admin_key=(tool_input.get("admin_key") or "").strip(),
+        )
+        not_found_count = len(res.get("not_found", []))
         summary = {
-            "input": f"platform={a or 'any'} tier={b or 'any'}",
-            "result": f"{res['count']} program(s) found",
+            "input": f"mode={res.get('mode')}",
+            "result": (f"{not_found_count} not-found filter(s)" if res.get("mode") == "filtered"
+                       else "index returned"),
         }
         return res, summary, False
 
-    if name == "analyze_monetization":
-        txt = tool_input.get("metrics_text") or ""
-        ctx = (tool_input.get("context") or "").strip()
-        res = await mobile_monetize_service.analyze_monetization(artist_id, metrics_text=txt, context=ctx)
+    if name == "build_monetization_doc_scaffold":
+        dt = (tool_input.get("doc_type") or "").strip()
+        ins = tool_input.get("inputs") or {}
+        res = await mobile_monetize_service.build_monetization_doc_scaffold(doc_type=dt, inputs=ins)
         summary = {
-            "input": f"context={ctx or 'unspecified'} chars={len(txt)}",
-            "result": f"{res['finding_count']} blocker(s), {res['recommendation']}",
+            "input": f"doc_type={dt or '(missing)'}",
+            "result": (f"{len(res.get('sections', []))} section(s) ready" if res.get("status") == "scaffold_ready"
+                       else res.get("status", "error")),
         }
         return res, summary, False
-
-    if name == "enable_monetization":
-        nm  = (tool_input.get("platform") or "").strip()
-        opt = (tool_input.get("program") or "ads").strip()
-        if not nm:
-            return (
-                {"error": "missing_platform"},
-                {"input": "platform=", "result": "missing platform"},
-                False,
-            )
-        try:
-            done = await mobile_monetize_service.enable_monetization(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "platform": nm},
-                {"input": f"platform={nm} program={opt}", "result": "monetization enabled"},
-                False,
-            )
-        except mobile_monetize_service.PlatformAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a platform monetization account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"platform={nm}", "result": "not_connected"},
-                True,
-            )
-        except mobile_monetize_service.PlatformAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Platform monetization account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"platform={nm}", "result": "auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -14509,12 +14490,18 @@ async def chat_stream(req: ChatStreamRequest):
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
     async def generate_mobile_monetize():
-        # mobile-monetize-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
-        # MOBILE_MONETIZE_TOOLS / _execute_mobile_monetize_tool instead. Runs the non-streaming messages.create
-        # with tools, executes each emitted tool_use against mobile_monetize_service, feeds
-        # tool_result back, and repeats (capped at MOBILE_MONETIZE_MAX_TOOL_ITERS) until
-        # Mo returns a final text answer, then streams it through the SAME
-        # TTS pipeline the default path uses. Every other agent never reaches here.
+        # mobile-monetize-only path (Mo): the SAME Anthropic tool_use loop as Miles/Data/
+        # Lex, but pointed at MOBILE_MONETIZE_TOOLS / _execute_mobile_monetize_tool
+        # instead — the DOC-WRITER Option B pair (lookup_monetization_doctrine +
+        # build_monetization_doc_scaffold). The old mock+gate surface
+        # (search_monetization_programs / analyze_monetization / enable_monetization
+        # and the platform-monetization-account gate) is RETIRED; both replacement
+        # tools are pure and ungated, so not_connected below is now always False.
+        # Runs the non-streaming messages.create with tools, executes each emitted
+        # tool_use against mobile_monetize_service, feeds tool_result back, and
+        # repeats (capped at MOBILE_MONETIZE_MAX_TOOL_ITERS) until Mo returns a final
+        # text answer, then streams it through the SAME TTS pipeline the default path
+        # uses. Every other agent never reaches here.
         full_text     = ""
         actions_taken = []
         not_connected = False

@@ -1,34 +1,49 @@
 """
-PROOF tests — Mo (mobile-monetize) Anthropic tool_use loop.
+PROOF tests — Mo (mobile-monetize) Anthropic tool_use loop, DOC-WRITER Option B.
 
-Mirrors tests/test_wire_lex_cipher.py / test_wire_ai_navigator.py. Proves that,
-in /api/chat_stream: (a) Mo emits search_monetization_programs -> analyze_monetization -> enable_monetization then a final message
-and surfaces a populated `actions` event with MOBILE_MONETIZE_TOOLS on every create();
-(b) a non-target agent never receives MOBILE_MONETIZE_TOOLS; (c) the gate is exclusive
-(Marcus still uses MARCUS_TOOLS); (d) the not-connected path is graceful; and
-(e) expired auth degrades the same way. Zero network / LLM — the Anthropic client
-is faked and the mobile_monetize_service boundary is exercised through recording wrappers over
-the REAL (pure, mock-first) functions.
+Proves that, in /api/chat_stream:
+
+  (a) Mo emits lookup_monetization_doctrine -> build_monetization_doc_scaffold
+      then a final message; both mobile_monetize_service functions are
+      invoked with the correct args and the stream surfaces a populated
+      `actions` event, with MOBILE_MONETIZE_TOOLS passed on every create()
+      call and not_connected ALWAYS False (the old platform-monetization-
+      account gate is retired);
+  (b) a NON-mo agent never receives MOBILE_MONETIZE_TOOLS — it takes the
+      unchanged streaming path and emits NO `actions` event;
+  (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool
+      loop with MARCUS_TOOLS, never MOBILE_MONETIZE_TOOLS;
+  (d) the scaffold tool_result fed back to the model carries Mo's standing
+      doctrine (no_income_projections) and never a computed income figure of
+      any kind.
+
+Everything is in-process and deterministic. NO network / LLM calls — the
+Anthropic client is faked and the mobile_monetize_service boundary is
+exercised through recording wrappers over the REAL (pure) functions. This
+file NEVER asserts generated prose; the final assistant text is scripted.
 """
 import importlib
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+import monetization_data as md
+
 
 class _Block:
     def __init__(self, type, text=None, name=None, input=None, id=None):
-        self.type  = type
-        self.text  = text
-        self.name  = name
+        self.type = type
+        self.text = text
+        self.name = name
         self.input = input
-        self.id    = id
+        self.id = id
 
 
 class _Resp:
     def __init__(self, content, stop_reason):
-        self.content     = content
+        self.content = content
         self.stop_reason = stop_reason
 
 
@@ -72,43 +87,49 @@ def _parse_sse(body: str) -> list:
     return events
 
 
-def test_mobile_monetize_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
+# ── (a) Mo runs the tool loop and surfaces actions_taken ──────────────────────
+
+def test_mo_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("MOBILE_MONETIZE_CONNECTED", "true")
 
-    f1_calls, f2_calls, f3_calls = [], [], []
-    real_f1 = m.mobile_monetize_service.search_monetization_programs
-    real_f2 = m.mobile_monetize_service.analyze_monetization
-    real_f3 = m.mobile_monetize_service.enable_monetization
+    lookup_calls, build_calls = [], []
+    real_lookup = m.mobile_monetize_service.lookup_monetization_doctrine
+    real_build  = m.mobile_monetize_service.build_monetization_doc_scaffold
 
-    async def rec_f1(platform="", tier=""):
-        f1_calls.append({"platform": platform, "tier": tier})
-        return await real_f1(platform=platform, tier=tier)
+    async def rec_lookup(stream_key="", diversification_key="", sequencing_key="", admin_key=""):
+        lookup_calls.append({
+            "stream_key": stream_key, "diversification_key": diversification_key,
+            "sequencing_key": sequencing_key, "admin_key": admin_key,
+        })
+        return await real_lookup(stream_key=stream_key, diversification_key=diversification_key,
+                                  sequencing_key=sequencing_key, admin_key=admin_key)
 
-    async def rec_f2(artist_id, metrics_text="", context=""):
-        f2_calls.append({"artist_id": artist_id, "metrics_text": metrics_text, "context": context})
-        return await real_f2(artist_id, metrics_text=metrics_text, context=context)
+    async def rec_build(doc_type="", inputs=None):
+        build_calls.append({"doc_type": doc_type, "inputs": inputs})
+        return await real_build(doc_type=doc_type, inputs=inputs)
 
-    async def rec_f3(artist_id, platform, program="ads"):
-        f3_calls.append({"artist_id": artist_id, "platform": platform, "program": program})
-        return await real_f3(artist_id, platform, program)
+    monkeypatch.setattr(m.mobile_monetize_service, "lookup_monetization_doctrine", rec_lookup)
+    monkeypatch.setattr(m.mobile_monetize_service, "build_monetization_doc_scaffold", rec_build)
 
-    monkeypatch.setattr(m.mobile_monetize_service, "search_monetization_programs", rec_f1)
-    monkeypatch.setattr(m.mobile_monetize_service, "analyze_monetization", rec_f2)
-    monkeypatch.setattr(m.mobile_monetize_service, "enable_monetization", rec_f3)
-
+    scaffold_inputs = {"active_streams": ["streaming_royalties"], "audience_stage": "has_audience"}
     responses = [
-        _Resp([_Block("tool_use", name="search_monetization_programs", input={"platform": "youtube"}, id="t1")], "tool_use"),
-        _Resp([_Block("tool_use", name="analyze_monetization",
-                      input={"metrics_text": "under 1000 subs", "context": "ctx"}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="enable_monetization",
-                      input={"platform": "Test Item", "program": "ads"}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — took the actions across all three tools.")], "end_turn"),
+        _Resp([_Block("tool_use", name="lookup_monetization_doctrine",
+                      input={"stream_key": "live_performance"}, id="t1")], "tool_use"),
+        _Resp([_Block("tool_use", name="build_monetization_doc_scaffold",
+                      input={"doc_type": "revenue_map", "inputs": scaffold_inputs},
+                      id="t2")], "tool_use"),
+        _Resp([_Block("text", text="Here is your revenue map.")], "end_turn"),
     ]
     create_calls = []
+    tool_result_payloads = []
 
     async def fake_create(**kwargs):
         create_calls.append(kwargs)
+        for msg in kwargs.get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for blk in msg["content"]:
+                    if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                        tool_result_payloads.append(blk["content"])
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
@@ -120,7 +141,7 @@ def test_mobile_monetize_tool_loop_invokes_functions_and_emits_actions(monkeypat
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "mobile-monetize",
-        "message":   "take some actions for me",
+        "message":   "build me a revenue map",
         "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
@@ -129,30 +150,45 @@ def test_mobile_monetize_tool_loop_invokes_functions_and_emits_actions(monkeypat
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    assert f1_calls == [{"platform": "youtube", "tier": ""}], f1_calls
-    assert f2_calls == [{"artist_id": "artist-9", "metrics_text": "under 1000 subs", "context": "ctx"}], f2_calls
-    assert f3_calls == [{"artist_id": "artist-9", "platform": "Test Item", "program": "ads"}], f3_calls
+    assert lookup_calls == [{
+        "stream_key": "live_performance", "diversification_key": "",
+        "sequencing_key": "", "admin_key": "",
+    }], lookup_calls
+    assert build_calls == [{"doc_type": "revenue_map", "inputs": scaffold_inputs}], build_calls
 
-    assert "actions" in types, types
-    assert "done" in types
+    assert "actions" in types and "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == ["search_monetization_programs", "analyze_monetization", "enable_monetization"], tools_used
+    assert tools_used == ["lookup_monetization_doctrine", "build_monetization_doc_scaffold"], tools_used
     assert actions_evt["not_connected"] is False
 
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
-    assert "program(s) found" in by_tool["search_monetization_programs"]["result"]
-    assert "blocker(s)" in by_tool["analyze_monetization"]["result"]
-    assert by_tool["enable_monetization"]["result"] == "monetization enabled"
+    assert "index returned" in by_tool["lookup_monetization_doctrine"]["result"] \
+        or "not-found" in by_tool["lookup_monetization_doctrine"]["result"]
+    assert "section(s) ready" in by_tool["build_monetization_doc_scaffold"]["result"]
 
-    assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    assert len(create_calls) == 4
+    # Three create() round-trips; MO tools on every one (never MARCUS_TOOLS).
+    assert len(create_calls) == 3
     assert all(kw.get("tools") == m.MOBILE_MONETIZE_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
 
+    # (d) Mo's standing doctrine survives into the tool_result fed back to the
+    # model, and no computed income figure ever leaks through. (json.dumps
+    # escapes non-ASCII em-dashes, so compare on the DECODED payload, not the
+    # raw string.)
+    scaffold_payload = next(p for p in tool_result_payloads if "scaffold_ready" in p)
+    decoded = json.loads(scaffold_payload)
+    assert decoded["header"]["no_income_projections"] == md.MO_DOCTRINE["no_income_projections"]
+    for banned_key in ('"total"', '"gross"', '"net"', '"sum"', '"projected_income"',
+                       '"estimated_income"', '"income_estimate"'):
+        assert banned_key not in scaffold_payload.lower()
+    assert not re.search(r"\$\s*\d", scaffold_payload)
 
-def test_mobile_monetize_non_target_agent_never_receives_tools(monkeypatch, tmp_path):
+
+# ── (b) Non-mo agent never gets mo tools, takes the unchanged path ────────────
+
+def test_non_mo_agent_never_receives_mo_tools(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
     create_calls = []
@@ -177,12 +213,14 @@ def test_mobile_monetize_non_target_agent_never_receives_tools(monkeypatch, tmp_
     events = _parse_sse(resp.text)
     types  = [e["type"] for e in events]
 
-    assert create_calls == [], "non-target agent must not invoke the tool_use create loop"
+    assert create_calls == [], "non-mo agent must not invoke the tool_use create loop"
     assert "actions" not in types, types
     assert "done" in types
 
 
-def test_mobile_monetize_marcus_still_uses_marcus_tools(monkeypatch, tmp_path):
+# ── (c) Gate is exclusive: Marcus still uses MARCUS_TOOLS, not mo tools ───────
+
+def test_marcus_still_uses_marcus_tools_not_mo(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
     create_calls = []
@@ -210,18 +248,28 @@ def test_mobile_monetize_marcus_still_uses_marcus_tools(monkeypatch, tmp_path):
     assert create_calls[0].get("tools") != m.MOBILE_MONETIZE_TOOLS
 
 
-def test_mobile_monetize_not_connected_is_handled(monkeypatch, tmp_path):
-    m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.delenv("MOBILE_MONETIZE_CONNECTED", raising=False)
+# ── (d) diversification_plan doctrine survives the loop, end to end ───────────
 
+def test_diversification_plan_doctrine_survives_the_loop_no_income_figure(monkeypatch, tmp_path):
+    m = _load_main(monkeypatch, tmp_path)
+
+    plan_inputs = {"active_streams": ["teaching_and_session_work"], "audience_stage": "pre_audience"}
     responses = [
-        _Resp([_Block("tool_use", name="enable_monetization", input={"platform": "Blocked Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect an account first.")], "end_turn"),
+        _Resp([_Block("tool_use", name="build_monetization_doc_scaffold",
+                      input={"doc_type": "diversification_plan", "inputs": plan_inputs},
+                      id="t1")], "tool_use"),
+        _Resp([_Block("text", text="Here is a diversification plan.")], "end_turn"),
     ]
     create_calls = []
+    tool_result_payloads = []
 
     async def fake_create(**kwargs):
         create_calls.append(kwargs)
+        for msg in kwargs.get("messages", []):
+            if msg.get("role") == "user" and isinstance(msg.get("content"), list):
+                for blk in msg["content"]:
+                    if isinstance(blk, dict) and blk.get("type") == "tool_result":
+                        tool_result_payloads.append(blk["content"])
         return responses[len(create_calls) - 1]
 
     monkeypatch.setattr(m.async_client.messages, "create", fake_create)
@@ -229,48 +277,16 @@ def test_mobile_monetize_not_connected_is_handled(monkeypatch, tmp_path):
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "mobile-monetize",
-        "message":   "do the gated action",
-        "artist_id": "artist-none",
+        "message":   "give me a diversification plan",
+        "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
     })
     assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "not_connected"
-
-
-def test_mobile_monetize_auth_expired_is_handled(monkeypatch, tmp_path):
-    m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("MOBILE_MONETIZE_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="enable_monetization", input={"platform": "Old Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your account auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "mobile-monetize",
-        "message":   "do the gated action on the old item",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "auth_expired"
+    scaffold_payload = next(p for p in tool_result_payloads if "scaffold_ready" in p)
+    decoded = json.loads(scaffold_payload)
+    assert decoded["doc_type"] == "diversification_plan"
+    assert decoded["header"]["diversify_dont_concentrate"] == md.MO_DOCTRINE["diversify_dont_concentrate"]
+    for banned_key in ('"total"', '"gross"', '"net"', '"sum"', '"projected_income"'):
+        assert banned_key not in scaffold_payload.lower()
+    assert not re.search(r"\$\s*\d", scaffold_payload)
