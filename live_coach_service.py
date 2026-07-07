@@ -1,35 +1,17 @@
 """
-PLMKR Coach — Performance Coach action service (mock-first).
+PLMKR Coach — Performance Coach consult service (data-only).
 
 Backs the live-coach (Coach, Performance Coach) agent's tool_use loop in /api/chat_stream
-(see LIVE_COACH_TOOLS in main.py). Coach does not just advise — these functions
-let the agent take real action: search_coaching_drills, assess_stage_presence, and schedule_coaching_session (a real action on the
-artist's connected coaching calendar account).
+(see LIVE_COACH_TOOLS in main.py). Coach is consult-only: search_coaching_drills and
+assess_stage_presence. The mock schedule_coaching_session terminal-action tool (and
+its LIVE_COACH_CONNECTED gate) was retired — Coach never booked a real session, so
+the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_connected``) driven by an env flag so tests can toggle
-    connected / not-connected / expired deterministically — mirroring
-    lex_cipher_service.RegistryNotConnected without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads.
 """
-import hashlib
-import os
-
-
-class CoachingCalendarNotConnected(Exception):
-    """Raised when the artist has not connected a coaching calendar account.
-
-    Mirrors lex_cipher_service.RegistryNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class CoachingCalendarAuthExpired(Exception):
-    """Raised when a previously connected coaching calendar account's authorization expired."""
 
 
 # ── Reference catalog (in-memory reference data — no I/O) ─────────────────────
@@ -88,41 +70,4 @@ async def assess_stage_presence(artist_id: str, performance_notes: str = "", con
         "findings": findings,
         "finding_count": len(findings),
         "recommendation": recommendation,
-    }
-
-
-def _connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's coaching calendar account.
-
-    Driven purely by the ``LIVE_COACH_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real
-    secret. Values:
-      - "expired"                     → raise CoachingCalendarAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("LIVE_COACH_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise CoachingCalendarAuthExpired("coaching calendar account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def schedule_coaching_session(artist_id: str, focus: str, channel: str = "video") -> dict:
-    """Take the session scheduled action on the artist's connected coaching calendar account.
-
-    Raises CoachingCalendarNotConnected / CoachingCalendarAuthExpired when no account is linked so the caller can
-    surface a 'connect your account' message instead of a hard failure. On
-    success returns a deterministic mock reference — NO network call is made.
-    """
-    if not _connected(artist_id):
-        raise CoachingCalendarNotConnected("artist has not connected a coaching calendar account")
-    name = (focus or "").strip()
-    opt = (channel or "video").strip()
-    digest = hashlib.sha1(f"{artist_id}:{name}:{opt}".encode("utf-8")).hexdigest()
-    reference = "COACH-" + digest[:10].upper()
-    return {
-        "status": "done",
-        "reference": reference,
-        "focus": name,
-        "channel": opt,
     }

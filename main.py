@@ -2564,8 +2564,9 @@ async def _execute_mech_ledger_tool(name: str, tool_input: dict, artist_id: str)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Vault-Keeper (vault-keeper) tool_use: search_budget_templates
-#            + build_project_budget + schedule_expense_payment
+# Vault-Keeper (vault-keeper) tool_use: search_budget_templates + build_project_budget
+# (schedule_expense_payment was a mock terminal-action tool gated behind
+#  VAULT_KEEPER_ACCOUNT_CONNECTED — retired; Victor is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn pattern
 # exactly: these tools are passed to the Anthropic API for the vault-keeper agent
@@ -2608,33 +2609,16 @@ VAULT_KEEPER_TOOLS = [
             "required": ["template_id"],
         },
     },
-    {
-        "name": "schedule_expense_payment",
-        "description": "Schedule an expense payment to a payee out of the artist's operating account on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "payee": {"type": "string"},
-                "amount": {"type": "number"},
-                "category": {"type": "string"},
-            },
-            "required": ["payee", "amount"],
-        },
-    },
 ]
 
 
 async def _execute_vault_keeper_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Victor tool call against the mock-first vault_keeper_service.
 
-    Returns (result_for_model, action_summary, vault_account_not_connected).
-      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
-      - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - vault_account_not_connected: True when a payment was blocked on a
-        missing/expired operating account.
-    Never raises — every failure is converted into a structured tool_result so the
-    loop can continue and Victor can explain the outcome to the artist. Mirrors
-    _execute_mech_ledger_tool.
+    Returns (result_for_model, action_summary, not_connected). Victor is
+    consult-only (search + build); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -2663,50 +2647,6 @@ async def _execute_vault_keeper_tool(name: str, tool_input: dict, artist_id: str
             "result": f"viable={res['viable']}, {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "schedule_expense_payment":
-        payee    = (tool_input.get("payee") or "").strip()
-        amount   = tool_input.get("amount") or 0
-        category = (tool_input.get("category") or "").strip()
-        if not payee:
-            return (
-                {"error": "missing_payee"},
-                {"input": f"payee={payee or ''} amount={amount}",
-                 "result": "missing payee"},
-                False,
-            )
-        try:
-            payment = await vault_keeper_service.schedule_expense_payment(
-                artist_id, payee, amount, category,
-            )
-            return (
-                {"status": "scheduled", "reference": payment.get("reference"),
-                 "payee": payment.get("payee"), "amount": payment.get("amount"),
-                 "category": payment.get("category")},
-                {"input": f"payee={payee[:40]} amount={payment.get('amount')}",
-                 "result": "payment scheduled"},
-                False,
-            )
-        except vault_keeper_service.VaultAccountNotConnected:
-            return (
-                {
-                    "vault_account_not_connected": True,
-                    "message": ("Artist has not connected an operating/bank account. Tell them "
-                                "to connect one before you can schedule payments."),
-                },
-                {"input": f"payee={payee}", "result": "vault_account_not_connected"},
-                True,
-            )
-        except vault_keeper_service.VaultAccountAuthExpired:
-            return (
-                {
-                    "vault_account_not_connected": True,
-                    "message": ("Operating-account authorization expired. Tell the artist to "
-                                "re-connect their account before you can schedule payments."),
-                },
-                {"input": f"payee={payee}", "result": "vault_account_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -3427,7 +3367,9 @@ async def _execute_grid_prophet_tool(name: str, tool_input: dict, artist_id: str
 
 
 # ── Vision-Forge (Luna — AI Visuals) tool_use surface: search_visual_styles +
-# draft_visual_brief + generate_artwork ────────────────────────────────────────
+# draft_visual_brief ────────────────────────────────────────────────────────────
+# (generate_artwork was a mock terminal-action tool gated behind
+#  VISION_FORGE_ACCOUNT_CONNECTED — retired; Luna is consult-only.)
 # Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) / Jade / Ray / Cleo / Finn /
 # Victor / Nadia / Zara / Kai pattern exactly: these tools are passed to the
 # Anthropic API for the vision-forge agent ONLY (see the gate in chat_stream).
@@ -3470,33 +3412,16 @@ VISION_FORGE_TOOLS = [
             "required": ["concept"],
         },
     },
-    {
-        "name": "generate_artwork",
-        "description": "Generate artwork in a chosen style through the artist's connected render/asset workspace on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "style_id": {"type": "string"},
-                "prompt": {"type": "string"},
-                "notes": {"type": "string"},
-            },
-            "required": ["style_id", "prompt"],
-        },
-    },
 ]
 
 
 async def _execute_vision_forge_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Luna tool call against the mock-first vision_forge_service.
 
-    Returns (result_for_model, action_summary, render_workspace_not_connected).
-      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
-      - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - render_workspace_not_connected: True when a render was blocked on a
-        missing/expired render/asset workspace.
-    Never raises — every failure is converted into a structured tool_result so the
-    loop can continue and Luna can explain the outcome to the artist. Mirrors
-    _execute_grid_prophet_tool.
+    Returns (result_for_model, action_summary, not_connected). Luna is
+    consult-only (search + draft); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -3522,56 +3447,6 @@ async def _execute_vision_forge_tool(name: str, tool_input: dict, artist_id: str
             "result": f"drafted={res['drafted']}, {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "generate_artwork":
-        style_id = (tool_input.get("style_id") or "").strip()
-        prompt   = (tool_input.get("prompt") or "").strip()
-        notes    = (tool_input.get("notes") or "").strip()
-        if not style_id:
-            return (
-                {"error": "missing_style_id"},
-                {"input": f"style_id={style_id or ''} prompt={prompt[:40]}",
-                 "result": "missing style id"},
-                False,
-            )
-        try:
-            made = await vision_forge_service.generate_artwork(
-                artist_id, style_id, prompt, notes,
-            )
-            if made.get("status") == "unknown_style":
-                return (
-                    {"error": "unknown_style", "style_id": made.get("style_id")},
-                    {"input": f"style_id={style_id}", "result": "unknown style"},
-                    False,
-                )
-            return (
-                {"status": "generated", "reference": made.get("reference"),
-                 "style_id": made.get("style_id"), "style_name": made.get("style_name"),
-                 "asset_ref": made.get("asset_ref"), "prompt": made.get("prompt")},
-                {"input": f"style_id={style_id} prompt={prompt[:40]}",
-                 "result": "artwork generated"},
-                False,
-            )
-        except vision_forge_service.RenderWorkspaceNotConnected:
-            return (
-                {
-                    "render_workspace_not_connected": True,
-                    "message": ("Artist has not connected a render/asset workspace. Tell them "
-                                "to connect one before you can generate artwork."),
-                },
-                {"input": f"style_id={style_id}", "result": "render_workspace_not_connected"},
-                True,
-            )
-        except vision_forge_service.RenderWorkspaceAuthExpired:
-            return (
-                {
-                    "render_workspace_not_connected": True,
-                    "message": ("Render-workspace authorization expired. Tell the artist to "
-                                "re-connect their workspace before you can generate artwork."),
-                },
-                {"input": f"style_id={style_id}", "result": "render_workspace_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -3622,33 +3497,16 @@ DESIGN_STUDIO_TOOLS = [
             "required": ["concept"],
         },
     },
-    {
-        "name": "produce_brand_asset",
-        "description": "Produce a brand asset (logo / wordmark / kit) in a chosen style through the artist's connected design/asset workspace on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "style_id": {"type": "string"},
-                "prompt": {"type": "string"},
-                "notes": {"type": "string"},
-            },
-            "required": ["style_id", "prompt"],
-        },
-    },
 ]
 
 
 async def _execute_design_studio_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Diego tool call against the mock-first design_studio_service.
 
-    Returns (result_for_model, action_summary, design_workspace_not_connected).
-      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
-      - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - design_workspace_not_connected: True when a production was blocked on a
-        missing/expired design/asset workspace.
-    Never raises — every failure is converted into a structured tool_result so the
-    loop can continue and Diego can explain the outcome to the artist. Mirrors
-    _execute_vision_forge_tool.
+    Returns (result_for_model, action_summary, not_connected). Diego is
+    consult-only (search + draft); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -3675,55 +3533,6 @@ async def _execute_design_studio_tool(name: str, tool_input: dict, artist_id: st
         }
         return res, summary, False
 
-    if name == "produce_brand_asset":
-        style_id = (tool_input.get("style_id") or "").strip()
-        prompt   = (tool_input.get("prompt") or "").strip()
-        notes    = (tool_input.get("notes") or "").strip()
-        if not style_id:
-            return (
-                {"error": "missing_style_id"},
-                {"input": f"style_id={style_id or ''} prompt={prompt[:40]}",
-                 "result": "missing style id"},
-                False,
-            )
-        try:
-            made = await design_studio_service.produce_brand_asset(
-                artist_id, style_id, prompt, notes,
-            )
-            if made.get("status") == "unknown_style":
-                return (
-                    {"error": "unknown_style", "style_id": made.get("style_id")},
-                    {"input": f"style_id={style_id}", "result": "unknown style"},
-                    False,
-                )
-            return (
-                {"status": "produced", "reference": made.get("reference"),
-                 "style_id": made.get("style_id"), "style_name": made.get("style_name"),
-                 "asset_ref": made.get("asset_ref"), "prompt": made.get("prompt")},
-                {"input": f"style_id={style_id} prompt={prompt[:40]}",
-                 "result": "brand asset produced"},
-                False,
-            )
-        except design_studio_service.DesignWorkspaceNotConnected:
-            return (
-                {
-                    "design_workspace_not_connected": True,
-                    "message": ("Artist has not connected a design/asset workspace. Tell them "
-                                "to connect one before you can produce brand assets."),
-                },
-                {"input": f"style_id={style_id}", "result": "design_workspace_not_connected"},
-                True,
-            )
-        except design_studio_service.DesignWorkspaceAuthExpired:
-            return (
-                {
-                    "design_workspace_not_connected": True,
-                    "message": ("Design-workspace authorization expired. Tell the artist to "
-                                "re-connect their workspace before you can produce brand assets."),
-                },
-                {"input": f"style_id={style_id}", "result": "design_workspace_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -4003,33 +3812,16 @@ GLOBAL_SCOUT_TOOLS = [
             },
         },
     },
-    {
-        "name": "submit_distribution_registration",
-        "description": "Register an international distribution deal for a market through the artist's connected distribution account on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "market_id": {"type": "string"},
-                "release_title": {"type": "string"},
-                "genre": {"type": "string"},
-            },
-            "required": ["market_id"],
-        },
-    },
 ]
 
 
 async def _execute_global_scout_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Nova tool call against the mock-first global_scout_service.
 
-    Returns (result_for_model, action_summary, global_distribution_not_connected).
-      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
-      - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - global_distribution_not_connected: True when a registration was blocked on a
-        missing/expired distribution account.
-    Never raises — every failure is converted into a structured tool_result so the
-    loop can continue and Nova can explain the outcome to the artist. Mirrors
-    _execute_venue_hawk_tool.
+    Returns (result_for_model, action_summary, not_connected). Nova is
+    consult-only (search + draft); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -4055,56 +3847,6 @@ async def _execute_global_scout_tool(name: str, tool_input: dict, artist_id: str
             "result": f"viable={res['viable']}, {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "submit_distribution_registration":
-        market_id     = (tool_input.get("market_id") or "").strip()
-        release_title = (tool_input.get("release_title") or "").strip()
-        genre         = (tool_input.get("genre") or "").strip()
-        if not market_id:
-            return (
-                {"error": "missing_market_id"},
-                {"input": f"market_id={market_id or ''} release_title={release_title}",
-                 "result": "missing market id"},
-                False,
-            )
-        try:
-            registered = await global_scout_service.submit_distribution_registration(
-                artist_id, market_id, release_title, genre,
-            )
-            if registered.get("status") == "unknown_market":
-                return (
-                    {"error": "unknown_market", "market_id": registered.get("market_id")},
-                    {"input": f"market_id={market_id}", "result": "unknown market"},
-                    False,
-                )
-            return (
-                {"status": "registered", "reference": registered.get("reference"),
-                 "market_id": registered.get("market_id"), "market_name": registered.get("market_name"),
-                 "local_pro": registered.get("local_pro"), "release_title": registered.get("release_title")},
-                {"input": f"market_id={market_id} release_title={release_title or 'untitled'}",
-                 "result": "distribution registered"},
-                False,
-            )
-        except global_scout_service.GlobalDistributionNotConnected:
-            return (
-                {
-                    "global_distribution_not_connected": True,
-                    "message": ("Artist has not connected an international distribution account. Tell "
-                                "them to connect one before you can register distribution deals."),
-                },
-                {"input": f"market_id={market_id}", "result": "global_distribution_not_connected"},
-                True,
-            )
-        except global_scout_service.GlobalDistributionAuthExpired:
-            return (
-                {
-                    "global_distribution_not_connected": True,
-                    "message": ("Distribution-account authorization expired. Tell the artist to "
-                                "re-connect their distribution account before you can register deals."),
-                },
-                {"input": f"market_id={market_id}", "result": "global_distribution_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -4566,33 +4308,16 @@ MERCH_EMPIRE_TOOLS = [
             },
         },
     },
-    {
-        "name": "schedule_fulfillment_order",
-        "description": "Place a merch production run as a fulfilment order for a product and quantity through the artist's connected print/fulfilment account on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "product_id": {"type": "string"},
-                "quantity": {"type": "integer"},
-                "design_name": {"type": "string"},
-            },
-            "required": ["product_id", "quantity"],
-        },
-    },
 ]
 
 
 async def _execute_merch_empire_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Max tool call against the mock-first merch_empire_service.
 
-    Returns (result_for_model, action_summary, fulfillment_not_connected).
-      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
-      - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - fulfillment_not_connected: True when an order was blocked on a
-        missing/expired print/fulfilment account.
-    Never raises — every failure is converted into a structured tool_result so the
-    loop can continue and Max can explain the outcome to the artist. Mirrors
-    _execute_brand_connect_tool / _execute_venue_hawk_tool.
+    Returns (result_for_model, action_summary, not_connected). Max is
+    consult-only (search + cost); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -4620,57 +4345,6 @@ async def _execute_merch_empire_tool(name: str, tool_input: dict, artist_id: str
             "result": f"viable={res['viable']}, {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "schedule_fulfillment_order":
-        product_id  = (tool_input.get("product_id") or "").strip()
-        quantity    = tool_input.get("quantity") or 0
-        design_name = (tool_input.get("design_name") or "").strip()
-        if not product_id:
-            return (
-                {"error": "missing_product_id"},
-                {"input": f"product_id={product_id or ''} qty={quantity}",
-                 "result": "missing product id"},
-                False,
-            )
-        try:
-            ordered = await merch_empire_service.schedule_fulfillment_order(
-                artist_id, product_id, quantity, design_name,
-            )
-            if ordered.get("status") == "unknown_product":
-                return (
-                    {"error": "unknown_product", "product_id": ordered.get("product_id")},
-                    {"input": f"product_id={product_id}", "result": "unknown product"},
-                    False,
-                )
-            return (
-                {"status": "ordered", "reference": ordered.get("reference"),
-                 "product_id": ordered.get("product_id"), "product_name": ordered.get("product_name"),
-                 "design_name": ordered.get("design_name"),
-                 "quantity": ordered.get("quantity")},
-                {"input": f"product_id={product_id} qty={quantity}",
-                 "result": "fulfilment order placed"},
-                False,
-            )
-        except merch_empire_service.MerchAccountNotConnected:
-            return (
-                {
-                    "fulfillment_not_connected": True,
-                    "message": ("Artist has not connected a print/fulfilment account. Tell "
-                                "them to connect one before you can place fulfilment orders."),
-                },
-                {"input": f"product_id={product_id}", "result": "fulfillment_not_connected"},
-                True,
-            )
-        except merch_empire_service.MerchAccountAuthExpired:
-            return (
-                {
-                    "fulfillment_not_connected": True,
-                    "message": ("Print/fulfilment authorization expired. Tell the artist to "
-                                "re-connect their account before you can place orders."),
-                },
-                {"input": f"product_id={product_id}", "result": "fulfillment_auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -5852,33 +5526,16 @@ PRODUCER_CONNECT_TOOLS = [
             },
         },
     },
-    {
-        "name": "log_collab_request",
-        "description": "Log a collaboration/co-write request to a producer through the artist's connected production network on their behalf",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "producer_id": {"type": "string"},
-                "message": {"type": "string"},
-                "session_type": {"type": "string"},
-            },
-            "required": ["producer_id"],
-        },
-    },
 ]
 
 
 async def _execute_producer_connect_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Beat tool call against the mock-first producer_connect_service.
 
-    Returns (result_for_model, action_summary, producer_network_not_connected).
-      - result_for_model: dict fed back as the tool_result content (JSON-encoded).
-      - action_summary:   {"input": str, "result": str} for the actions SSE event.
-      - producer_network_not_connected: True when logging a collab request was blocked
-        on a missing/expired production network.
-    Never raises — every failure is converted into a structured tool_result so the
-    loop can continue and Beat can explain the outcome to the artist. Mirrors
-    _execute_ar_scout_tool / _execute_venue_hawk_tool.
+    Returns (result_for_model, action_summary, not_connected). Beat is
+    consult-only (search + evaluate); not_connected is structurally always
+    False. Never raises — every failure is converted into a structured
+    tool_result so the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -5906,55 +5563,6 @@ async def _execute_producer_connect_tool(name: str, tool_input: dict, artist_id:
         }
         return res, summary, False
 
-    if name == "log_collab_request":
-        producer_id  = (tool_input.get("producer_id") or "").strip()
-        message      = tool_input.get("message") or ""
-        session_type = tool_input.get("session_type") or ""
-        if not producer_id:
-            return (
-                {"error": "missing_producer_id"},
-                {"input": f"producer_id={producer_id or ''}", "result": "missing producer id"},
-                False,
-            )
-        try:
-            logged = await producer_connect_service.log_collab_request(
-                artist_id, producer_id, message, session_type,
-            )
-            if logged.get("status") == "unknown_producer":
-                return (
-                    {"error": "unknown_producer", "producer_id": logged.get("producer_id")},
-                    {"input": f"producer_id={producer_id}", "result": "unknown producer"},
-                    False,
-                )
-            return (
-                {"status": "sent", "reference": logged.get("reference"),
-                 "producer_id": logged.get("producer_id"), "producer_name": logged.get("producer_name"),
-                 "session_type": logged.get("session_type")},
-                {"input": f"producer_id={producer_id} session={logged.get('session_type') or 'any'}",
-                 "result": "collab request sent"},
-                False,
-            )
-        except producer_connect_service.ProducerNetworkNotConnected:
-            return (
-                {
-                    "producer_network_not_connected": True,
-                    "message": ("Artist has not connected a production network / collab account. Tell "
-                                "them to connect one before you can send collab requests."),
-                },
-                {"input": f"producer_id={producer_id}", "result": "producer_network_not_connected"},
-                True,
-            )
-        except producer_connect_service.ProducerNetworkAuthExpired:
-            return (
-                {
-                    "producer_network_not_connected": True,
-                    "message": ("Production network authorization expired. Tell the artist to re-connect "
-                                "it before you can send collab requests."),
-                },
-                {"input": f"producer_id={producer_id}", "result": "producer_network_auth_expired"},
-                True,
-            )
-
     return (
         {"error": "unknown_tool", "tool": name},
         {"input": "", "result": "unknown tool"},
@@ -5964,7 +5572,8 @@ async def _execute_producer_connect_tool(name: str, tool_input: dict, artist_id:
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Neo (ai-navigator) tool_use: search_ai_tools + assess_tech_stack
-#            + provision_automation
+# (provision_automation was a mock terminal-action tool gated behind AI_NAVIGATOR_CONNECTED
+#  — retired; Neo is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Marcus (Unit 1.7) / Lex (Unit 1.8) pattern exactly: these tools are
 # passed to the Anthropic API for the ai-navigator agent ONLY (see the gate in
@@ -6003,30 +5612,16 @@ AI_NAVIGATOR_TOOLS = [
             "required": ["current_tools"],
         },
     },
-    {
-        "name": "provision_automation",
-        "description": "Provision an automation workflow on the artist's connected automation account",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "workflow_name": {"type": "string"},
-                "platform": {
-                    "type": "string",
-                    "enum": ["zapier", "make", "n8n"],
-                },
-            },
-            "required": ["workflow_name"],
-        },
-    },
 ]
 
 
 async def _execute_ai_navigator_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one AI-Navigator tool call against the mock-first ai_navigator_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue and Neo can explain the outcome. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Neo is
+    consult-only (search + assess); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -6052,43 +5647,6 @@ async def _execute_ai_navigator_tool(name: str, tool_input: dict, artist_id: str
         }
         return res, summary, False
 
-    if name == "provision_automation":
-        workflow_name = (tool_input.get("workflow_name") or "").strip()
-        platform      = (tool_input.get("platform") or "zapier").strip()
-        if not workflow_name:
-            return (
-                {"error": "missing_workflow_name"},
-                {"input": "workflow_name=", "result": "missing workflow name"},
-                False,
-            )
-        try:
-            done = await ai_navigator_service.provision_automation(artist_id, workflow_name, platform)
-            return (
-                {"status": "provisioned", "reference": done.get("reference"), "workflow_name": workflow_name},
-                {"input": f"workflow={workflow_name} platform={platform}", "result": "automation provisioned"},
-                False,
-            )
-        except ai_navigator_service.AutomationNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected an automation account. Tell them to connect "
-                                "one before you can provision automations."),
-                },
-                {"input": f"workflow={workflow_name}", "result": "not_connected"},
-                True,
-            )
-        except ai_navigator_service.AutomationAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Automation account authorization expired. Tell the artist to re-connect "
-                                "before you can provision automations."),
-                },
-                {"input": f"workflow={workflow_name}", "result": "auth_expired"},
-                True,
-            )
-
     return (
         {"error": "unknown_tool", "tool": name},
         {"input": "", "result": "unknown tool"},
@@ -6097,7 +5655,9 @@ async def _execute_ai_navigator_tool(name: str, tool_input: dict, artist_id: str
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Maya (artist-wellness) tool_use: search_wellness_resources + assess_burnout_risk + schedule_wellness_checkin
+# Maya (artist-wellness) tool_use: search_wellness_resources + assess_burnout_risk
+# (schedule_wellness_checkin was a mock terminal-action tool gated behind ARTIST_WELLNESS_CONNECTED
+#  — retired; Maya is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the artist-wellness agent ONLY (see the gate in
@@ -6132,27 +5692,16 @@ ARTIST_WELLNESS_TOOLS = [
             "required": ["signals"],
         },
     },
-    {
-        "name": "schedule_wellness_checkin",
-        "description": "Schedule a wellness check-in on the artist's connected calendar",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "topic": {"type": "string"},
-                "channel": {"type": "string", "enum": ['video', 'phone', 'in_person']},
-            },
-            "required": ["topic"],
-        },
-    },
 ]
 
 
 async def _execute_artist_wellness_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Maya tool call against the mock-first artist_wellness_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Maya is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -6176,43 +5725,6 @@ async def _execute_artist_wellness_tool(name: str, tool_input: dict, artist_id: 
         }
         return res, summary, False
 
-    if name == "schedule_wellness_checkin":
-        nm  = (tool_input.get("topic") or "").strip()
-        opt = (tool_input.get("channel") or "video").strip()
-        if not nm:
-            return (
-                {"error": "missing_topic"},
-                {"input": "topic=", "result": "missing topic"},
-                False,
-            )
-        try:
-            done = await artist_wellness_service.schedule_wellness_checkin(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "topic": nm},
-                {"input": f"topic={nm} channel={opt}", "result": "check-in scheduled"},
-                False,
-            )
-        except artist_wellness_service.WellnessAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a wellness scheduling account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"topic={nm}", "result": "not_connected"},
-                True,
-            )
-        except artist_wellness_service.WellnessAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Wellness scheduling account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"topic={nm}", "result": "auth_expired"},
-                True,
-            )
-
     return (
         {"error": "unknown_tool", "tool": name},
         {"input": "", "result": "unknown tool"},
@@ -6221,7 +5733,9 @@ async def _execute_artist_wellness_tool(name: str, tool_input: dict, artist_id: 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Audio (audio-quality) tool_use: search_quality_standards + analyze_mix + submit_master_qc
+# Audio (audio-quality) tool_use: search_quality_standards + analyze_mix
+# (submit_master_qc was a mock terminal-action tool gated behind AUDIO_QUALITY_CONNECTED
+#  — retired; Audio is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the audio-quality agent ONLY (see the gate in
@@ -6256,27 +5770,16 @@ AUDIO_QUALITY_TOOLS = [
             "required": ["mix_notes"],
         },
     },
-    {
-        "name": "submit_master_qc",
-        "description": "Submit a track for master QC on the connected mastering account",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "track_title": {"type": "string"},
-                "target": {"type": "string", "enum": ['streaming', 'cd', 'vinyl']},
-            },
-            "required": ["track_title"],
-        },
-    },
 ]
 
 
 async def _execute_audio_quality_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Audio tool call against the mock-first audio_quality_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Audio is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -6300,43 +5803,6 @@ async def _execute_audio_quality_tool(name: str, tool_input: dict, artist_id: st
         }
         return res, summary, False
 
-    if name == "submit_master_qc":
-        nm  = (tool_input.get("track_title") or "").strip()
-        opt = (tool_input.get("target") or "streaming").strip()
-        if not nm:
-            return (
-                {"error": "missing_track_title"},
-                {"input": "track_title=", "result": "missing track_title"},
-                False,
-            )
-        try:
-            done = await audio_quality_service.submit_master_qc(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "track_title": nm},
-                {"input": f"track_title={nm} target={opt}", "result": "master submitted"},
-                False,
-            )
-        except audio_quality_service.MasteringAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a mastering service account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"track_title={nm}", "result": "not_connected"},
-                True,
-            )
-        except audio_quality_service.MasteringAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Mastering service account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"track_title={nm}", "result": "auth_expired"},
-                True,
-            )
-
     return (
         {"error": "unknown_tool", "tool": name},
         {"input": "", "result": "unknown tool"},
@@ -6345,7 +5811,9 @@ async def _execute_audio_quality_tool(name: str, tool_input: dict, artist_id: st
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Collab (collab-connect) tool_use: search_collaborators + assess_collab_fit + send_collab_invite
+# Collab (collab-connect) tool_use: search_collaborators + assess_collab_fit
+# (send_collab_invite was a mock terminal-action tool gated behind COLLAB_CONNECT_CONNECTED
+#  — retired; Collab is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the collab-connect agent ONLY (see the gate in
@@ -6380,27 +5848,16 @@ COLLAB_CONNECT_TOOLS = [
             "required": ["collaborator_profile"],
         },
     },
-    {
-        "name": "send_collab_invite",
-        "description": "Send a collaboration invite via the connected network account",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "collaborator_name": {"type": "string"},
-                "channel": {"type": "string", "enum": ['email', 'dm', 'platform']},
-            },
-            "required": ["collaborator_name"],
-        },
-    },
 ]
 
 
 async def _execute_collab_connect_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Collab tool call against the mock-first collab_connect_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Collab is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -6423,43 +5880,6 @@ async def _execute_collab_connect_tool(name: str, tool_input: dict, artist_id: s
             "result": f"{res['finding_count']} concern(s), {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "send_collab_invite":
-        nm  = (tool_input.get("collaborator_name") or "").strip()
-        opt = (tool_input.get("channel") or "platform").strip()
-        if not nm:
-            return (
-                {"error": "missing_collaborator_name"},
-                {"input": "collaborator_name=", "result": "missing collaborator_name"},
-                False,
-            )
-        try:
-            done = await collab_connect_service.send_collab_invite(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "collaborator_name": nm},
-                {"input": f"collaborator_name={nm} channel={opt}", "result": "invite sent"},
-                False,
-            )
-        except collab_connect_service.NetworkAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a collaboration network account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"collaborator_name={nm}", "result": "not_connected"},
-                True,
-            )
-        except collab_connect_service.NetworkAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Collaboration network account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"collaborator_name={nm}", "result": "auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -7135,7 +6555,9 @@ async def _execute_label_services_tool(name: str, tool_input: dict, artist_id: s
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Coach (live-coach) tool_use: search_coaching_drills + assess_stage_presence + schedule_coaching_session
+# Coach (live-coach) tool_use: search_coaching_drills + assess_stage_presence
+# (schedule_coaching_session was a mock terminal-action tool gated behind LIVE_COACH_CONNECTED
+#  — retired; Coach is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the live-coach agent ONLY (see the gate in
@@ -7170,27 +6592,16 @@ LIVE_COACH_TOOLS = [
             "required": ["performance_notes"],
         },
     },
-    {
-        "name": "schedule_coaching_session",
-        "description": "Schedule a coaching session on the connected coaching calendar",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "focus": {"type": "string"},
-                "channel": {"type": "string", "enum": ['video', 'in_person']},
-            },
-            "required": ["focus"],
-        },
-    },
 ]
 
 
 async def _execute_live_coach_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Coach tool call against the mock-first live_coach_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Coach is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -7213,43 +6624,6 @@ async def _execute_live_coach_tool(name: str, tool_input: dict, artist_id: str) 
             "result": f"{res['finding_count']} issue(s), {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "schedule_coaching_session":
-        nm  = (tool_input.get("focus") or "").strip()
-        opt = (tool_input.get("channel") or "video").strip()
-        if not nm:
-            return (
-                {"error": "missing_focus"},
-                {"input": "focus=", "result": "missing focus"},
-                False,
-            )
-        try:
-            done = await live_coach_service.schedule_coaching_session(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "focus": nm},
-                {"input": f"focus={nm} channel={opt}", "result": "session scheduled"},
-                False,
-            )
-        except live_coach_service.CoachingCalendarNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a coaching calendar account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"focus={nm}", "result": "not_connected"},
-                True,
-            )
-        except live_coach_service.CoachingCalendarAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Coaching calendar account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"focus={nm}", "result": "auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},
@@ -7687,7 +7061,9 @@ async def _execute_royalty_doctor_tool(name: str, tool_input: dict, artist_id: s
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Cal (schedule-keeper) tool_use: search_schedule_templates + check_conflicts + schedule_event
+# Cal (schedule-keeper) tool_use: search_schedule_templates + check_conflicts
+# (schedule_event was a mock terminal-action tool gated behind SCHEDULE_KEEPER_CONNECTED
+#  — retired; Cal is consult-only. See _audit/phase2_stop_report.md precedent pattern.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the schedule-keeper agent ONLY (see the gate in
@@ -7722,27 +7098,16 @@ SCHEDULE_KEEPER_TOOLS = [
             "required": ["schedule_text"],
         },
     },
-    {
-        "name": "schedule_event",
-        "description": "Schedule an event on the connected calendar",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "event_title": {"type": "string"},
-                "calendar": {"type": "string", "enum": ['releases', 'shows', 'personal']},
-            },
-            "required": ["event_title"],
-        },
-    },
 ]
 
 
 async def _execute_schedule_keeper_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Cal tool call against the mock-first schedule_keeper_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Cal is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -7766,43 +7131,6 @@ async def _execute_schedule_keeper_tool(name: str, tool_input: dict, artist_id: 
         }
         return res, summary, False
 
-    if name == "schedule_event":
-        nm  = (tool_input.get("event_title") or "").strip()
-        opt = (tool_input.get("calendar") or "releases").strip()
-        if not nm:
-            return (
-                {"error": "missing_event_title"},
-                {"input": "event_title=", "result": "missing event_title"},
-                False,
-            )
-        try:
-            done = await schedule_keeper_service.schedule_event(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "event_title": nm},
-                {"input": f"event_title={nm} calendar={opt}", "result": "event scheduled"},
-                False,
-            )
-        except schedule_keeper_service.CalendarNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a calendar account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"event_title={nm}", "result": "not_connected"},
-                True,
-            )
-        except schedule_keeper_service.CalendarAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Calendar account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"event_title={nm}", "result": "auth_expired"},
-                True,
-            )
-
     return (
         {"error": "unknown_tool", "tool": name},
         {"input": "", "result": "unknown tool"},
@@ -7811,7 +7139,9 @@ async def _execute_schedule_keeper_tool(name: str, tool_input: dict, artist_id: 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Store (storefront) tool_use: search_product_types + assess_pricing + publish_store_product
+# Store (storefront) tool_use: search_product_types + assess_pricing
+# (publish_store_product was a mock terminal-action tool gated behind STOREFRONT_CONNECTED
+#  — retired; Store is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the storefront agent ONLY (see the gate in
@@ -7846,27 +7176,16 @@ STOREFRONT_TOOLS = [
             "required": ["pricing_notes"],
         },
     },
-    {
-        "name": "publish_store_product",
-        "description": "Publish a product to the connected fan store",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "product_title": {"type": "string"},
-                "store": {"type": "string", "enum": ['main', 'vip', 'preorder']},
-            },
-            "required": ["product_title"],
-        },
-    },
 ]
 
 
 async def _execute_storefront_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Store tool call against the mock-first storefront_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Store is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -7890,43 +7209,6 @@ async def _execute_storefront_tool(name: str, tool_input: dict, artist_id: str) 
         }
         return res, summary, False
 
-    if name == "publish_store_product":
-        nm  = (tool_input.get("product_title") or "").strip()
-        opt = (tool_input.get("store") or "main").strip()
-        if not nm:
-            return (
-                {"error": "missing_product_title"},
-                {"input": "product_title=", "result": "missing product_title"},
-                False,
-            )
-        try:
-            done = await storefront_service.publish_store_product(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "product_title": nm},
-                {"input": f"product_title={nm} store={opt}", "result": "product published"},
-                False,
-            )
-        except storefront_service.StoreAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a fan-store account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"product_title={nm}", "result": "not_connected"},
-                True,
-            )
-        except storefront_service.StoreAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Fan-store account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"product_title={nm}", "result": "auth_expired"},
-                True,
-            )
-
     return (
         {"error": "unknown_tool", "tool": name},
         {"input": "", "result": "unknown tool"},
@@ -7935,7 +7217,9 @@ async def _execute_storefront_tool(name: str, tool_input: dict, artist_id: str) 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Reel (video-director) tool_use: search_directors + estimate_video_budget + book_video_shoot
+# Reel (video-director) tool_use: search_directors + estimate_video_budget
+# (book_video_shoot was a mock terminal-action tool gated behind VIDEO_DIRECTOR_CONNECTED
+#  — retired; Reel is consult-only.)
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mirrors the Lex (Unit 1.8) / ai-navigator pattern exactly: these tools are
 # passed to the Anthropic API for the video-director agent ONLY (see the gate in
@@ -7970,27 +7254,16 @@ VIDEO_DIRECTOR_TOOLS = [
             "required": ["treatment_notes"],
         },
     },
-    {
-        "name": "book_video_shoot",
-        "description": "Book a shoot on the connected production account",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "project_title": {"type": "string"},
-                "crew": {"type": "string", "enum": ['full', 'skeleton', 'solo']},
-            },
-            "required": ["project_title"],
-        },
-    },
 ]
 
 
 async def _execute_video_director_tool(name: str, tool_input: dict, artist_id: str) -> tuple[dict, dict, bool]:
     """Execute one Reel tool call against the mock-first video_director_service.
 
-    Returns (result_for_model, action_summary, not_connected). Never raises —
-    every failure is converted into a structured tool_result so the loop can
-    continue. Mirrors _execute_lex_cipher_tool.
+    Returns (result_for_model, action_summary, not_connected). Reel is
+    consult-only (search + screen); not_connected is structurally always False.
+    Never raises — every failure is converted into a structured tool_result so
+    the loop can continue. Mirrors _execute_lex_cipher_tool.
     """
     tool_input = dict(tool_input or {})
 
@@ -8013,43 +7286,6 @@ async def _execute_video_director_tool(name: str, tool_input: dict, artist_id: s
             "result": f"{res['finding_count']} cost driver(s), {res['recommendation']}",
         }
         return res, summary, False
-
-    if name == "book_video_shoot":
-        nm  = (tool_input.get("project_title") or "").strip()
-        opt = (tool_input.get("crew") or "full").strip()
-        if not nm:
-            return (
-                {"error": "missing_project_title"},
-                {"input": "project_title=", "result": "missing project_title"},
-                False,
-            )
-        try:
-            done = await video_director_service.book_video_shoot(artist_id, nm, opt)
-            return (
-                {"status": "done", "reference": done.get("reference"), "project_title": nm},
-                {"input": f"project_title={nm} crew={opt}", "result": "shoot booked"},
-                False,
-            )
-        except video_director_service.ProductionAccountNotConnected:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Artist has not connected a video production account. Tell them to connect one "
-                                "before you can complete this action."),
-                },
-                {"input": f"project_title={nm}", "result": "not_connected"},
-                True,
-            )
-        except video_director_service.ProductionAccountAuthExpired:
-            return (
-                {
-                    "not_connected": True,
-                    "message": ("Video production account authorization expired. Tell the artist to re-connect "
-                                "before you can complete this action."),
-                },
-                {"input": f"project_title={nm}", "result": "auth_expired"},
-                True,
-            )
 
     return (
         {"error": "unknown_tool", "tool": name},

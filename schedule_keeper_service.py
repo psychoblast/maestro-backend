@@ -1,35 +1,17 @@
 """
-PLMKR Cal — Scheduling action service (mock-first).
+PLMKR Cal — Scheduling consult service (data-only).
 
 Backs the schedule-keeper (Cal, Scheduling) agent's tool_use loop in /api/chat_stream
-(see SCHEDULE_KEEPER_TOOLS in main.py). Cal does not just advise — these functions
-let the agent take real action: search_schedule_templates, check_conflicts, and schedule_event (a real action on the
-artist's connected calendar account).
+(see SCHEDULE_KEEPER_TOOLS in main.py). Cal is consult-only: search_schedule_templates
+and check_conflicts. The mock schedule_event terminal-action tool (and its
+SCHEDULE_KEEPER_CONNECTED gate) was retired — Cal never wrote to a real calendar,
+so the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_connected``) driven by an env flag so tests can toggle
-    connected / not-connected / expired deterministically — mirroring
-    lex_cipher_service.RegistryNotConnected without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads.
 """
-import hashlib
-import os
-
-
-class CalendarNotConnected(Exception):
-    """Raised when the artist has not connected a calendar account.
-
-    Mirrors lex_cipher_service.RegistryNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class CalendarAuthExpired(Exception):
-    """Raised when a previously connected calendar account's authorization expired."""
 
 
 # ── Reference catalog (in-memory reference data — no I/O) ─────────────────────
@@ -88,41 +70,4 @@ async def check_conflicts(artist_id: str, schedule_text: str = "", context: str 
         "findings": findings,
         "finding_count": len(findings),
         "recommendation": recommendation,
-    }
-
-
-def _connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's calendar account.
-
-    Driven purely by the ``SCHEDULE_KEEPER_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real
-    secret. Values:
-      - "expired"                     → raise CalendarAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("SCHEDULE_KEEPER_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise CalendarAuthExpired("calendar account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def schedule_event(artist_id: str, event_title: str, calendar: str = "releases") -> dict:
-    """Take the event scheduled action on the artist's connected calendar account.
-
-    Raises CalendarNotConnected / CalendarAuthExpired when no account is linked so the caller can
-    surface a 'connect your account' message instead of a hard failure. On
-    success returns a deterministic mock reference — NO network call is made.
-    """
-    if not _connected(artist_id):
-        raise CalendarNotConnected("artist has not connected a calendar account")
-    name = (event_title or "").strip()
-    opt = (calendar or "releases").strip()
-    digest = hashlib.sha1(f"{artist_id}:{name}:{opt}".encode("utf-8")).hexdigest()
-    reference = "EVT-" + digest[:10].upper()
-    return {
-        "status": "done",
-        "reference": reference,
-        "event_title": name,
-        "calendar": opt,
     }

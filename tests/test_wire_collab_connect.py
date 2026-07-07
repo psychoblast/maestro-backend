@@ -1,14 +1,17 @@
 """
 PROOF tests — Collab (collab-connect) Anthropic tool_use loop.
 
-Mirrors tests/test_wire_lex_cipher.py / test_wire_ai_navigator.py. Proves that,
-in /api/chat_stream: (a) Collab emits search_collaborators -> assess_collab_fit -> send_collab_invite then a final message
+Mirrors tests/test_wire_lex_cipher.py. Proves that, in /api/chat_stream:
+(a) Collab emits search_collaborators -> assess_collab_fit then a final message
 and surfaces a populated `actions` event with COLLAB_CONNECT_TOOLS on every create();
 (b) a non-target agent never receives COLLAB_CONNECT_TOOLS; (c) the gate is exclusive
-(Marcus still uses MARCUS_TOOLS); (d) the not-connected path is graceful; and
-(e) expired auth degrades the same way. Zero network / LLM — the Anthropic client
-is faked and the collab_connect_service boundary is exercised through recording wrappers over
-the REAL (pure, mock-first) functions.
+(Marcus still uses MARCUS_TOOLS); (d) Collab is consult-only — the retired
+send_collab_invite mock-action tool (and its COLLAB_CONNECT_CONNECTED gate) is gone
+from both the schema and the dispatch: it is neither offered to the model nor
+executable by name, and not_connected is structurally always False.
+Zero network / LLM — the Anthropic client is faked and the collab_connect_service
+boundary is exercised through recording wrappers over the REAL (pure, mock-first)
+functions.
 """
 import importlib
 import json
@@ -74,12 +77,10 @@ def _parse_sse(body: str) -> list:
 
 def test_collab_connect_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("COLLAB_CONNECT_CONNECTED", "true")
 
-    f1_calls, f2_calls, f3_calls = [], [], []
+    f1_calls, f2_calls = [], []
     real_f1 = m.collab_connect_service.search_collaborators
     real_f2 = m.collab_connect_service.assess_collab_fit
-    real_f3 = m.collab_connect_service.send_collab_invite
 
     async def rec_f1(genre="", role=""):
         f1_calls.append({"genre": genre, "role": role})
@@ -89,21 +90,14 @@ def test_collab_connect_tool_loop_invokes_functions_and_emits_actions(monkeypatc
         f2_calls.append({"artist_id": artist_id, "collaborator_profile": collaborator_profile, "context": context})
         return await real_f2(artist_id, collaborator_profile=collaborator_profile, context=context)
 
-    async def rec_f3(artist_id, collaborator_name, channel="platform"):
-        f3_calls.append({"artist_id": artist_id, "collaborator_name": collaborator_name, "channel": channel})
-        return await real_f3(artist_id, collaborator_name, channel)
-
     monkeypatch.setattr(m.collab_connect_service, "search_collaborators", rec_f1)
     monkeypatch.setattr(m.collab_connect_service, "assess_collab_fit", rec_f2)
-    monkeypatch.setattr(m.collab_connect_service, "send_collab_invite", rec_f3)
 
     responses = [
         _Resp([_Block("tool_use", name="search_collaborators", input={"genre": "pop"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="assess_collab_fit",
                       input={"collaborator_profile": "no credits", "context": "ctx"}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="send_collab_invite",
-                      input={"collaborator_name": "Test Item", "channel": "platform"}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — took the actions across all three tools.")], "end_turn"),
+        _Resp([_Block("text", text="Done — took the actions across both tools.")], "end_turn"),
     ]
     create_calls = []
 
@@ -131,23 +125,21 @@ def test_collab_connect_tool_loop_invokes_functions_and_emits_actions(monkeypatc
 
     assert f1_calls == [{"genre": "pop", "role": ""}], f1_calls
     assert f2_calls == [{"artist_id": "artist-9", "collaborator_profile": "no credits", "context": "ctx"}], f2_calls
-    assert f3_calls == [{"artist_id": "artist-9", "collaborator_name": "Test Item", "channel": "platform"}], f3_calls
 
     assert "actions" in types, types
     assert "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == ["search_collaborators", "assess_collab_fit", "send_collab_invite"], tools_used
+    assert tools_used == ["search_collaborators", "assess_collab_fit"], tools_used
     assert actions_evt["not_connected"] is False
 
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
     assert "collaborator(s) found" in by_tool["search_collaborators"]["result"]
     assert "concern(s)" in by_tool["assess_collab_fit"]["result"]
-    assert by_tool["send_collab_invite"]["result"] == "invite sent"
 
     assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    assert len(create_calls) == 4
+    assert len(create_calls) == 3
     assert all(kw.get("tools") == m.COLLAB_CONNECT_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
 
@@ -210,67 +202,24 @@ def test_collab_connect_marcus_still_uses_marcus_tools(monkeypatch, tmp_path):
     assert create_calls[0].get("tools") != m.COLLAB_CONNECT_TOOLS
 
 
-def test_collab_connect_not_connected_is_handled(monkeypatch, tmp_path):
+def test_collab_connect_tool_roster_is_consult_only(monkeypatch, tmp_path):
+    """This unit owns Collab's exact tool roster: exactly the two consult tools,
+    nothing more. The retired send_collab_invite mock-action tool must not reappear."""
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.delenv("COLLAB_CONNECT_CONNECTED", raising=False)
-
-    responses = [
-        _Resp([_Block("tool_use", name="send_collab_invite", input={"collaborator_name": "Blocked Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect an account first.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",
-        "message":   "do the gated action",
-        "artist_id": "artist-none",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "not_connected"
+    names = [t["name"] for t in m.COLLAB_CONNECT_TOOLS]
+    assert names == ["search_collaborators", "assess_collab_fit"], names
+    assert "send_collab_invite" not in names
+    assert not hasattr(m.collab_connect_service, "send_collab_invite")
+    assert not hasattr(m.collab_connect_service, "NetworkAccountNotConnected")
+    assert not hasattr(m.collab_connect_service, "NetworkAccountAuthExpired")
 
 
-def test_collab_connect_auth_expired_is_handled(monkeypatch, tmp_path):
+def test_collab_connect_unknown_tool_name_is_handled_gracefully(monkeypatch, tmp_path):
+    """A retired/unknown tool name must degrade to the unknown_tool branch, not crash."""
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("COLLAB_CONNECT_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="send_collab_invite", input={"collaborator_name": "Old Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your account auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "collab-connect",
-        "message":   "do the gated action on the old item",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "auth_expired"
+    import asyncio
+    result, summary, not_connected = asyncio.run(
+        m._execute_collab_connect_tool("send_collab_invite", {"collaborator_name": "x"}, "artist-9")
+    )
+    assert result == {"error": "unknown_tool", "tool": "send_collab_invite"}
+    assert not_connected is False

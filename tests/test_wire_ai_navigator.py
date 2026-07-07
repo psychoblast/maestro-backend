@@ -3,16 +3,18 @@ PROOF tests — Neo (ai-navigator) Anthropic tool_use loop.
 
 Mirrors tests/test_wire_lex_cipher.py. Proves that, in /api/chat_stream:
 
-  (a) Neo emits search_ai_tools → assess_tech_stack → provision_automation then a
-      final message; all three mock-first ai_navigator_service functions are
-      invoked with the correct args and the stream surfaces a populated `actions`
-      event, with AI_NAVIGATOR_TOOLS passed on every create() call;
+  (a) Neo emits search_ai_tools -> assess_tech_stack then a final message; both
+      mock-first ai_navigator_service functions are invoked with the correct args
+      and the stream surfaces a populated `actions` event, with AI_NAVIGATOR_TOOLS
+      passed on every create() call;
   (b) a NON-navigator agent never receives AI_NAVIGATOR_TOOLS — it takes the
       unchanged streaming path and emits NO `actions` event;
   (c) the gate is exclusive: Marcus (puppet-master) still runs its OWN tool loop
       with MARCUS_TOOLS, never AI_NAVIGATOR_TOOLS;
-  (d) the not-connected (missing-credential) path is handled gracefully;
-  (e) expired auth also degrades to the not-connected path.
+  (d) Neo is consult-only — the retired provision_automation mock-action tool (and
+      its AI_NAVIGATOR_CONNECTED gate) is gone from both the schema and the
+      dispatch: it is neither offered to the model nor executable by name, and
+      not_connected is structurally always False.
 
 Everything is in-process and deterministic. NO network / LLM calls — the Anthropic
 client is faked and the ai_navigator_service boundary is exercised through
@@ -85,12 +87,9 @@ def _parse_sse(body: str) -> list:
 def test_navigator_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
 
-    monkeypatch.setenv("AI_NAVIGATOR_CONNECTED", "true")
-
-    search_calls, assess_calls, prov_calls = [], [], []
+    search_calls, assess_calls = [], []
     real_search = m.ai_navigator_service.search_ai_tools
     real_assess = m.ai_navigator_service.assess_tech_stack
-    real_prov   = m.ai_navigator_service.provision_automation
 
     async def rec_search(category="", use_case=""):
         search_calls.append({"category": category, "use_case": use_case})
@@ -100,22 +99,15 @@ def test_navigator_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tm
         assess_calls.append({"artist_id": artist_id, "current_tools": current_tools, "goal": goal})
         return await real_assess(artist_id, current_tools=current_tools, goal=goal)
 
-    async def rec_prov(artist_id, workflow_name, platform="zapier"):
-        prov_calls.append({"artist_id": artist_id, "workflow_name": workflow_name, "platform": platform})
-        return await real_prov(artist_id, workflow_name, platform)
-
-    monkeypatch.setattr(m.ai_navigator_service, "search_ai_tools",      rec_search)
-    monkeypatch.setattr(m.ai_navigator_service, "assess_tech_stack",    rec_assess)
-    monkeypatch.setattr(m.ai_navigator_service, "provision_automation", rec_prov)
+    monkeypatch.setattr(m.ai_navigator_service, "search_ai_tools",   rec_search)
+    monkeypatch.setattr(m.ai_navigator_service, "assess_tech_stack", rec_assess)
 
     responses = [
         _Resp([_Block("tool_use", name="search_ai_tools",
                       input={"category": "audio"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="assess_tech_stack",
                       input={"current_tools": "captions only", "goal": "grow"}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="provision_automation",
-                      input={"workflow_name": "Release Checklist", "platform": "zapier"}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — searched tools, assessed your stack, and provisioned automation.")],
+        _Resp([_Block("text", text="Done — searched tools and assessed your stack.")],
               "end_turn"),
     ]
     create_calls = []
@@ -133,7 +125,7 @@ def test_navigator_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tm
     client = TestClient(m.app)
     resp = client.post("/api/chat_stream", json={
         "agent_id":  "ai-navigator",
-        "message":   "help me modernize my tooling and automate my release",
+        "message":   "help me modernize my tooling",
         "artist_id": "artist-9",
         "history":   "[]",
         "tts":       False,
@@ -146,25 +138,21 @@ def test_navigator_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tm
     assert assess_calls == [{
         "artist_id": "artist-9", "current_tools": "captions only", "goal": "grow",
     }], assess_calls
-    assert prov_calls == [{
-        "artist_id": "artist-9", "workflow_name": "Release Checklist", "platform": "zapier",
-    }], prov_calls
 
     assert "actions" in types, types
     assert "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == ["search_ai_tools", "assess_tech_stack", "provision_automation"], tools_used
+    assert tools_used == ["search_ai_tools", "assess_tech_stack"], tools_used
     assert actions_evt["not_connected"] is False
 
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
     assert "tool(s) found" in by_tool["search_ai_tools"]["result"]
     assert "gap(s)" in by_tool["assess_tech_stack"]["result"]
-    assert by_tool["provision_automation"]["result"] == "automation provisioned"
 
     assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    assert len(create_calls) == 4
+    assert len(create_calls) == 3
     assert all(kw.get("tools") == m.AI_NAVIGATOR_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
 
@@ -232,75 +220,27 @@ def test_marcus_still_uses_marcus_tools_not_navigator(monkeypatch, tmp_path):
     assert create_calls[0].get("tools") != m.AI_NAVIGATOR_TOOLS
 
 
-# ── (d) not_connected (missing credential) handled gracefully ────────────────
+# ── (d) Neo's tool roster is consult-only; the retired mock tool cannot reappear ──
 
-def test_navigator_not_connected_is_handled(monkeypatch, tmp_path):
+def test_ai_navigator_tool_roster_is_consult_only(monkeypatch, tmp_path):
+    """This unit owns Neo's exact tool roster: exactly the two consult tools,
+    nothing more. The retired provision_automation mock-action tool must not
+    reappear."""
     m = _load_main(monkeypatch, tmp_path)
-
-    monkeypatch.delenv("AI_NAVIGATOR_CONNECTED", raising=False)
-
-    responses = [
-        _Resp([_Block("tool_use", name="provision_automation",
-                      input={"workflow_name": "Auto DMs"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect an automation account first.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "ai-navigator",
-        "message":   "automate my DMs",
-        "artist_id": "artist-no-auto",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "not_connected"
+    names = [t["name"] for t in m.AI_NAVIGATOR_TOOLS]
+    assert names == ["search_ai_tools", "assess_tech_stack"], names
+    assert "provision_automation" not in names
+    assert not hasattr(m.ai_navigator_service, "provision_automation")
+    assert not hasattr(m.ai_navigator_service, "AutomationNotConnected")
+    assert not hasattr(m.ai_navigator_service, "AutomationAuthExpired")
 
 
-# ── (e) expired auth also degrades to the not-connected path ─────────────────
-
-def test_navigator_auth_expired_is_handled(monkeypatch, tmp_path):
+def test_ai_navigator_unknown_tool_name_is_handled_gracefully(monkeypatch, tmp_path):
+    """A retired/unknown tool name must degrade to the unknown_tool branch, not crash."""
     m = _load_main(monkeypatch, tmp_path)
-
-    monkeypatch.setenv("AI_NAVIGATOR_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="provision_automation",
-                      input={"workflow_name": "Old Flow"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your automation account auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "ai-navigator",
-        "message":   "provision my old flow",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "auth_expired"
+    import asyncio
+    result, summary, not_connected = asyncio.run(
+        m._execute_ai_navigator_tool("provision_automation", {"workflow_name": "x"}, "artist-9")
+    )
+    assert result == {"error": "unknown_tool", "tool": "provision_automation"}
+    assert not_connected is False

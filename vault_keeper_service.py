@@ -1,41 +1,21 @@
 """
-PLMKR Vault-Keeper — business-manager action service (mock-first).
+PLMKR Vault-Keeper — business-manager consult service (data-only).
 
 Backs the Vault-Keeper (Victor — Business Manager) agent's tool_use loop in
-/api/chat_stream (see VAULT_KEEPER_TOOLS in main.py). Victor does not just advise
-on budgets and cashflow — these functions let the agent take real business-manager
-actions: look up a budget template appropriate to the artist's project (a single
-release, a tour, a video, a marketing campaign), build a concrete project budget
-by applying that template's category allocations to an estimated revenue figure,
-and schedule an expense payment to a payee out of the artist's operating account
-so the money actually moves on their behalf.
+/api/chat_stream (see VAULT_KEEPER_TOOLS in main.py). Victor is consult-only: look
+up a budget template appropriate to the artist's project (a single release, a tour,
+a video, a marketing campaign), and build a concrete project budget by applying that
+template's category allocations to an estimated revenue figure. The mock
+schedule_expense_payment terminal-action tool (and its
+VAULT_KEEPER_ACCOUNT_CONNECTED gate) was retired — Victor never actually moved
+money, so the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live banking APIs, no payment rails, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_vault_account_connected``) driven by an env flag so
-    tests can toggle the connected / not-connected / expired states
-    deterministically — mirroring mech_ledger_service._mech_account_connected
-    without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads, so
     tests can assert on exact structure.
 """
-import hashlib
-import os
-
-
-class VaultAccountNotConnected(Exception):
-    """Raised when the artist has not connected an operating/bank account.
-
-    Mirrors mech_ledger_service.MechAccountNotConnected: the tool loop catches
-    this and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class VaultAccountAuthExpired(Exception):
-    """Raised when a previously connected operating-account authorization expired."""
 
 
 # ── Budget template library (in-memory reference data) ─────────────────────────
@@ -218,55 +198,4 @@ async def build_project_budget(
         "total_allocated": total_allocated,
         "projected_net": projected_net,
         "recommendation": recommendation,
-    }
-
-
-def _vault_account_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's operating/bank account.
-
-    In production this would look up a stored bank/operating-account link for the
-    artist. Here it is driven purely by the ``VAULT_KEEPER_ACCOUNT_CONNECTED`` env
-    flag so tests can toggle connected / expired / not-connected with ZERO network
-    calls and NO real secret. Values:
-      - "expired"                     → raise VaultAccountAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("VAULT_KEEPER_ACCOUNT_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise VaultAccountAuthExpired("operating-account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def schedule_expense_payment(
-    artist_id: str,
-    payee: str,
-    amount: float,
-    category: str = "",
-) -> dict:
-    """Schedule an expense payment to a payee out of the artist's operating account.
-
-    Raises VaultAccountNotConnected / VaultAccountAuthExpired when no operating
-    account is linked so the caller can surface a 'connect your account' message
-    instead of a hard failure. On success returns a deterministic mock payment
-    reference — NO network call is ever made and no money actually moves.
-    """
-    if not _vault_account_connected(artist_id):
-        raise VaultAccountNotConnected(
-            "artist has not connected an operating/bank account"
-        )
-    p = (payee or "").strip()
-    cat = (category or "").strip().lower()
-    try:
-        amt = round(float(amount or 0), 2)
-    except (TypeError, ValueError):
-        amt = 0.0
-    digest = hashlib.sha1(f"{artist_id}:{p}:{amt}:{cat}".encode("utf-8")).hexdigest()
-    reference = "PMT-" + digest[:10].upper()
-    return {
-        "status": "scheduled",
-        "reference": reference,
-        "payee": p,
-        "amount": amt,
-        "category": cat,
     }

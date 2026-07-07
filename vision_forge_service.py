@@ -1,42 +1,21 @@
 """
-PLMKR Vision-Forge — AI-visuals action service (mock-first).
+PLMKR Vision-Forge — AI-visuals consult service (data-only).
 
 Backs the Vision-Forge (Luna — AI Visuals) agent's tool_use loop in
-/api/chat_stream (see VISION_FORGE_TOOLS in main.py). Luna does not just advise on
-artwork, visual identity, and art direction — these functions let the agent take
-real visual-production actions: search the visual styles an artist can work in
-(each carrying the medium it targets and its production tier), draft a structured
-art brief from a concept and target medium so the artist has something ready to
-hand a designer or a model, and generate artwork in a chosen style through the
-artist's connected render/asset workspace so a piece actually gets produced on
-their behalf.
+/api/chat_stream (see VISION_FORGE_TOOLS in main.py). Luna is consult-only: search
+the visual styles an artist can work in (each carrying the medium it targets and its
+production tier), and draft a structured art brief from a concept and target medium
+so the artist has something ready to hand a designer or a model. The mock
+generate_artwork terminal-action tool (and its VISION_FORGE_ACCOUNT_CONNECTED gate)
+was retired — Luna never actually rendered artwork, so the tool implied a
+real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live image/render APIs, no asset-store APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_render_workspace_connected``) driven by an env flag so
-    tests can toggle the connected / not-connected / expired states
-    deterministically — mirroring grid_prophet_service._social_account_connected
-    without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads, so
     tests can assert on exact structure.
 """
-import hashlib
-import os
-
-
-class RenderWorkspaceNotConnected(Exception):
-    """Raised when the artist has not connected a render/asset workspace.
-
-    Mirrors grid_prophet_service.SocialAccountNotConnected: the tool loop catches
-    this and degrades gracefully into a structured 'connect your workspace first'
-    result instead of crashing the stream.
-    """
-
-
-class RenderWorkspaceAuthExpired(Exception):
-    """Raised when a previously connected render-workspace authorization expired."""
 
 
 # ── Visual style library (in-memory reference data) ────────────────────────────
@@ -192,58 +171,4 @@ async def draft_visual_brief(
         "sections": sections,
         "word_count": word_count,
         "recommendation": recommendation,
-    }
-
-
-def _render_workspace_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's render/asset workspace.
-
-    In production this would look up a stored render/asset-workspace link for the
-    artist. Here it is driven purely by the ``VISION_FORGE_ACCOUNT_CONNECTED`` env
-    flag so tests can toggle connected / expired / not-connected with ZERO network
-    calls and NO real secret. Values:
-      - "expired"                     → raise RenderWorkspaceAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("VISION_FORGE_ACCOUNT_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise RenderWorkspaceAuthExpired("render-workspace authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def generate_artwork(
-    artist_id: str,
-    style_id: str,
-    prompt: str,
-    notes: str = "",
-) -> dict:
-    """Generate artwork in a chosen style via the artist's connected workspace.
-
-    Raises RenderWorkspaceNotConnected / RenderWorkspaceAuthExpired when no
-    render/asset workspace is linked so the caller can surface a 'connect your
-    workspace' message instead of a hard failure. When the style id is unknown,
-    returns a structured {"status": "unknown_style"} result rather than raising. On
-    success returns a deterministic mock asset reference — NO network call is ever
-    made and nothing is actually rendered or uploaded.
-    """
-    if not _render_workspace_connected(artist_id):
-        raise RenderWorkspaceNotConnected(
-            "artist has not connected a render/asset workspace"
-        )
-    style = _get_style(style_id)
-    if style is None:
-        return {"status": "unknown_style", "style_id": (style_id or "").strip()}
-    pr = (prompt or "").strip()
-    digest = hashlib.sha1(
-        f"{artist_id}:{style['id']}:{pr}".encode("utf-8")
-    ).hexdigest()
-    reference = "ART-" + digest[:10].upper()
-    return {
-        "status": "generated",
-        "reference": reference,
-        "style_id": style["id"],
-        "style_name": style["name"],
-        "asset_ref": f"asset://vision-forge/{reference.lower()}.png",
-        "prompt": pr,
     }

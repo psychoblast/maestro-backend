@@ -1,36 +1,18 @@
 """
-PLMKR AI-Navigator — AI tooling action service (mock-first).
+PLMKR AI-Navigator — AI tooling consult service (data-only).
 
 Backs the AI-Navigator (Neo, AI Tools) agent's tool_use loop in
-/api/chat_stream (see AI_NAVIGATOR_TOOLS in main.py). Neo does not just advise —
-these functions let the agent take real action: search a catalog of AI tools,
-assess an artist's current tech stack for gaps, and provision an automation
-workflow on the artist's connected automation account.
+/api/chat_stream (see AI_NAVIGATOR_TOOLS in main.py). Neo is consult-only: search a
+catalog of AI tools and assess an artist's current tech stack for gaps. The mock
+provision_automation terminal-action tool (and its AI_NAVIGATOR_CONNECTED gate) was
+retired — Neo never actually provisioned an automation, so the tool implied a
+real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live APIs, no LLM, no automation platform calls.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_automation_connected``) driven by an env flag so tests
-    can toggle the connected / not-connected / expired states deterministically
-    — mirroring lex_cipher_service.RegistryNotConnected without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads.
 """
-import hashlib
-import os
-
-
-class AutomationNotConnected(Exception):
-    """Raised when the artist has not connected an automation account.
-
-    Mirrors lex_cipher_service.RegistryNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class AutomationAuthExpired(Exception):
-    """Raised when a previously connected automation account's auth expired."""
 
 
 # ── AI tool catalog (in-memory reference data — no I/O) ───────────────────────
@@ -101,46 +83,4 @@ async def assess_tech_stack(
         "gaps": gaps,
         "gap_count": len(gaps),
         "recommendation": recommendation,
-    }
-
-
-def _automation_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's automation account.
-
-    Driven purely by the ``AI_NAVIGATOR_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real
-    secret. Values:
-      - "expired"                     → raise AutomationAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("AI_NAVIGATOR_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise AutomationAuthExpired("automation account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def provision_automation(
-    artist_id: str,
-    workflow_name: str,
-    platform: str = "zapier",
-) -> dict:
-    """Provision an automation workflow on the artist's automation account.
-
-    Raises AutomationNotConnected / AutomationAuthExpired when no account is
-    linked so the caller can surface a 'connect your account' message instead of
-    a hard failure. On success returns a deterministic mock reference — NO
-    network call is ever made.
-    """
-    if not _automation_connected(artist_id):
-        raise AutomationNotConnected("artist has not connected an automation account")
-    name = (workflow_name or "").strip()
-    plat = (platform or "zapier").strip()
-    digest = hashlib.sha1(f"{artist_id}:{name}:{plat}".encode("utf-8")).hexdigest()
-    reference = "AUTO-" + digest[:10].upper()
-    return {
-        "status": "provisioned",
-        "reference": reference,
-        "workflow_name": name,
-        "platform": plat,
     }
