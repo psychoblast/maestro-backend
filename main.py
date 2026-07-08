@@ -7840,6 +7840,222 @@ async def _execute_release_strategist_tool(name: str, tool_input: dict, artist_i
     )
 
 
+# ── M3 loop consolidation ────────────────────────────────────────────────────
+# Single parameterized streaming generator that replaces the 43 near-identical
+# inline `generate_*` tool_use loops in /api/chat_stream. Its body is the
+# archetype of those loops verbatim (the non-streaming Anthropic tool_use loop
+# → tool_result feedback → sentence-by-sentence TTS streaming → route/experts/
+# actions/done tail), with ONLY the genuine per-agent surface parameterized:
+#   • tools             — the X_TOOLS schema list passed to messages.create
+#   • execute_tool      — the bound _execute_X_tool coroutine
+#                         (name, input, artist_id) -> (result, summary, nc_bool)
+#   • max_iters         — the X_MAX_TOOL_ITERS cap
+#   • not_connected_key — the EXACT SSE `actions`-event key string the frontend
+#                         and 58 tests pin (bespoke per agent, e.g.
+#                         "gmail_not_connected", or the generic "not_connected")
+# Everything else is request context passed in explicitly. `client` / `tts_fn` /
+# `save_exchange_fn` default to the module globals and exist only as injectable
+# seams for unit tests. Migrating an agent = delete its inline generator + elif
+# branch and add one STREAM_AGENT_REGISTRY entry (done stage-by-stage).
+async def stream_tool_use_agent(
+    *,
+    tools,
+    execute_tool,
+    max_iters,
+    not_connected_key,
+    messages,
+    model,
+    max_tokens,
+    system_blocks,
+    voice,
+    do_tts,
+    artist_id,
+    agent_id,
+    message,
+    experts_event,
+    client=None,
+    tts_fn=None,
+    save_exchange_fn=None,
+):
+    _client = client if client is not None else async_client
+    _tts    = tts_fn if tts_fn is not None else tts
+    _save   = save_exchange_fn if save_exchange_fn is not None else _save_exchange
+
+    full_text     = ""
+    actions_taken = []
+    not_connected = False
+
+    tts_in  = asyncio.Queue()
+    evt_out = asyncio.Queue()
+
+    async def _producer():
+        nonlocal full_text, actions_taken, not_connected
+        try:
+            loop_messages = list(messages)
+            final_text    = ""
+            last_text     = ""
+            for _ in range(max_iters):
+                resp = await _client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    system=system_blocks,
+                    messages=loop_messages,
+                    tools=tools,
+                    extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+                )
+                blocks    = list(getattr(resp, "content", []) or [])
+                tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
+                text_parts = [getattr(b, "text", "") for b in blocks
+                              if getattr(b, "type", None) == "text"]
+                last_text = "".join(text_parts).strip() or last_text
+
+                if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
+                    loop_messages.append({"role": "assistant", "content": blocks})
+                    results_content = []
+                    for tu in tool_uses:
+                        result, summary, nc = await execute_tool(
+                            tu.name, getattr(tu, "input", {}) or {}, artist_id,
+                        )
+                        if nc:
+                            not_connected = True
+                        actions_taken.append({
+                            "tool":   tu.name,
+                            "input":  summary["input"],
+                            "result": summary["result"],
+                        })
+                        results_content.append({
+                            "type":        "tool_result",
+                            "tool_use_id": tu.id,
+                            "content":     json.dumps(result),
+                        })
+                    loop_messages.append({"role": "user", "content": results_content})
+                    continue
+
+                final_text = "".join(text_parts).strip()
+                break
+
+            if not final_text:
+                final_text = last_text or "I've taken the actions I can on that for now."
+            full_text = final_text
+
+            buf       = final_text
+            route_cut = False
+            while True:
+                sentence, buf = split_sentence(buf)
+                if not sentence:
+                    break
+                await evt_out.put(("text", sentence))
+                if do_tts:
+                    await tts_in.put(sentence)
+                if detect_routing(sentence):
+                    route_cut = True
+                    break
+            if not route_cut:
+                remainder = buf.strip()
+                if remainder:
+                    await evt_out.put(("text", remainder))
+                    if do_tts:
+                        await tts_in.put(remainder)
+        except Exception as e:
+            await evt_out.put(("error", str(e)))
+        finally:
+            await tts_in.put(None)
+
+    async def _tts_worker():
+        task_q = asyncio.Queue()
+        first  = True
+
+        async def _submit():
+            nonlocal first
+            while True:
+                sentence = await tts_in.get()
+                if sentence is None:
+                    await task_q.put(None)
+                    return
+                if first:
+                    await evt_out.put(("status", "Generating voice…"))
+                    first = False
+                task = asyncio.create_task(_tts(sentence, voice))
+                await task_q.put(task)
+
+        asyncio.create_task(_submit())
+        while True:
+            item = await task_q.get()
+            if item is None:
+                break
+            audio_bytes = await item
+            if audio_bytes:
+                await evt_out.put(("audio", audio_bytes))
+        await evt_out.put(None)
+
+    asyncio.create_task(_producer())
+    if do_tts:
+        asyncio.create_task(_tts_worker())
+    else:
+        async def _no_tts_closer():
+            while True:
+                s = await tts_in.get()
+                if s is None:
+                    break
+            await evt_out.put(None)
+        asyncio.create_task(_no_tts_closer())
+
+    while True:
+        item = await evt_out.get()
+        if item is None:
+            break
+        evt_type, data = item
+        if evt_type == "text":
+            yield sse({"type": "text", "text": data})
+        elif evt_type == "audio":
+            yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
+        elif evt_type == "status":
+            yield sse({"type": "status", "text": data})
+        elif evt_type == "error":
+            yield sse({"type": "error", "message": data})
+            break
+
+    route = detect_routing(full_text)
+    if route:
+        slug = route["name"].lower().replace(" ", "-")
+        yield sse({
+            "type":        "route",
+            "agent_id":    route["id"],
+            "agent_name":  route["name"],
+            "agent_title": route["title"],
+            "agent_voice": route["voice"],
+            "agent_slug":  slug,
+        })
+    if experts_event:
+        yield sse(experts_event)
+    try:
+        yield sse({
+            "type":            "actions",
+            "actions_taken":   actions_taken,
+            not_connected_key: not_connected,
+        })
+    except Exception:
+        pass
+    yield sse({"type": "done", "full_text": full_text})
+
+    if full_text and message != "__greet__":
+        asyncio.create_task(_save(artist_id, agent_id, message, full_text))
+
+
+# Registry: agent_id -> (tools, execute_tool, max_iters, not_connected_key).
+# Populated stage-by-stage as inline generators are retired. Dispatch consults
+# this dict first (added in the canary stage); an agent absent here keeps its
+# inline generator. Every entry below is an agent whose SSE key is the generic
+# "not_connected" (the safest tranche); bespoke-key and danger-zone agents are
+# migrated in later, separately-attended stages.
+STREAM_AGENT_REGISTRY = {
+    # ── canaries (3 true 128-line-template agents, generic key) ──
+    "content-forge":  (CONTENT_FORGE_TOOLS,  _execute_content_forge_tool,  CONTENT_FORGE_MAX_TOOL_ITERS,  "not_connected"),
+    "press-monitor":  (PRESS_MONITOR_TOOLS,  _execute_press_monitor_tool,  PRESS_MONITOR_MAX_TOOL_ITERS,  "not_connected"),
+    "royalty-doctor": (ROYALTY_DOCTOR_TOOLS, _execute_royalty_doctor_tool, ROYALTY_DOCTOR_MAX_TOOL_ITERS, "not_connected"),
+}
+
+
 class ChatStreamRequest(BaseModel):
     agent_id:  str
     message:   str
