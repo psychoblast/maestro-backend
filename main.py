@@ -13112,173 +13112,6 @@ async def chat_stream(req: ChatStreamRequest):
         if full_text and message != "__greet__":
             asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
 
-    async def generate_content_forge():
-        # content-forge-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
-        # CONTENT_FORGE_TOOLS / _execute_content_forge_tool instead. Runs the non-streaming messages.create
-        # with tools, executes each emitted tool_use against content_forge_service, feeds
-        # tool_result back, and repeats (capped at CONTENT_FORGE_MAX_TOOL_ITERS) until
-        # Pen returns a final text answer, then streams it through the SAME
-        # TTS pipeline the default path uses. Every other agent never reaches here.
-        full_text     = ""
-        actions_taken = []
-        not_connected = False
-
-        tts_in  = asyncio.Queue()
-        evt_out = asyncio.Queue()
-
-        async def _content_forge_producer():
-            nonlocal full_text, actions_taken, not_connected
-            try:
-                loop_messages = list(messages)
-                final_text    = ""
-                last_text     = ""
-                for _ in range(CONTENT_FORGE_MAX_TOOL_ITERS):
-                    resp = await async_client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        system=system_blocks,
-                        messages=loop_messages,
-                        tools=CONTENT_FORGE_TOOLS,
-                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-                    )
-                    blocks    = list(getattr(resp, "content", []) or [])
-                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
-                    text_parts = [getattr(b, "text", "") for b in blocks
-                                  if getattr(b, "type", None) == "text"]
-                    last_text = "".join(text_parts).strip() or last_text
-
-                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
-                        loop_messages.append({"role": "assistant", "content": blocks})
-                        results_content = []
-                        for tu in tool_uses:
-                            result, summary, nc = await _execute_content_forge_tool(
-                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
-                            )
-                            if nc:
-                                not_connected = True
-                            actions_taken.append({
-                                "tool":   tu.name,
-                                "input":  summary["input"],
-                                "result": summary["result"],
-                            })
-                            results_content.append({
-                                "type":        "tool_result",
-                                "tool_use_id": tu.id,
-                                "content":     json.dumps(result),
-                            })
-                        loop_messages.append({"role": "user", "content": results_content})
-                        continue
-
-                    final_text = "".join(text_parts).strip()
-                    break
-
-                if not final_text:
-                    final_text = last_text or "I've taken the actions I can on that for now."
-                full_text = final_text
-
-                buf       = final_text
-                route_cut = False
-                while True:
-                    sentence, buf = split_sentence(buf)
-                    if not sentence:
-                        break
-                    await evt_out.put(("text", sentence))
-                    if do_tts:
-                        await tts_in.put(sentence)
-                    if detect_routing(sentence):
-                        route_cut = True
-                        break
-                if not route_cut:
-                    remainder = buf.strip()
-                    if remainder:
-                        await evt_out.put(("text", remainder))
-                        if do_tts:
-                            await tts_in.put(remainder)
-            except Exception as e:
-                await evt_out.put(("error", str(e)))
-            finally:
-                await tts_in.put(None)
-
-        async def _tts_worker():
-            task_q = asyncio.Queue()
-            first  = True
-
-            async def _submit():
-                nonlocal first
-                while True:
-                    sentence = await tts_in.get()
-                    if sentence is None:
-                        await task_q.put(None)
-                        return
-                    if first:
-                        await evt_out.put(("status", "Generating voice…"))
-                        first = False
-                    task = asyncio.create_task(tts(sentence, voice))
-                    await task_q.put(task)
-
-            asyncio.create_task(_submit())
-            while True:
-                item = await task_q.get()
-                if item is None:
-                    break
-                audio_bytes = await item
-                if audio_bytes:
-                    await evt_out.put(("audio", audio_bytes))
-            await evt_out.put(None)
-
-        asyncio.create_task(_content_forge_producer())
-        if do_tts:
-            asyncio.create_task(_tts_worker())
-        else:
-            async def _no_tts_closer():
-                while True:
-                    s = await tts_in.get()
-                    if s is None:
-                        break
-                await evt_out.put(None)
-            asyncio.create_task(_no_tts_closer())
-
-        while True:
-            item = await evt_out.get()
-            if item is None:
-                break
-            evt_type, data = item
-            if evt_type == "text":
-                yield sse({"type": "text", "text": data})
-            elif evt_type == "audio":
-                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
-            elif evt_type == "status":
-                yield sse({"type": "status", "text": data})
-            elif evt_type == "error":
-                yield sse({"type": "error", "message": data})
-                break
-
-        route = detect_routing(full_text)
-        if route:
-            slug = route["name"].lower().replace(" ", "-")
-            yield sse({
-                "type":        "route",
-                "agent_id":    route["id"],
-                "agent_name":  route["name"],
-                "agent_title": route["title"],
-                "agent_voice": route["voice"],
-                "agent_slug":  slug,
-            })
-        if experts_event:
-            yield sse(experts_event)
-        try:
-            yield sse({
-                "type":          "actions",
-                "actions_taken": actions_taken,
-                "not_connected": not_connected,
-            })
-        except Exception:
-            pass
-        yield sse({"type": "done", "full_text": full_text})
-
-        if full_text and message != "__greet__":
-            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
-
     async def generate_ink_and_air():
         # ink-and-air-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
         # INK_AND_AIR_TOOLS / _execute_ink_and_air_tool instead. Runs the non-streaming messages.create
@@ -14068,340 +13901,6 @@ async def chat_stream(req: ChatStreamRequest):
             await evt_out.put(None)
 
         asyncio.create_task(_mobile_monetize_producer())
-        if do_tts:
-            asyncio.create_task(_tts_worker())
-        else:
-            async def _no_tts_closer():
-                while True:
-                    s = await tts_in.get()
-                    if s is None:
-                        break
-                await evt_out.put(None)
-            asyncio.create_task(_no_tts_closer())
-
-        while True:
-            item = await evt_out.get()
-            if item is None:
-                break
-            evt_type, data = item
-            if evt_type == "text":
-                yield sse({"type": "text", "text": data})
-            elif evt_type == "audio":
-                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
-            elif evt_type == "status":
-                yield sse({"type": "status", "text": data})
-            elif evt_type == "error":
-                yield sse({"type": "error", "message": data})
-                break
-
-        route = detect_routing(full_text)
-        if route:
-            slug = route["name"].lower().replace(" ", "-")
-            yield sse({
-                "type":        "route",
-                "agent_id":    route["id"],
-                "agent_name":  route["name"],
-                "agent_title": route["title"],
-                "agent_voice": route["voice"],
-                "agent_slug":  slug,
-            })
-        if experts_event:
-            yield sse(experts_event)
-        try:
-            yield sse({
-                "type":          "actions",
-                "actions_taken": actions_taken,
-                "not_connected": not_connected,
-            })
-        except Exception:
-            pass
-        yield sse({"type": "done", "full_text": full_text})
-
-        if full_text and message != "__greet__":
-            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
-
-    async def generate_press_monitor():
-        # press-monitor-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
-        # PRESS_MONITOR_TOOLS / _execute_press_monitor_tool instead. Runs the non-streaming messages.create
-        # with tools, executes each emitted tool_use against press_monitor_service, feeds
-        # tool_result back, and repeats (capped at PRESS_MONITOR_MAX_TOOL_ITERS) until
-        # Press returns a final text answer, then streams it through the SAME
-        # TTS pipeline the default path uses. Every other agent never reaches here.
-        full_text     = ""
-        actions_taken = []
-        not_connected = False
-
-        tts_in  = asyncio.Queue()
-        evt_out = asyncio.Queue()
-
-        async def _press_monitor_producer():
-            nonlocal full_text, actions_taken, not_connected
-            try:
-                loop_messages = list(messages)
-                final_text    = ""
-                last_text     = ""
-                for _ in range(PRESS_MONITOR_MAX_TOOL_ITERS):
-                    resp = await async_client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        system=system_blocks,
-                        messages=loop_messages,
-                        tools=PRESS_MONITOR_TOOLS,
-                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-                    )
-                    blocks    = list(getattr(resp, "content", []) or [])
-                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
-                    text_parts = [getattr(b, "text", "") for b in blocks
-                                  if getattr(b, "type", None) == "text"]
-                    last_text = "".join(text_parts).strip() or last_text
-
-                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
-                        loop_messages.append({"role": "assistant", "content": blocks})
-                        results_content = []
-                        for tu in tool_uses:
-                            result, summary, nc = await _execute_press_monitor_tool(
-                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
-                            )
-                            if nc:
-                                not_connected = True
-                            actions_taken.append({
-                                "tool":   tu.name,
-                                "input":  summary["input"],
-                                "result": summary["result"],
-                            })
-                            results_content.append({
-                                "type":        "tool_result",
-                                "tool_use_id": tu.id,
-                                "content":     json.dumps(result),
-                            })
-                        loop_messages.append({"role": "user", "content": results_content})
-                        continue
-
-                    final_text = "".join(text_parts).strip()
-                    break
-
-                if not final_text:
-                    final_text = last_text or "I've taken the actions I can on that for now."
-                full_text = final_text
-
-                buf       = final_text
-                route_cut = False
-                while True:
-                    sentence, buf = split_sentence(buf)
-                    if not sentence:
-                        break
-                    await evt_out.put(("text", sentence))
-                    if do_tts:
-                        await tts_in.put(sentence)
-                    if detect_routing(sentence):
-                        route_cut = True
-                        break
-                if not route_cut:
-                    remainder = buf.strip()
-                    if remainder:
-                        await evt_out.put(("text", remainder))
-                        if do_tts:
-                            await tts_in.put(remainder)
-            except Exception as e:
-                await evt_out.put(("error", str(e)))
-            finally:
-                await tts_in.put(None)
-
-        async def _tts_worker():
-            task_q = asyncio.Queue()
-            first  = True
-
-            async def _submit():
-                nonlocal first
-                while True:
-                    sentence = await tts_in.get()
-                    if sentence is None:
-                        await task_q.put(None)
-                        return
-                    if first:
-                        await evt_out.put(("status", "Generating voice…"))
-                        first = False
-                    task = asyncio.create_task(tts(sentence, voice))
-                    await task_q.put(task)
-
-            asyncio.create_task(_submit())
-            while True:
-                item = await task_q.get()
-                if item is None:
-                    break
-                audio_bytes = await item
-                if audio_bytes:
-                    await evt_out.put(("audio", audio_bytes))
-            await evt_out.put(None)
-
-        asyncio.create_task(_press_monitor_producer())
-        if do_tts:
-            asyncio.create_task(_tts_worker())
-        else:
-            async def _no_tts_closer():
-                while True:
-                    s = await tts_in.get()
-                    if s is None:
-                        break
-                await evt_out.put(None)
-            asyncio.create_task(_no_tts_closer())
-
-        while True:
-            item = await evt_out.get()
-            if item is None:
-                break
-            evt_type, data = item
-            if evt_type == "text":
-                yield sse({"type": "text", "text": data})
-            elif evt_type == "audio":
-                yield sse({"type": "audio", "audio": base64.b64encode(data).decode()})
-            elif evt_type == "status":
-                yield sse({"type": "status", "text": data})
-            elif evt_type == "error":
-                yield sse({"type": "error", "message": data})
-                break
-
-        route = detect_routing(full_text)
-        if route:
-            slug = route["name"].lower().replace(" ", "-")
-            yield sse({
-                "type":        "route",
-                "agent_id":    route["id"],
-                "agent_name":  route["name"],
-                "agent_title": route["title"],
-                "agent_voice": route["voice"],
-                "agent_slug":  slug,
-            })
-        if experts_event:
-            yield sse(experts_event)
-        try:
-            yield sse({
-                "type":          "actions",
-                "actions_taken": actions_taken,
-                "not_connected": not_connected,
-            })
-        except Exception:
-            pass
-        yield sse({"type": "done", "full_text": full_text})
-
-        if full_text and message != "__greet__":
-            asyncio.create_task(_save_exchange(artist_id, agent_id, message, full_text))
-
-    async def generate_royalty_doctor():
-        # royalty-doctor-only path: the SAME Anthropic tool_use loop as Lex, but pointed at
-        # ROYALTY_DOCTOR_TOOLS / _execute_royalty_doctor_tool instead. Runs the non-streaming messages.create
-        # with tools, executes each emitted tool_use against royalty_doctor_service, feeds
-        # tool_result back, and repeats (capped at ROYALTY_DOCTOR_MAX_TOOL_ITERS) until
-        # Doc returns a final text answer, then streams it through the SAME
-        # TTS pipeline the default path uses. Every other agent never reaches here.
-        full_text     = ""
-        actions_taken = []
-        not_connected = False
-
-        tts_in  = asyncio.Queue()
-        evt_out = asyncio.Queue()
-
-        async def _royalty_doctor_producer():
-            nonlocal full_text, actions_taken, not_connected
-            try:
-                loop_messages = list(messages)
-                final_text    = ""
-                last_text     = ""
-                for _ in range(ROYALTY_DOCTOR_MAX_TOOL_ITERS):
-                    resp = await async_client.messages.create(
-                        model=model,
-                        max_tokens=max_tokens,
-                        system=system_blocks,
-                        messages=loop_messages,
-                        tools=ROYALTY_DOCTOR_TOOLS,
-                        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-                    )
-                    blocks    = list(getattr(resp, "content", []) or [])
-                    tool_uses = [b for b in blocks if getattr(b, "type", None) == "tool_use"]
-                    text_parts = [getattr(b, "text", "") for b in blocks
-                                  if getattr(b, "type", None) == "text"]
-                    last_text = "".join(text_parts).strip() or last_text
-
-                    if getattr(resp, "stop_reason", None) == "tool_use" and tool_uses:
-                        loop_messages.append({"role": "assistant", "content": blocks})
-                        results_content = []
-                        for tu in tool_uses:
-                            result, summary, nc = await _execute_royalty_doctor_tool(
-                                tu.name, getattr(tu, "input", {}) or {}, artist_id,
-                            )
-                            if nc:
-                                not_connected = True
-                            actions_taken.append({
-                                "tool":   tu.name,
-                                "input":  summary["input"],
-                                "result": summary["result"],
-                            })
-                            results_content.append({
-                                "type":        "tool_result",
-                                "tool_use_id": tu.id,
-                                "content":     json.dumps(result),
-                            })
-                        loop_messages.append({"role": "user", "content": results_content})
-                        continue
-
-                    final_text = "".join(text_parts).strip()
-                    break
-
-                if not final_text:
-                    final_text = last_text or "I've taken the actions I can on that for now."
-                full_text = final_text
-
-                buf       = final_text
-                route_cut = False
-                while True:
-                    sentence, buf = split_sentence(buf)
-                    if not sentence:
-                        break
-                    await evt_out.put(("text", sentence))
-                    if do_tts:
-                        await tts_in.put(sentence)
-                    if detect_routing(sentence):
-                        route_cut = True
-                        break
-                if not route_cut:
-                    remainder = buf.strip()
-                    if remainder:
-                        await evt_out.put(("text", remainder))
-                        if do_tts:
-                            await tts_in.put(remainder)
-            except Exception as e:
-                await evt_out.put(("error", str(e)))
-            finally:
-                await tts_in.put(None)
-
-        async def _tts_worker():
-            task_q = asyncio.Queue()
-            first  = True
-
-            async def _submit():
-                nonlocal first
-                while True:
-                    sentence = await tts_in.get()
-                    if sentence is None:
-                        await task_q.put(None)
-                        return
-                    if first:
-                        await evt_out.put(("status", "Generating voice…"))
-                        first = False
-                    task = asyncio.create_task(tts(sentence, voice))
-                    await task_q.put(task)
-
-            asyncio.create_task(_submit())
-            while True:
-                item = await task_q.get()
-                if item is None:
-                    break
-                audio_bytes = await item
-                if audio_bytes:
-                    await evt_out.put(("audio", audio_bytes))
-            await evt_out.put(None)
-
-        asyncio.create_task(_royalty_doctor_producer())
         if do_tts:
             asyncio.create_task(_tts_worker())
         else:
@@ -15631,7 +15130,29 @@ async def chat_stream(req: ChatStreamRequest):
     # Max (merch-empire), Aria (fan-builder), Sync (sync-agent), Nova
     # (global-scout), and Cree (creative-director) each take their own tool_use
     # path; every other agent takes the unchanged streaming `generate()` path above.
-    if agent_id == "puppet-master":
+    # M3 consolidation: agents migrated onto the shared helper are looked up here
+    # first. An agent absent from the registry keeps its inline generator below.
+    _registry_entry = STREAM_AGENT_REGISTRY.get(agent_id)
+    if _registry_entry is not None:
+        _reg_tools, _reg_execute_tool, _reg_max_iters, _reg_nck = _registry_entry
+        def _stream_gen():
+            return stream_tool_use_agent(
+                tools=_reg_tools,
+                execute_tool=_reg_execute_tool,
+                max_iters=_reg_max_iters,
+                not_connected_key=_reg_nck,
+                messages=messages,
+                model=model,
+                max_tokens=max_tokens,
+                system_blocks=system_blocks,
+                voice=voice,
+                do_tts=do_tts,
+                artist_id=artist_id,
+                agent_id=agent_id,
+                message=message,
+                experts_event=experts_event,
+            )
+    elif agent_id == "puppet-master":
         _stream_gen = generate_marcus
     elif agent_id == "lex-cipher":
         _stream_gen = generate_lex_cipher
@@ -15687,8 +15208,6 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_audio_quality
     elif agent_id == "collab-connect":
         _stream_gen = generate_collab_connect
-    elif agent_id == "content-forge":
-        _stream_gen = generate_content_forge
     elif agent_id == "ink-and-air":
         _stream_gen = generate_ink_and_air
     elif agent_id == "label-services":
@@ -15699,10 +15218,6 @@ async def chat_stream(req: ChatStreamRequest):
         _stream_gen = generate_live_wire
     elif agent_id == "mobile-monetize":
         _stream_gen = generate_mobile_monetize
-    elif agent_id == "press-monitor":
-        _stream_gen = generate_press_monitor
-    elif agent_id == "royalty-doctor":
-        _stream_gen = generate_royalty_doctor
     elif agent_id == "schedule-keeper":
         _stream_gen = generate_schedule_keeper
     elif agent_id == "storefront":
