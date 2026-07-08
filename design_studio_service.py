@@ -1,42 +1,21 @@
 """
-PLMKR Design-Studio — brand-design action service (mock-first).
+PLMKR Design-Studio — brand-design consult service (data-only).
 
 Backs the Design-Studio (Diego — Brand Designer) agent's tool_use loop in
-/api/chat_stream (see DESIGN_STUDIO_TOOLS in main.py). Diego does not just advise on
-branding, logos, and visual assets — these functions let the agent take real
-brand-design actions: search the brand-identity styles an artist can build in (each
-carrying the asset type it targets and its production tier), draft a structured
-brand brief from a concept and target asset type so the artist has something ready
-to hand a designer or a model, and produce a brand asset (logo / wordmark / kit) in
-a chosen style through the artist's connected design workspace so a deliverable
-actually gets made on their behalf.
+/api/chat_stream (see DESIGN_STUDIO_TOOLS in main.py). Diego is consult-only: search
+the brand-identity styles an artist can build in (each carrying the asset type it
+targets and its production tier), and draft a structured brand brief from a concept
+and target asset type so the artist has something ready to hand a designer or a
+model. The mock produce_brand_asset terminal-action tool (and its
+DESIGN_STUDIO_ACCOUNT_CONNECTED gate) was retired — Diego never actually produced a
+brand asset, so the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live design/render APIs, no asset-store APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_design_workspace_connected``) driven by an env flag so
-    tests can toggle the connected / not-connected / expired states
-    deterministically — mirroring vision_forge_service._render_workspace_connected
-    without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads, so
     tests can assert on exact structure.
 """
-import hashlib
-import os
-
-
-class DesignWorkspaceNotConnected(Exception):
-    """Raised when the artist has not connected a design/asset workspace.
-
-    Mirrors vision_forge_service.RenderWorkspaceNotConnected: the tool loop catches
-    this and degrades gracefully into a structured 'connect your workspace first'
-    result instead of crashing the stream.
-    """
-
-
-class DesignWorkspaceAuthExpired(Exception):
-    """Raised when a previously connected design-workspace authorization expired."""
 
 
 # ── Brand-identity style library (in-memory reference data) ────────────────────
@@ -192,58 +171,4 @@ async def draft_brand_brief(
         "sections": sections,
         "word_count": word_count,
         "recommendation": recommendation,
-    }
-
-
-def _design_workspace_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's design/asset workspace.
-
-    In production this would look up a stored design/asset-workspace link for the
-    artist. Here it is driven purely by the ``DESIGN_STUDIO_ACCOUNT_CONNECTED`` env
-    flag so tests can toggle connected / expired / not-connected with ZERO network
-    calls and NO real secret. Values:
-      - "expired"                     → raise DesignWorkspaceAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("DESIGN_STUDIO_ACCOUNT_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise DesignWorkspaceAuthExpired("design-workspace authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def produce_brand_asset(
-    artist_id: str,
-    style_id: str,
-    prompt: str,
-    notes: str = "",
-) -> dict:
-    """Produce a brand asset in a chosen style via the artist's connected workspace.
-
-    Raises DesignWorkspaceNotConnected / DesignWorkspaceAuthExpired when no
-    design/asset workspace is linked so the caller can surface a 'connect your
-    workspace' message instead of a hard failure. When the style id is unknown,
-    returns a structured {"status": "unknown_style"} result rather than raising. On
-    success returns a deterministic mock asset reference — NO network call is ever
-    made and nothing is actually rendered or uploaded.
-    """
-    if not _design_workspace_connected(artist_id):
-        raise DesignWorkspaceNotConnected(
-            "artist has not connected a design/asset workspace"
-        )
-    style = _get_style(style_id)
-    if style is None:
-        return {"status": "unknown_style", "style_id": (style_id or "").strip()}
-    pr = (prompt or "").strip()
-    digest = hashlib.sha1(
-        f"{artist_id}:{style['id']}:{pr}".encode("utf-8")
-    ).hexdigest()
-    reference = "BRD-" + digest[:10].upper()
-    return {
-        "status": "produced",
-        "reference": reference,
-        "style_id": style["id"],
-        "style_name": style["name"],
-        "asset_ref": f"asset://design-studio/{reference.lower()}.svg",
-        "prompt": pr,
     }

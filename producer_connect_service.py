@@ -1,43 +1,24 @@
 """
-PLMKR Producer-Connect — production action service (mock-first).
+PLMKR Producer-Connect — production consult service (data-only + pure evaluation).
 
 Backs the Producer-Connect (Beat — Production) agent's tool_use loop in
-/api/chat_stream (see PRODUCER_CONNECT_TOOLS in main.py). Beat does not just advise
-on producer connections, beat licensing, and co-writes — these functions let the
-agent take real production actions: search a directory of producers/beatmakers worth
-connecting with (each carrying the genre it works in, its region, a budget tier, and
-a typical session rate), run a structured evaluation of a beat-licensing offer that
-scores it across the five deal pillars and returns an accept / negotiate / pass
-recommendation, and log a collaboration/co-write request to a producer through the
-artist's connected production network so a real record gets written on their behalf.
+/api/chat_stream (see PRODUCER_CONNECT_TOOLS in main.py). Beat is consult-only:
+search a directory of producers/beatmakers worth connecting with (each carrying the
+genre it works in, its region, a budget tier, and a typical session rate), and run a
+structured evaluation of a beat-licensing offer that scores it across the five deal
+pillars and returns an accept / negotiate / pass recommendation. The mock
+log_collab_request terminal-action tool (and its PRODUCER_NETWORK_CONNECTED gate)
+was retired — Beat never actually sent a collab request, so the tool implied a
+real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live producer/CRM APIs, no streaming data, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_producer_network_connected``) driven by an env flag so
-    tests can toggle the connected / not-connected / expired states
-    deterministically — mirroring ar_scout_service._ar_scout_crm_connected
-    without touching a wire.
   - Deterministic: scores are derived from a stable hash of the inputs and no
     timestamps or random values leak into return payloads, so tests can assert
     on exact structure.
 """
 import hashlib
-import os
-
-
-class ProducerNetworkNotConnected(Exception):
-    """Raised when the artist has not connected a production network / collab account.
-
-    Mirrors ar_scout_service.ArScoutCRMNotConnected: the tool loop catches this and
-    degrades gracefully into a structured 'connect your production network first'
-    result instead of crashing the stream.
-    """
-
-
-class ProducerNetworkAuthExpired(Exception):
-    """Raised when a previously connected production network authorization expired."""
 
 
 # ── Producer directory (in-memory reference data) ──────────────────────────────
@@ -205,60 +186,4 @@ async def evaluate_beat_deal(
         "composite": composite,
         "gaps": gaps,
         "recommendation": recommendation,
-    }
-
-
-def _producer_network_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's production network / collab account.
-
-    In production this would look up a stored network link for the artist. Here it is
-    driven purely by the ``PRODUCER_NETWORK_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real secret.
-    Values:
-      - "expired"                     → raise ProducerNetworkAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("PRODUCER_NETWORK_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise ProducerNetworkAuthExpired("production network authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def log_collab_request(
-    artist_id: str,
-    producer_id: str,
-    message: str = "",
-    session_type: str = "",
-) -> dict:
-    """Log a collaboration/co-write request to a producer via the production network.
-
-    Raises ProducerNetworkNotConnected / ProducerNetworkAuthExpired when no network is
-    linked so the caller can surface a 'connect your production network' message
-    instead of a hard failure. When the producer id is unknown, returns a structured
-    {"status": "unknown_producer"} result rather than raising. On success returns a
-    deterministic mock request reference — NO network call is ever made and no request
-    is actually sent. ``session_type`` is preserved verbatim (e.g. "co-write",
-    "beat lease", "full production").
-    """
-    if not _producer_network_connected(artist_id):
-        raise ProducerNetworkNotConnected(
-            "artist has not connected a production network / collab account"
-        )
-    producer = _get_producer(producer_id)
-    if producer is None:
-        return {"status": "unknown_producer", "producer_id": (producer_id or "").strip()}
-    msg   = (message or "").strip()
-    stype = (session_type or "").strip()
-    digest = hashlib.sha1(
-        f"{artist_id}:{producer['id']}:{msg}:{stype}".encode("utf-8")
-    ).hexdigest()
-    reference = "COLLAB-" + digest[:10].upper()
-    return {
-        "status": "sent",
-        "reference": reference,
-        "producer_id": producer["id"],
-        "producer_name": producer["name"],
-        "session_type": stype,
-        "message": msg,
     }

@@ -1,35 +1,17 @@
 """
-PLMKR Maya — Wellness action service (mock-first).
+PLMKR Maya — Wellness consult service (data-only).
 
 Backs the artist-wellness (Maya, Wellness) agent's tool_use loop in /api/chat_stream
-(see ARTIST_WELLNESS_TOOLS in main.py). Maya does not just advise — these functions
-let the agent take real action: search_wellness_resources, assess_burnout_risk, and schedule_wellness_checkin (a real action on the
-artist's connected wellness scheduling account).
+(see ARTIST_WELLNESS_TOOLS in main.py). Maya is consult-only: search_wellness_resources
+and assess_burnout_risk. The mock schedule_wellness_checkin terminal-action tool
+(and its ARTIST_WELLNESS_CONNECTED gate) was retired — Maya never actually booked a
+check-in, so the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_connected``) driven by an env flag so tests can toggle
-    connected / not-connected / expired deterministically — mirroring
-    lex_cipher_service.RegistryNotConnected without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads.
 """
-import hashlib
-import os
-
-
-class WellnessAccountNotConnected(Exception):
-    """Raised when the artist has not connected a wellness scheduling account.
-
-    Mirrors lex_cipher_service.RegistryNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class WellnessAccountAuthExpired(Exception):
-    """Raised when a previously connected wellness scheduling account's authorization expired."""
 
 
 # ── Reference catalog (in-memory reference data — no I/O) ─────────────────────
@@ -88,41 +70,4 @@ async def assess_burnout_risk(artist_id: str, signals: str = "", context: str = 
         "findings": findings,
         "finding_count": len(findings),
         "recommendation": recommendation,
-    }
-
-
-def _connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's wellness scheduling account.
-
-    Driven purely by the ``ARTIST_WELLNESS_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real
-    secret. Values:
-      - "expired"                     → raise WellnessAccountAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("ARTIST_WELLNESS_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise WellnessAccountAuthExpired("wellness scheduling account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def schedule_wellness_checkin(artist_id: str, topic: str, channel: str = "video") -> dict:
-    """Take the check-in scheduled action on the artist's connected wellness scheduling account.
-
-    Raises WellnessAccountNotConnected / WellnessAccountAuthExpired when no account is linked so the caller can
-    surface a 'connect your account' message instead of a hard failure. On
-    success returns a deterministic mock reference — NO network call is made.
-    """
-    if not _connected(artist_id):
-        raise WellnessAccountNotConnected("artist has not connected a wellness scheduling account")
-    name = (topic or "").strip()
-    opt = (channel or "video").strip()
-    digest = hashlib.sha1(f"{artist_id}:{name}:{opt}".encode("utf-8")).hexdigest()
-    reference = "WELL-" + digest[:10].upper()
-    return {
-        "status": "done",
-        "reference": reference,
-        "topic": name,
-        "channel": opt,
     }

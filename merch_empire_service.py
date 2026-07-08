@@ -1,43 +1,22 @@
 """
-PLMKR Merch Empire — merchandise action service (mock-first).
+PLMKR Merch Empire — merchandise consult service (data-only + pure costing).
 
 Backs the Merch Empire (Max — Merchandise) agent's tool_use loop in
-/api/chat_stream (see MERCH_EMPIRE_TOOLS in main.py). Max does not just advise on
-merch design, production, and fulfilment — these functions let the agent take real
-merchandise actions: search the catalogue of blank product types the platform can
-produce (each carrying the category it sits in, its production tier, the per-unit
-production cost, a suggested retail price, and the minimum order quantity), build a
-concrete production run by applying a product's economics to a quantity so the
-artist has a costed, margin-backed plan, and place that run as a fulfilment order
-through the artist's connected print/fulfilment account so stock actually gets
-produced on their behalf.
+/api/chat_stream (see MERCH_EMPIRE_TOOLS in main.py). Max is consult-only: search the
+catalogue of blank product types the platform can produce (each carrying the
+category it sits in, its production tier, the per-unit production cost, a suggested
+retail price, and the minimum order quantity), and build a concrete production run
+by applying a product's economics to a quantity so the artist has a costed,
+margin-backed plan. The mock schedule_fulfillment_order terminal-action tool (and
+its MERCH_EMPIRE_ACCOUNT_CONNECTED gate) was retired — Max never actually placed a
+fulfilment order, so the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live print/fulfilment/POD APIs, no order rails, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_merch_account_connected``) driven by an env flag so tests
-    can toggle the connected / not-connected / expired states deterministically —
-    mirroring brand_connect_service._brand_connect_account_connected without
-    touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads, so
     tests can assert on exact structure.
 """
-import hashlib
-import os
-
-
-class MerchAccountNotConnected(Exception):
-    """Raised when the artist has not connected a print/fulfilment account.
-
-    Mirrors brand_connect_service.BrandConnectAccountNotConnected: the tool loop
-    catches this and degrades gracefully into a structured 'connect your fulfilment
-    account first' result instead of crashing the stream.
-    """
-
-
-class MerchAccountAuthExpired(Exception):
-    """Raised when a previously connected print/fulfilment authorization expired."""
 
 
 # ── Product catalogue (in-memory reference data) ───────────────────────────────
@@ -211,62 +190,4 @@ async def build_production_run(
         "projected_margin": projected_margin,
         "margin_pct": margin_pct,
         "recommendation": recommendation,
-    }
-
-
-def _merch_account_connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's print/fulfilment account.
-
-    In production this would look up a stored print/fulfilment link for the artist.
-    Here it is driven purely by the ``MERCH_EMPIRE_ACCOUNT_CONNECTED`` env flag so
-    tests can toggle connected / expired / not-connected with ZERO network calls and
-    NO real secret. Values:
-      - "expired"                     → raise MerchAccountAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("MERCH_EMPIRE_ACCOUNT_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise MerchAccountAuthExpired("print/fulfilment authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def schedule_fulfillment_order(
-    artist_id: str,
-    product_id: str,
-    quantity: int = 0,
-    design_name: str = "",
-) -> dict:
-    """Place a merch production run as a fulfilment order via the artist's connected account.
-
-    Raises MerchAccountNotConnected / MerchAccountAuthExpired when no print/fulfilment
-    account is linked so the caller can surface a 'connect your account' message
-    instead of a hard failure. When the product id is unknown, returns a structured
-    {"status": "unknown_product"} result rather than raising. On success returns a
-    deterministic mock order reference — NO network call is ever made and no stock is
-    actually produced.
-    """
-    if not _merch_account_connected(artist_id):
-        raise MerchAccountNotConnected(
-            "artist has not connected a print/fulfilment account"
-        )
-    product = _get_product(product_id)
-    if product is None:
-        return {"status": "unknown_product", "product_id": (product_id or "").strip()}
-    dn = (design_name or "").strip()
-    try:
-        qty = int(quantity or 0)
-    except (TypeError, ValueError):
-        qty = 0
-    digest = hashlib.sha1(
-        f"{artist_id}:{product['id']}:{dn}:{qty}".encode("utf-8")
-    ).hexdigest()
-    reference = "MERCH-" + digest[:10].upper()
-    return {
-        "status": "ordered",
-        "reference": reference,
-        "product_id": product["id"],
-        "product_name": product["name"],
-        "design_name": dn,
-        "quantity": qty,
     }

@@ -1,14 +1,17 @@
 """
 PROOF tests — Coach (live-coach) Anthropic tool_use loop.
 
-Mirrors tests/test_wire_lex_cipher.py / test_wire_ai_navigator.py. Proves that,
-in /api/chat_stream: (a) Coach emits search_coaching_drills -> assess_stage_presence -> schedule_coaching_session then a final message
+Mirrors tests/test_wire_lex_cipher.py. Proves that, in /api/chat_stream:
+(a) Coach emits search_coaching_drills -> assess_stage_presence then a final message
 and surfaces a populated `actions` event with LIVE_COACH_TOOLS on every create();
 (b) a non-target agent never receives LIVE_COACH_TOOLS; (c) the gate is exclusive
-(Marcus still uses MARCUS_TOOLS); (d) the not-connected path is graceful; and
-(e) expired auth degrades the same way. Zero network / LLM — the Anthropic client
-is faked and the live_coach_service boundary is exercised through recording wrappers over
-the REAL (pure, mock-first) functions.
+(Marcus still uses MARCUS_TOOLS); (d) Coach is consult-only — the retired
+schedule_coaching_session mock-action tool (and its LIVE_COACH_CONNECTED gate) is
+gone from both the schema and the dispatch: it is neither offered to the model nor
+executable by name, and not_connected is structurally always False.
+Zero network / LLM — the Anthropic client is faked and the live_coach_service
+boundary is exercised through recording wrappers over the REAL (pure, mock-first)
+functions.
 """
 import importlib
 import json
@@ -74,12 +77,10 @@ def _parse_sse(body: str) -> list:
 
 def test_live_coach_tool_loop_invokes_functions_and_emits_actions(monkeypatch, tmp_path):
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("LIVE_COACH_CONNECTED", "true")
 
-    f1_calls, f2_calls, f3_calls = [], [], []
+    f1_calls, f2_calls = [], []
     real_f1 = m.live_coach_service.search_coaching_drills
     real_f2 = m.live_coach_service.assess_stage_presence
-    real_f3 = m.live_coach_service.schedule_coaching_session
 
     async def rec_f1(focus="", level=""):
         f1_calls.append({"focus": focus, "level": level})
@@ -89,21 +90,14 @@ def test_live_coach_tool_loop_invokes_functions_and_emits_actions(monkeypatch, t
         f2_calls.append({"artist_id": artist_id, "performance_notes": performance_notes, "context": context})
         return await real_f2(artist_id, performance_notes=performance_notes, context=context)
 
-    async def rec_f3(artist_id, focus, channel="video"):
-        f3_calls.append({"artist_id": artist_id, "focus": focus, "channel": channel})
-        return await real_f3(artist_id, focus, channel)
-
     monkeypatch.setattr(m.live_coach_service, "search_coaching_drills", rec_f1)
     monkeypatch.setattr(m.live_coach_service, "assess_stage_presence", rec_f2)
-    monkeypatch.setattr(m.live_coach_service, "schedule_coaching_session", rec_f3)
 
     responses = [
         _Resp([_Block("tool_use", name="search_coaching_drills", input={"focus": "vocals"}, id="t1")], "tool_use"),
         _Resp([_Block("tool_use", name="assess_stage_presence",
                       input={"performance_notes": "stares at floor", "context": "ctx"}, id="t2")], "tool_use"),
-        _Resp([_Block("tool_use", name="schedule_coaching_session",
-                      input={"focus": "Test Item", "channel": "video"}, id="t3")], "tool_use"),
-        _Resp([_Block("text", text="Done — took the actions across all three tools.")], "end_turn"),
+        _Resp([_Block("text", text="Done — took the actions across both tools.")], "end_turn"),
     ]
     create_calls = []
 
@@ -131,23 +125,21 @@ def test_live_coach_tool_loop_invokes_functions_and_emits_actions(monkeypatch, t
 
     assert f1_calls == [{"focus": "vocals", "level": ""}], f1_calls
     assert f2_calls == [{"artist_id": "artist-9", "performance_notes": "stares at floor", "context": "ctx"}], f2_calls
-    assert f3_calls == [{"artist_id": "artist-9", "focus": "Test Item", "channel": "video"}], f3_calls
 
     assert "actions" in types, types
     assert "done" in types
     assert types.index("actions") < types.index("done")
     actions_evt = next(e for e in events if e["type"] == "actions")
     tools_used  = [a["tool"] for a in actions_evt["actions_taken"]]
-    assert tools_used == ["search_coaching_drills", "assess_stage_presence", "schedule_coaching_session"], tools_used
+    assert tools_used == ["search_coaching_drills", "assess_stage_presence"], tools_used
     assert actions_evt["not_connected"] is False
 
     by_tool = {a["tool"]: a for a in actions_evt["actions_taken"]}
     assert "drill(s) found" in by_tool["search_coaching_drills"]["result"]
     assert "issue(s)" in by_tool["assess_stage_presence"]["result"]
-    assert by_tool["schedule_coaching_session"]["result"] == "session scheduled"
 
     assert "Done" in next(e for e in events if e["type"] == "done")["full_text"]
-    assert len(create_calls) == 4
+    assert len(create_calls) == 3
     assert all(kw.get("tools") == m.LIVE_COACH_TOOLS for kw in create_calls)
     assert all(kw.get("tools") != m.MARCUS_TOOLS for kw in create_calls)
 
@@ -210,67 +202,25 @@ def test_live_coach_marcus_still_uses_marcus_tools(monkeypatch, tmp_path):
     assert create_calls[0].get("tools") != m.LIVE_COACH_TOOLS
 
 
-def test_live_coach_not_connected_is_handled(monkeypatch, tmp_path):
+def test_live_coach_tool_roster_is_consult_only(monkeypatch, tmp_path):
+    """This unit owns Coach's exact tool roster: exactly the two consult tools,
+    nothing more. The retired schedule_coaching_session mock-action tool must not
+    reappear."""
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.delenv("LIVE_COACH_CONNECTED", raising=False)
-
-    responses = [
-        _Resp([_Block("tool_use", name="schedule_coaching_session", input={"focus": "Blocked Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="You need to connect an account first.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "live-coach",
-        "message":   "do the gated action",
-        "artist_id": "artist-none",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types  = [e["type"] for e in events]
-
-    assert "done" in types
-    assert "error" not in types, types
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "not_connected"
+    names = [t["name"] for t in m.LIVE_COACH_TOOLS]
+    assert names == ["search_coaching_drills", "assess_stage_presence"], names
+    assert "schedule_coaching_session" not in names
+    assert not hasattr(m.live_coach_service, "schedule_coaching_session")
+    assert not hasattr(m.live_coach_service, "CoachingCalendarNotConnected")
+    assert not hasattr(m.live_coach_service, "CoachingCalendarAuthExpired")
 
 
-def test_live_coach_auth_expired_is_handled(monkeypatch, tmp_path):
+def test_live_coach_unknown_tool_name_is_handled_gracefully(monkeypatch, tmp_path):
+    """A retired/unknown tool name must degrade to the unknown_tool branch, not crash."""
     m = _load_main(monkeypatch, tmp_path)
-    monkeypatch.setenv("LIVE_COACH_CONNECTED", "expired")
-
-    responses = [
-        _Resp([_Block("tool_use", name="schedule_coaching_session", input={"focus": "Old Item"}, id="t1")], "tool_use"),
-        _Resp([_Block("text", text="Your account auth expired.")], "end_turn"),
-    ]
-    create_calls = []
-
-    async def fake_create(**kwargs):
-        create_calls.append(kwargs)
-        return responses[len(create_calls) - 1]
-
-    monkeypatch.setattr(m.async_client.messages, "create", fake_create)
-
-    client = TestClient(m.app)
-    resp = client.post("/api/chat_stream", json={
-        "agent_id":  "live-coach",
-        "message":   "do the gated action on the old item",
-        "artist_id": "artist-expired",
-        "history":   "[]",
-        "tts":       False,
-    })
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    actions_evt = next(e for e in events if e["type"] == "actions")
-    assert actions_evt["not_connected"] is True
-    assert actions_evt["actions_taken"][0]["result"] == "auth_expired"
+    import asyncio
+    result, summary, not_connected = asyncio.run(
+        m._execute_live_coach_tool("schedule_coaching_session", {"focus": "x"}, "artist-9")
+    )
+    assert result == {"error": "unknown_tool", "tool": "schedule_coaching_session"}
+    assert not_connected is False

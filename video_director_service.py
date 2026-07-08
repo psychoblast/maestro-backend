@@ -1,35 +1,17 @@
 """
-PLMKR Reel — Music Video action service (mock-first).
+PLMKR Reel — Music Video consult service (data-only).
 
 Backs the video-director (Reel, Music Video) agent's tool_use loop in /api/chat_stream
-(see VIDEO_DIRECTOR_TOOLS in main.py). Reel does not just advise — these functions
-let the agent take real action: search_directors, estimate_video_budget, and book_video_shoot (a real action on the
-artist's connected video production account).
+(see VIDEO_DIRECTOR_TOOLS in main.py). Reel is consult-only: search_directors and
+estimate_video_budget. The mock book_video_shoot terminal-action tool (and its
+VIDEO_DIRECTOR_CONNECTED gate) was retired — Reel never booked a real shoot, so the
+tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_connected``) driven by an env flag so tests can toggle
-    connected / not-connected / expired deterministically — mirroring
-    lex_cipher_service.RegistryNotConnected without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads.
 """
-import hashlib
-import os
-
-
-class ProductionAccountNotConnected(Exception):
-    """Raised when the artist has not connected a video production account.
-
-    Mirrors lex_cipher_service.RegistryNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class ProductionAccountAuthExpired(Exception):
-    """Raised when a previously connected video production account's authorization expired."""
 
 
 # ── Reference catalog (in-memory reference data — no I/O) ─────────────────────
@@ -88,41 +70,4 @@ async def estimate_video_budget(artist_id: str, treatment_notes: str = "", conte
         "findings": findings,
         "finding_count": len(findings),
         "recommendation": recommendation,
-    }
-
-
-def _connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's video production account.
-
-    Driven purely by the ``VIDEO_DIRECTOR_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real
-    secret. Values:
-      - "expired"                     → raise ProductionAccountAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("VIDEO_DIRECTOR_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise ProductionAccountAuthExpired("video production account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def book_video_shoot(artist_id: str, project_title: str, crew: str = "full") -> dict:
-    """Take the shoot booked action on the artist's connected video production account.
-
-    Raises ProductionAccountNotConnected / ProductionAccountAuthExpired when no account is linked so the caller can
-    surface a 'connect your account' message instead of a hard failure. On
-    success returns a deterministic mock reference — NO network call is made.
-    """
-    if not _connected(artist_id):
-        raise ProductionAccountNotConnected("artist has not connected a video production account")
-    name = (project_title or "").strip()
-    opt = (crew or "full").strip()
-    digest = hashlib.sha1(f"{artist_id}:{name}:{opt}".encode("utf-8")).hexdigest()
-    reference = "SHOOT-" + digest[:10].upper()
-    return {
-        "status": "done",
-        "reference": reference,
-        "project_title": name,
-        "crew": opt,
     }

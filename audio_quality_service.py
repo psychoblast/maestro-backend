@@ -1,35 +1,17 @@
 """
-PLMKR Audio — Quality Control action service (mock-first).
+PLMKR Audio — Quality Control consult service (data-only).
 
 Backs the audio-quality (Audio, Quality Control) agent's tool_use loop in /api/chat_stream
-(see AUDIO_QUALITY_TOOLS in main.py). Audio does not just advise — these functions
-let the agent take real action: search_quality_standards, analyze_mix, and submit_master_qc (a real action on the
-artist's connected mastering service account).
+(see AUDIO_QUALITY_TOOLS in main.py). Audio is consult-only: search_quality_standards
+and analyze_mix. The mock submit_master_qc terminal-action tool (and its
+AUDIO_QUALITY_CONNECTED gate) was retired — Audio never submitted a real master, so
+the tool implied a real-world action that never happened.
 
-MOCK-FIRST CONTRACT (hard rules for this module):
+CONTRACT (hard rules for this module):
   - Every function returns a plain, JSON-serializable dict.
   - ZERO network calls. No live APIs, no LLM.
-  - NO secrets are read or embedded. The only "credential" surface is a
-    connection check (``_connected``) driven by an env flag so tests can toggle
-    connected / not-connected / expired deterministically — mirroring
-    lex_cipher_service.RegistryNotConnected without touching a wire.
   - Deterministic: no timestamps or random values leak into return payloads.
 """
-import hashlib
-import os
-
-
-class MasteringAccountNotConnected(Exception):
-    """Raised when the artist has not connected a mastering service account.
-
-    Mirrors lex_cipher_service.RegistryNotConnected: the tool loop catches this
-    and degrades gracefully into a structured 'connect your account first'
-    result instead of crashing the stream.
-    """
-
-
-class MasteringAccountAuthExpired(Exception):
-    """Raised when a previously connected mastering service account's authorization expired."""
 
 
 # ── Reference catalog (in-memory reference data — no I/O) ─────────────────────
@@ -88,41 +70,4 @@ async def analyze_mix(artist_id: str, mix_notes: str = "", context: str = "") ->
         "findings": findings,
         "finding_count": len(findings),
         "recommendation": recommendation,
-    }
-
-
-def _connected(artist_id: str) -> bool:
-    """Mock connection check for the artist's mastering service account.
-
-    Driven purely by the ``AUDIO_QUALITY_CONNECTED`` env flag so tests can toggle
-    connected / expired / not-connected with ZERO network calls and NO real
-    secret. Values:
-      - "expired"                     → raise MasteringAccountAuthExpired
-      - "1"/"true"/"yes"/"connected"  → connected
-      - anything else / unset         → not connected
-    """
-    val = (os.environ.get("AUDIO_QUALITY_CONNECTED", "") or "").strip().lower()
-    if val == "expired":
-        raise MasteringAccountAuthExpired("mastering service account authorization expired")
-    return val in ("1", "true", "yes", "connected")
-
-
-async def submit_master_qc(artist_id: str, track_title: str, target: str = "streaming") -> dict:
-    """Take the master submitted action on the artist's connected mastering service account.
-
-    Raises MasteringAccountNotConnected / MasteringAccountAuthExpired when no account is linked so the caller can
-    surface a 'connect your account' message instead of a hard failure. On
-    success returns a deterministic mock reference — NO network call is made.
-    """
-    if not _connected(artist_id):
-        raise MasteringAccountNotConnected("artist has not connected a mastering service account")
-    name = (track_title or "").strip()
-    opt = (target or "streaming").strip()
-    digest = hashlib.sha1(f"{artist_id}:{name}:{opt}".encode("utf-8")).hexdigest()
-    reference = "QC-" + digest[:10].upper()
-    return {
-        "status": "done",
-        "reference": reference,
-        "track_title": name,
-        "target": opt,
     }
